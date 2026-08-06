@@ -1,0 +1,12 @@
+# Frontend .gitignore
+node_modules/
+dist/
+build/
+.vite/
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+.cache/
+coverage/

@@ -1,0 +1,16 @@
+# Backend .gitignore
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+*.log
+npm-debug.log*
+.cache/
+coverage/
+*.tsbuildinfo
+
+# Temporary utility scripts
+src/utils/update_admin.js
+src/utils/inspect_db2.js
