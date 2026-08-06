@@ -1,4 +1,4 @@
-const { readFromCRM, writeToCRM } = require('../config/database');
+const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
 
 // ── PRODUCTS ──────────────────────────────────────────────
 
@@ -80,46 +80,61 @@ const getRoutes = async (req, res, next) => {
     let appRoutes = [];
     try {
       const appRouteRes = await readFromApp(
-        'SELECT id, name as route_name, zone as branch_name, "customerCount" as customer_count, \'Active\' as status FROM "Route" ORDER BY name ASC'
+        `SELECT
+          id,
+          name                   AS route_name,
+          zone                   AS branch_name,
+          "customerCount"        AS customer_count,
+          litres,
+          "assignedDpId"         AS assigned_dp_id,
+          "defaultPetrolAllowance" AS default_petrol_allowance,
+          "createdAt"            AS created_at,
+          "updatedAt"            AS updated_at,
+          'Active'               AS status,
+          'DB2'                  AS source
+         FROM "Route"
+         ORDER BY name ASC`
       );
       appRoutes = appRouteRes.rows;
+      console.log(`📡 [DB2 Routes] Fetched ${appRoutes.length} routes from maram_milk_db`);
     } catch (e) {
       console.warn('⚠️ DB2 Route query warning:', e.message);
     }
 
     const crmRoutes = await readFromCRM(
       `SELECT r.*, b.branch_name,
-        (SELECT COUNT(*) FROM route_assignments ra WHERE ra.route_id = r.id) as customer_count
+        (SELECT COUNT(*) FROM route_assignments ra WHERE ra.route_id = r.id) as customer_count,
+        'DB1' as source
        FROM routes r
        LEFT JOIN branches b ON b.id = r.branch_id
        ORDER BY r.created_at DESC`
     ).catch(() => ({ rows: [] }));
 
-    // Fallback list of 14 DB2 routes if DB connection is temporarily offline
+    // Hardcoded fallback using confirmed DB2 route names (used if DB2 temporarily times out)
     const fallbackDB2Routes = [
-      { id: 'db2-1', route_name: 'Alwarpet', branch_name: 'Zone A', customer_count: 14, status: 'Active' },
-      { id: 'db2-2', route_name: 'Egmore', branch_name: 'Zone A', customer_count: 18, status: 'Active' },
-      { id: 'db2-3', route_name: 'Mandaveli 1', branch_name: 'Zone A', customer_count: 22, status: 'Active' },
-      { id: 'db2-4', route_name: 'Mandaveli 2', branch_name: 'Zone A', customer_count: 19, status: 'Active' },
-      { id: 'db2-5', route_name: 'MRC Ngr', branch_name: 'Zone A', customer_count: 15, status: 'Active' },
-      { id: 'db2-6', route_name: 'Mylapore 1', branch_name: 'Zone A', customer_count: 30, status: 'Active' },
-      { id: 'db2-7', route_name: 'Mylapore 2', branch_name: 'Zone A', customer_count: 27, status: 'Active' },
-      { id: 'db2-8', route_name: 'Nungambakkam', branch_name: 'Zone A', customer_count: 21, status: 'Active' },
-      { id: 'db2-9', route_name: 'Royapettah', branch_name: 'Zone A', customer_count: 16, status: 'Active' },
-      { id: 'db2-10', route_name: 'T-Nagar', branch_name: 'Zone A', customer_count: 35, status: 'Active' },
-      { id: 'db2-11', route_name: 'Teynampet', branch_name: 'Zone A', customer_count: 24, status: 'Active' },
-      { id: 'db2-12', route_name: 'Triplicane', branch_name: 'Zone A', customer_count: 20, status: 'Active' },
-      { id: 'db2-13', route_name: 'West Mambalam 1', branch_name: 'Zone A', customer_count: 17, status: 'Active' },
-      { id: 'db2-14', route_name: 'West Mambalam 2', branch_name: 'Zone A', customer_count: 26, status: 'Active' },
+      { id: 'db2-1',  route_name: 'Alwarpet',        branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 60,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-2',  route_name: 'Egmore',           branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 80,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-3',  route_name: 'Mandaveli 1',      branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 50,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-4',  route_name: 'Mandaveli 2',      branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 50,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-5',  route_name: 'MRC Ngr',          branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 70,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-6',  route_name: 'Mylapore 1',       branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 60,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-7',  route_name: 'Mylapore 2',       branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 60,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-8',  route_name: 'Nungambakkam',     branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 90,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-9',  route_name: 'Royapettah',       branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 70,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-10', route_name: 'T-Nagar',          branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 100, status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-11', route_name: 'Teynampet',        branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 70,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-12', route_name: 'Triplicane',       branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 60,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-13', route_name: 'West Mambalam 1',  branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 80,  status: 'Active', source: 'DB2-Cached' },
+      { id: 'db2-14', route_name: 'West Mambalam 2',  branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 80,  status: 'Active', source: 'DB2-Cached' },
     ];
 
-    const finalRoutes = appRoutes.length > 0
-      ? [...appRoutes, ...crmRoutes.rows]
-      : (crmRoutes.rows.length > 0 ? crmRoutes.rows : fallbackDB2Routes);
+    const db2Result   = appRoutes.length > 0 ? appRoutes : fallbackDB2Routes;
+    const finalRoutes = [...db2Result, ...crmRoutes.rows];
 
-    res.json({ success: true, data: finalRoutes });
+    res.json({ success: true, data: finalRoutes, db2_count: appRoutes.length, db1_count: crmRoutes.rows.length });
   } catch (err) { next(err); }
 };
+
 
 const createRoute = async (req, res, next) => {
   try {

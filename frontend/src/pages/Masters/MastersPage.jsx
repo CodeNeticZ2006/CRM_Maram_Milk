@@ -191,10 +191,18 @@ function RoutesTab() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [r, b] = await Promise.all([api.get('/masters/routes'), api.get('/masters/branches')]);
-      setItems(r.data.data); setBranches(b.data.data);
-    } catch { toast.error('Failed to load routes.'); }
-    finally { setLoading(false); }
+      // Fetch routes independently so branches failure won't block route display
+      const routeRes = await api.get('/masters/routes');
+      setItems(routeRes.data.data || []);
+      console.log('[Routes] Loaded:', routeRes.data.data?.length, 'routes, DB2:', routeRes.data.db2_count, 'DB1:', routeRes.data.db1_count);
+    } catch (e) {
+      console.error('[Routes] Load error:', e.response?.status, e.response?.data || e.message);
+      toast.error('Failed to load routes from DB2.');
+    } finally {
+      setLoading(false);
+    }
+    // Load branches in background (used only in Add/Edit modal)
+    api.get('/masters/branches').then(b => setBranches(b.data.data || [])).catch(() => {});
   };
   useEffect(() => { fetchAll(); }, []);
 
@@ -210,26 +218,47 @@ function RoutesTab() {
 
   const fields = [
     { key: 'route_name', label: 'Route Name', required: true, placeholder: 'e.g. Salem North Route' },
-    { key: 'branch_id', label: 'Branch', type: 'select', options: [{ value: '', label: '— None —' }, ...branches.map(b => ({ value: b.id, label: b.branch_name }))] },
+    { key: 'branch_id', label: 'Branch', type: 'select', options: [{ value: '', label: '\u2014 None \u2014' }, ...branches.map(b => ({ value: b.id, label: b.branch_name }))] },
     { key: 'status', label: 'Status', type: 'select', options: [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] },
   ];
 
   return (
     <div>
+      <div style={{ background: 'rgba(99,102,241,0.04)', border: '1px solid rgba(99,102,241,0.15)', borderRadius: 10, padding: 12, marginBottom: 14, fontSize: 12.5, color: 'var(--text-secondary)' }}>
+        📡 <strong>Routes fetched live from DB2 (maram_milk_db)</strong> — all active delivery zones from the Manager App, including litres dispatched and petrol allowance per route.
+      </div>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
         <button id="add-route-btn" className="btn btn-primary btn-sm" onClick={() => setModal({ item: null })}><MdAdd /> Add Route</button>
       </div>
       <div className="table-wrapper">
         <table className="table">
-          <thead><tr><th>Route Name</th><th>Branch</th><th>Customers</th><th>Status</th><th></th></tr></thead>
+          <thead>
+            <tr>
+              <th>Route Name</th><th>Zone</th><th>Customers</th><th>Litres Dispatched</th><th>Petrol Allowance</th><th>Status</th><th>Source</th><th></th>
+            </tr>
+          </thead>
           <tbody>
-            {loading ? <tr><td colSpan={5} style={{ textAlign: 'center', padding: 32 }}>Loading...</td></tr> :
+            {loading ? <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32 }}>Loading routes from DB2...</td></tr> :
+              items.length === 0 ? <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No routes found.</td></tr> :
               items.map(item => (
                 <tr key={item.id}>
                   <td style={{ fontWeight: 600 }}>{item.route_name}</td>
-                  <td>{item.branch_name || '—'}</td>
-                  <td><span style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{item.customer_count}</span></td>
+                  <td><span className="badge badge-gray">{item.branch_name || 'Zone A'}</span></td>
+                  <td><span style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{item.customer_count ?? 0}</span></td>
+                  <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{item.litres ?? 0} L</td>
+                  <td>
+                    {item.default_petrol_allowance ? (
+                      <span style={{ background: 'rgba(245,158,11,0.1)', color: '#d97706', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+                        ⛽️ ₹{item.default_petrol_allowance}
+                      </span>
+                    ) : '\u2014'}
+                  </td>
                   <td><span className={`badge ${item.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{item.status}</span></td>
+                  <td>
+                    <span className={`badge ${item.source === 'DB2' ? 'badge-blue' : item.source === 'DB1' ? 'badge-gray' : 'badge-warning'}`} style={{ fontSize: 10 }}>
+                      {item.source === 'DB2' ? '📡 Live DB2' : item.source === 'DB1' ? '🗄️ CRM' : '🔄 Cached'}
+                    </span>
+                  </td>
                   <td><button id={`edit-route-${item.id}`} className="btn btn-ghost btn-sm" onClick={() => setModal({ item })}><MdEdit /></button></td>
                 </tr>
               ))}
@@ -245,17 +274,23 @@ function RoutesTab() {
 
 // ── Manager App Inventory (DB2) Tab ───────────────────────────────
 function InventoryTab() {
+  // Compute IST date so it matches what the mobile app stores in DB2
+  const getISTDateStr = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+  const today = getISTDateStr();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [selectedDate, setSelectedDate] = useState(today);
+  const [availableDates, setAvailableDates] = useState([]);
   const [modalItem, setModalItem] = useState(null);
   const [form, setForm] = useState({ newStockAdded: 0, currentStock: 0 });
   const [saving, setSaving] = useState(false);
 
-  const fetchInventory = async () => {
+  const fetchInventory = async (date) => {
     setLoading(true);
     try {
-      const res = await api.get('/inventory');
+      const res = await api.get('/inventory', { params: { date: date || selectedDate } });
       setItems(res.data.data || []);
+      if (res.data.availableDates?.length) setAvailableDates(res.data.availableDates);
     } catch {
       toast.error('Failed to load DB2 inventory stock.');
     } finally {
@@ -263,7 +298,17 @@ function InventoryTab() {
     }
   };
 
-  useEffect(() => { fetchInventory(); }, []);
+  useEffect(() => {
+    fetchInventory(today);
+    const interval = setInterval(() => fetchInventory(selectedDate), 60000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleDateChange = (e) => {
+    const d = e.target.value;
+    setSelectedDate(d);
+    fetchInventory(d);
+  };
 
   const openUpdateModal = (item) => {
     setModalItem(item);
@@ -276,12 +321,13 @@ function InventoryTab() {
     try {
       await api.post('/inventory/update', {
         inventoryItemId: modalItem.id,
+        date: selectedDate,
         newStockAdded: form.newStockAdded,
         currentStock: form.currentStock,
       });
-      toast.success(`Stock updated in Manager App DB (DB2) for ${modalItem.name}!`);
+      toast.success(`✅ Stock updated in DB2 for ${modalItem.name} on ${selectedDate}!`);
       setModalItem(null);
-      fetchInventory();
+      fetchInventory(selectedDate);
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to update DB2 stock.');
     } finally {
@@ -291,43 +337,66 @@ function InventoryTab() {
 
   return (
     <div>
-      <div style={{ background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: 14, marginBottom: 16 }}>
-        <p style={{ fontSize: 13, color: 'var(--text-secondary)' }}>
-          🛡️ <strong>Super Admin Stock Override (DB2 Integration)</strong> — Stock details are fetched directly from the Manager App DB (DB2 - <code>maram_milk_db</code>). Super Admin has exclusive write permissions to update stock levels in DB2.
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
-        <button className="btn btn-secondary btn-sm" onClick={fetchInventory}><MdRefresh /> Refresh Stock</button>
+      {/* Header bar with date picker */}
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16, flexWrap: 'wrap', gap: 12 }}>
+        <div style={{ background: 'rgba(16,185,129,0.04)', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 10, padding: '10px 16px', flex: 1, fontSize: 13, color: 'var(--text-secondary)' }}>
+          🛡️ <strong>Super Admin Stock Override (DB2 Live)</strong> — Stock from <code>maram_milk_db</code>. Auto-refreshes every 60s.
+        </div>
+        {/* Date Picker */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>🗓️ Date:</label>
+          <input
+            id="inventory-date-picker"
+            type="date"
+            className="form-input"
+            style={{ width: 160 }}
+            value={selectedDate}
+            max={today}
+            onChange={handleDateChange}
+          />
+          {availableDates.length > 0 && (
+            <select id="inventory-date-select" className="form-input" style={{ width: 170 }} value={selectedDate}
+              onChange={e => { setSelectedDate(e.target.value); fetchInventory(e.target.value); }}>
+              {availableDates.map(d => (
+                <option key={d} value={d}>{new Date(d).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</option>
+              ))}
+            </select>
+          )}
+          <button className="btn btn-secondary btn-sm" onClick={() => fetchInventory(selectedDate)} disabled={loading}>
+            <MdRefresh /> {loading ? 'Loading...' : 'Refresh'}
+          </button>
+        </div>
       </div>
 
       <div className="table-wrapper">
         <table className="table">
           <thead>
             <tr>
-              <th>Item Name</th><th>Material / Unit</th><th>Carried Over</th><th>New Stock Added</th><th>Current Available Stock</th><th>Expected Stock</th><th>Super Admin Action</th>
+              <th>Item Name</th><th>Material / Unit</th><th>Carried Over</th><th>New Stock Added</th><th>Current Available</th><th>Expected</th><th>Last Updated</th><th>Action</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32 }}>Loading stock from DB2...</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32 }}>Loading stock from DB2 for {selectedDate}...</td></tr>
             ) : items.length === 0 ? (
-              <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No inventory items found in DB2.</td></tr>
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No inventory records found for {new Date(selectedDate).toLocaleDateString('en-IN')}.</td></tr>
             ) : items.map(item => (
-              <tr key={item.id}>
+              <tr key={item.id} style={{ opacity: item.hasRecord ? 1 : 0.5 }}>
                 <td style={{ fontWeight: 600 }}>{item.name}</td>
-                <td><span className="badge badge-gray">{item.material || 'Milk'} ({item.unit})</span></td>
+                <td><span className="badge badge-gray">{item.material} ({item.unit})</span></td>
                 <td>{item.carriedOverStock} {item.unit}</td>
-                <td style={{ fontWeight: 700, color: 'var(--primary)' }}>+{item.newStockAdded} {item.unit}</td>
-                <td style={{ fontWeight: 800, fontSize: 14, color: 'var(--success)' }}>{item.currentStock} {item.unit}</td>
+                <td style={{ fontWeight: 700, color: item.hasRecord ? 'var(--primary)' : 'var(--text-muted)' }}>+{item.newStockAdded} {item.unit}</td>
+                <td style={{ fontWeight: 800, fontSize: 14, color: item.currentStock > 0 ? 'var(--success)' : (item.hasRecord ? 'var(--danger)' : 'var(--text-muted)') }}>
+                  {item.currentStock} {item.unit}
+                  {!item.hasRecord && <span style={{ fontSize: 10, marginLeft: 4, color: 'var(--text-muted)' }}>(no record)</span>}
+                </td>
                 <td style={{ color: 'var(--text-muted)' }}>{item.expectedStock} {item.unit}</td>
+                <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  {item.updatedAt ? new Date(item.updatedAt).toLocaleString('en-IN', { hour12: true, month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' }) : '—'}
+                </td>
                 <td>
-                  <button
-                    id={`update-stock-${item.id}`}
-                    className="btn btn-primary btn-sm"
-                    onClick={() => openUpdateModal(item)}
-                  >
-                    <MdEdit /> Update Stock (DB2)
+                  <button id={`update-stock-${item.id}`} className="btn btn-primary btn-sm" onClick={() => openUpdateModal(item)}>
+                    <MdEdit /> Update Stock
                   </button>
                 </td>
               </tr>
@@ -342,34 +411,24 @@ function InventoryTab() {
           <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setModalItem(null)}>
             <motion.div className="modal" style={{ maxWidth: 480 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
               <div className="modal-header">
-                <h2 className="modal-title">✏️ Update Stock in DB2 — {modalItem.name}</h2>
+                <h2 className="modal-title">✏️ Update Stock — {modalItem.name} ({modalItem.material}, {modalItem.unit})</h2>
                 <button className="icon-btn" onClick={() => setModalItem(null)}><MdClose /></button>
               </div>
               <form onSubmit={handleUpdate}>
                 <div className="modal-body">
+                  <div style={{ background: 'rgba(16,185,129,0.06)', borderRadius: 8, padding: 10, marginBottom: 14, fontSize: 12.5 }}>
+                    Updating for: <strong>{new Date(selectedDate).toLocaleDateString('en-IN', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' })}</strong><br />
+                    Current stock in DB2: <strong>{modalItem.currentStock} {modalItem.unit}</strong>
+                  </div>
                   <div className="form-group" style={{ marginBottom: 14 }}>
                     <label className="form-label">New Stock Added ({modalItem.unit})</label>
-                    <input
-                      id="input-new-stock"
-                      type="number"
-                      step="any"
-                      className="form-input"
-                      value={form.newStockAdded}
-                      onChange={e => setForm({ ...form, newStockAdded: e.target.value })}
-                      required
-                    />
+                    <input id="input-new-stock" type="number" step="any" min="0" className="form-input"
+                      value={form.newStockAdded} onChange={e => setForm({ ...form, newStockAdded: e.target.value })} required />
                   </div>
                   <div className="form-group">
-                    <label className="form-label">Total Current Stock ({modalItem.unit})</label>
-                    <input
-                      id="input-current-stock"
-                      type="number"
-                      step="any"
-                      className="form-input"
-                      value={form.currentStock}
-                      onChange={e => setForm({ ...form, currentStock: e.target.value })}
-                      required
-                    />
+                    <label className="form-label">Total Current Available Stock ({modalItem.unit})</label>
+                    <input id="input-current-stock" type="number" step="any" min="0" className="form-input"
+                      value={form.currentStock} onChange={e => setForm({ ...form, currentStock: e.target.value })} required />
                   </div>
                 </div>
                 <div className="modal-footer">
