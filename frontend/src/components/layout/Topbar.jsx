@@ -5,6 +5,7 @@ const PAGE_TITLES = {
   '/dashboard': 'Dashboard',
   '/customers': 'Customer CRM',
   '/masters': 'Masters',
+  '/inventory': 'Inventory Management',
   '/subscriptions': 'Subscriptions',
   '/pause': 'Pause Management',
   '/logistics': 'Logistics & Routes',

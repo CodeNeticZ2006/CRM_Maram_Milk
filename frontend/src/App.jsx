@@ -13,6 +13,7 @@ import ForgotPasswordPage from './pages/Auth/ForgotPasswordPage';
 const DashboardPage    = lazy(() => import('./pages/Dashboard/DashboardPage'));
 const CustomersPage    = lazy(() => import('./pages/Customers/CustomersPage'));
 const MastersPage      = lazy(() => import('./pages/Masters/MastersPage'));
+const InventoryPage    = lazy(() => import('./pages/Inventory/InventoryPage'));
 const SubscriptionsPage = lazy(() => import('./pages/Subscriptions/SubscriptionsPage'));
 const PausePage        = lazy(() => import('./pages/Pause/PausePage'));
 const LogisticsPage    = lazy(() => import('./pages/Logistics/LogisticsPage'));
@@ -72,6 +73,9 @@ export default function App() {
           } />
           <Route path="/masters" element={
             <Suspense fallback={<PageLoader />}><MastersPage /></Suspense>
+          } />
+          <Route path="/inventory" element={
+            <Suspense fallback={<PageLoader />}><InventoryPage /></Suspense>
           } />
           <Route path="/subscriptions" element={
             <Suspense fallback={<PageLoader />}><SubscriptionsPage /></Suspense>

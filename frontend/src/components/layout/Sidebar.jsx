@@ -7,7 +7,7 @@ import {
   MdAccountBalanceWallet, MdPayment, MdWhatsapp, MdFeedback,
   MdSms, MdAdminPanelSettings, MdLogout, MdSettings,
   MdMap, MdSatellite, MdHexagon, MdRule, MdHistory, MdInsights,
-  MdTune, MdExpandMore, MdExpandLess,
+  MdTune, MdExpandMore, MdExpandLess, MdInventory,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
@@ -16,6 +16,7 @@ const ROUTE_PERMISSION_MAP = {
   '/dashboard': 'DASHBOARD',
   '/customers': 'CUSTOMERS',
   '/masters': 'MASTERS',
+  '/inventory': 'INVENTORY',
   '/subscriptions': 'SUBSCRIPTIONS',
   '/pause': 'PAUSE_MANAGEMENT',
   '/logistics': 'LOGISTICS',
@@ -58,6 +59,7 @@ const NAV_SECTIONS = [
   {
     label: 'Operations',
     items: [
+      { to: '/inventory', icon: <MdInventory />, label: 'Inventory' },
       { to: '/logistics', icon: <MdLocalShipping />, label: 'Logistics' },
       { to: '/ecom-orders', icon: <MdShoppingCart />, label: 'Ecom Orders' },
     ]

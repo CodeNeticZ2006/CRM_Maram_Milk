@@ -187,6 +187,22 @@ const runMigrations = async () => {
       UNIQUE(product_id, date)
     )`,
 
+    `CREATE TABLE IF NOT EXISTS inventory_history (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      inventory_item_id VARCHAR(100) NOT NULL,
+      product_name VARCHAR(150) NOT NULL,
+      previous_stock DECIMAL(10,3) DEFAULT 0,
+      quantity_added DECIMAL(10,3) NOT NULL,
+      updated_stock DECIMAL(10,3) NOT NULL,
+      unit VARCHAR(50) DEFAULT 'Litres',
+      batch_number VARCHAR(100),
+      supplier VARCHAR(150),
+      action_type VARCHAR(50) DEFAULT 'ADD_STOCK',
+      remarks TEXT,
+      added_by VARCHAR(150) NOT NULL,
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+
     // ── Logistics & Delivery ──────────────────────────────────────────────
     `CREATE TABLE IF NOT EXISTS routes (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
