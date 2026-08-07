@@ -1,35 +1,65 @@
 import { motion } from 'framer-motion';
-import { MdCheckCircle, MdFilterList, MdDownload, MdSearch } from 'react-icons/md';
-import { useState } from 'react';
+import { MdCheckCircle, MdFilterList, MdDownload, MdSearch, MdRefresh } from 'react-icons/md';
+import { useState, useEffect, useCallback } from 'react';
 import { SectionHeader, StatusBadge } from '../components/index.jsx';
+import api from '../../../services/api';
 import { MOCK_COMPLIANCE_ROWS } from '../utils/mockData.js';
 import '../components/RouteIntelligence.css';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
-
 const STATUS_FILTER_OPTIONS = ['All', 'compliant', 'warning', 'deviated', 'review'];
 
 export default function RouteCompliancePage() {
   const [search, setSearch]       = useState('');
   const [statusFilter, setFilter] = useState('All');
+  const [rows, setRows]           = useState(MOCK_COMPLIANCE_ROWS);
+  const [loading, setLoading]     = useState(true);
+  const [isDb2Loaded, setIsDb2Loaded] = useState(false);
 
-  const filtered = MOCK_COMPLIANCE_ROWS.filter(row => {
+  const fetchCompliance = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/route-intelligence/compliance');
+      if (res.data?.success && res.data?.data && res.data.data.length > 0) {
+        setRows(res.data.data);
+        setIsDb2Loaded(true);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to load DB2 Compliance data:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchCompliance();
+  }, [fetchCompliance]);
+
+  const filtered = rows.filter(row => {
     const matchSearch = row.dp.toLowerCase().includes(search.toLowerCase()) ||
                         row.assignedRoute.toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === 'All' || row.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
-  const totalCompliant = MOCK_COMPLIANCE_ROWS.filter(r => r.status === 'compliant').length;
-  const totalDeviated  = MOCK_COMPLIANCE_ROWS.filter(r => r.status === 'deviated').length;
-  const totalWarning   = MOCK_COMPLIANCE_ROWS.filter(r => r.status === 'warning').length;
+  const totalCompliant = rows.filter(r => r.status === 'compliant').length;
+  const totalDeviated  = rows.filter(r => r.status === 'deviated').length;
+  const totalWarning   = rows.filter(r => r.status === 'warning').length;
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
       <SectionHeader
         title="Route Compliance"
-        subtitle="Monitor whether delivery partners are following their assigned routes"
+        subtitle={
+          <span>
+            Monitor whether delivery partners are following their assigned routes
+            {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
+          </span>
+        }
       >
+        <button className="btn btn-secondary btn-sm" onClick={fetchCompliance} disabled={loading}>
+          <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
+        </button>
         <button className="btn btn-secondary btn-sm"><MdDownload /> Export</button>
         <button className="btn btn-primary btn-sm"><MdFilterList /> Filter</button>
       </SectionHeader>
@@ -37,10 +67,10 @@ export default function RouteCompliancePage() {
       {/* Summary KPIs */}
       <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
         {[
-          { label: 'Total Partners',  value: MOCK_COMPLIANCE_ROWS.length, color: 'var(--primary)' },
-          { label: 'Compliant',       value: totalCompliant,              color: 'var(--success)' },
-          { label: 'Warnings',        value: totalWarning,                color: 'var(--warning)' },
-          { label: 'Deviated',        value: totalDeviated,               color: 'var(--danger)'  },
+          { label: 'Total Partners (DB2)', value: rows.length,       color: 'var(--primary)' },
+          { label: 'Compliant',             value: totalCompliant,    color: 'var(--success)' },
+          { label: 'Warnings',              value: totalWarning,      color: 'var(--warning)' },
+          { label: 'Deviated',              value: totalDeviated,     color: 'var(--danger)'  },
         ].map(s => (
           <div key={s.label} className="stat-card" style={{ '--card-accent': s.color }}>
             <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
@@ -83,7 +113,7 @@ export default function RouteCompliancePage() {
       <div className="card">
         <div className="card-header" style={{ paddingBottom: 0 }}>
           <span className="card-title">Compliance Records</span>
-          <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filtered.length} records</span>
+          <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filtered.length} DB2 records</span>
         </div>
         <div className="ri-compliance-wrap">
           <table className="table">

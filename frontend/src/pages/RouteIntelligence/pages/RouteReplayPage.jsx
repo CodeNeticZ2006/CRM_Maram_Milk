@@ -1,10 +1,11 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import {
   MdPlayArrow, MdPause, MdReplay, MdSkipNext, MdSkipPrevious,
-  MdPerson, MdCalendarToday, MdRoute,
+  MdPerson, MdCalendarToday, MdRoute, MdRefresh
 } from 'react-icons/md';
 import { SectionHeader, RouteReplayCard } from '../components/index.jsx';
+import api from '../../../services/api';
 import { MOCK_DELIVERY_PARTNERS, MOCK_REPLAY_EVENTS } from '../utils/mockData.js';
 import {
   LeafletMapContainer, RoutePolyline, CustomerMarker,
@@ -18,16 +19,51 @@ const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 export default function RouteReplayPage() {
   const [isPlaying, setIsPlaying]     = useState(false);
   const [speed, setSpeed]             = useState('1x');
+  const [dpList, setDpList]           = useState(MOCK_DELIVERY_PARTNERS);
   const [selectedDP, setSelectedDP]   = useState(MOCK_DELIVERY_PARTNERS[0].id);
+  const [loading, setLoading]         = useState(true);
+  const [isDb2Loaded, setIsDb2Loaded] = useState(false);
 
-  const dp = MOCK_DELIVERY_PARTNERS.find(d => d.id === selectedDP);
+  const fetchReplayData = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/route-intelligence/replay');
+      if (res.data?.success && res.data?.data?.deliveryPartners?.length > 0) {
+        const db2Dps = res.data.data.deliveryPartners;
+        setDpList(db2Dps);
+        if (db2Dps.length > 0 && !db2Dps.find(d => d.id === selectedDP)) {
+          setSelectedDP(db2Dps[0].id);
+        }
+        setIsDb2Loaded(true);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to fetch DB2 replay list:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [selectedDP]);
+
+  useEffect(() => {
+    fetchReplayData();
+  }, [fetchReplayData]);
+
+  const dp = dpList.find(d => d.id === selectedDP) || dpList[0];
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
       <SectionHeader
         title="Route Replay"
-        subtitle="Replay historical delivery routes with a step-by-step event timeline"
-      />
+        subtitle={
+          <span>
+            Replay historical delivery routes with a step-by-step event timeline
+            {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
+          </span>
+        }
+      >
+        <button className="btn btn-secondary btn-sm" onClick={fetchReplayData} disabled={loading}>
+          <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
+        </button>
+      </SectionHeader>
 
       {/* Controls Bar */}
       <div className="card" style={{ marginBottom: 20 }}>
@@ -42,8 +78,8 @@ export default function RouteReplayPage() {
                 onChange={e => setSelectedDP(e.target.value)}
                 id="ri-replay-dp-select"
               >
-                {MOCK_DELIVERY_PARTNERS.map(d => (
-                  <option key={d.id} value={d.id}>{d.name}</option>
+                {dpList.map(d => (
+                  <option key={d.id} value={d.id}>{d.name} ({d.dpCode || 'DB2'})</option>
                 ))}
               </select>
             </div>
@@ -55,7 +91,7 @@ export default function RouteReplayPage() {
             {/* Route */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 160 }}>
               <MdRoute style={{ color: 'var(--text-muted)', fontSize: 18 }} />
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>{dp?.route}</span>
+              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>{dp?.route || dp?.zone || 'Zone A'}</span>
             </div>
           </div>
         </div>
@@ -141,9 +177,9 @@ export default function RouteReplayPage() {
                   {/* Current Replay Marker */}
                   <DeliveryPartnerMarker
                     partner={{
-                      name: MOCK_REPLAY_GIS_DATA.dpName,
+                      name: dp?.name || MOCK_REPLAY_GIS_DATA.dpName,
                       type: 'Current Position',
-                      route: MOCK_REPLAY_GIS_DATA.route,
+                      route: dp?.route || MOCK_REPLAY_GIS_DATA.route,
                       status: 'active',
                       lat: MOCK_REPLAY_GIS_DATA.currentPos[0],
                       lng: MOCK_REPLAY_GIS_DATA.currentPos[1],

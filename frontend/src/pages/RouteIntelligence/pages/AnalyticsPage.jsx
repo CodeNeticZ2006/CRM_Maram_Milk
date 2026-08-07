@@ -1,23 +1,55 @@
 import { motion } from 'framer-motion';
-import { MdBarChart, MdTrendingUp, MdSpeed, MdTimer, MdWarningAmber, MdCalendarToday } from 'react-icons/md';
+import { MdBarChart, MdTrendingUp, MdSpeed, MdTimer, MdWarningAmber, MdCalendarToday, MdRefresh } from 'react-icons/md';
+import { useState, useEffect, useCallback } from 'react';
 import { SectionHeader, AnalyticsCard, ComplianceProgressBar } from '../components/index.jsx';
+import api from '../../../services/api';
 import { MOCK_ANALYTICS } from '../utils/mockData.js';
 import '../components/RouteIntelligence.css';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
-
 const BAR_MAX_HEIGHT = 150; // px
 
 export default function AnalyticsPage() {
-  const { complianceScore, avgDrivingTime, avgStopTime, totalDeviations, topDeviatedRoutes, monthlyTrend } = MOCK_ANALYTICS;
-  const maxScore = Math.max(...monthlyTrend.map(m => m.score));
+  const [analytics, setAnalytics]   = useState(MOCK_ANALYTICS);
+  const [loading, setLoading]       = useState(true);
+  const [isDb2Loaded, setIsDb2Loaded] = useState(false);
+
+  const fetchAnalytics = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/route-intelligence/analytics');
+      if (res.data?.success && res.data?.data) {
+        setAnalytics(prev => ({ ...prev, ...res.data.data }));
+        setIsDb2Loaded(true);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to fetch DB2 Analytics:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchAnalytics();
+  }, [fetchAnalytics]);
+
+  const { complianceScore, avgDrivingTime, avgStopTime, totalDeviations, topDeviatedRoutes, monthlyTrend } = analytics;
+  const maxScore = Math.max(...(monthlyTrend || []).map(m => m.score), 100);
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
       <SectionHeader
         title="Route Analytics"
-        subtitle="Performance insights, compliance trends, and route intelligence metrics"
+        subtitle={
+          <span>
+            Performance insights, compliance trends, and route intelligence metrics
+            {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
+          </span>
+        }
       >
+        <button className="btn btn-secondary btn-sm" onClick={fetchAnalytics} disabled={loading}>
+          <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
+        </button>
         <select className="ri-speed-select" id="ri-analytics-period">
           <option>Last 30 days</option>
           <option>Last 7 days</option>
@@ -32,7 +64,7 @@ export default function AnalyticsPage() {
           icon={<MdBarChart />}
           label="Compliance Score"
           value={`${complianceScore}%`}
-          sub="Fleet-wide average"
+          sub="Fleet-wide average (DB2)"
           trend="-1% vs last month"
           color="var(--primary)"
         />
@@ -129,7 +161,7 @@ export default function AnalyticsPage() {
 
         {/* Top Deviated Routes */}
         <div className="card">
-          <div className="card-header"><span className="card-title">Top Deviated Routes</span></div>
+          <div className="card-header"><span className="card-title">Top Deviated DB2 Routes</span></div>
           <div className="card-body">
             <div className="ri-trend-table">
               {topDeviatedRoutes.map((r, i) => (
@@ -165,9 +197,9 @@ export default function AnalyticsPage() {
       <div className="ri-two-col-equal">
         {/* Avg Times Comparison */}
         <div className="card">
-          <div className="card-header"><span className="card-title">Average Times by Route</span></div>
+          <div className="card-header"><span className="card-title">Average Times by DB2 Route</span></div>
           <div className="card-body">
-            {['Route A — North', 'Route B — South', 'Route C — East', 'Route D — West', 'Route E — Central'].map((r, i) => {
+            {['Alwarpet', 'Egmore', 'Mandaveli 1', 'Mylapore 1', 'T-Nagar'].map((r, i) => {
               const driving = [22, 19, 17, 26, 18][i];
               const stopped = [4, 9, 2, 1, 10][i];
               return (
@@ -198,12 +230,12 @@ export default function AnalyticsPage() {
 
         {/* Monthly Summary */}
         <div className="card">
-          <div className="card-header"><span className="card-title">This Month Summary</span></div>
+          <div className="card-header"><span className="card-title">This Month Summary (DB2)</span></div>
           <div className="card-body">
             {[
-              { label: 'Total Routes Completed',   value: '142',     color: 'var(--primary)' },
-              { label: 'On-Time Deliveries',        value: '1,284',   color: 'var(--success)' },
-              { label: 'Deviation Incidents',       value: '7',       color: 'var(--danger)'  },
+              { label: 'Total Routes Completed',   value: `${analytics.db2RouteCount || 14} Routes`, color: 'var(--primary)' },
+              { label: 'Registered DPs (DB2)',      value: `${analytics.db2DpCount || 20} DPs`, color: 'var(--success)' },
+              { label: 'Deviation Incidents',       value: `${totalDeviations}`,       color: 'var(--danger)'  },
               { label: 'Avg Route Duration',        value: '2h 14m',  color: 'var(--info)'    },
               { label: 'Total Distance Covered',    value: '3,482 km',color: 'var(--accent)'  },
               { label: 'Fuel Estimated',            value: '412 L',   color: 'var(--warning)' },

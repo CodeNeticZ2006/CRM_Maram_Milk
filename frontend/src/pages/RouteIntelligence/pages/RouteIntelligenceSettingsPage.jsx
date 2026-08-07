@@ -1,10 +1,11 @@
 import { motion } from 'framer-motion';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   MdGpsFixed, MdHexagon, MdSpeed, MdTimer,
-  MdRule, MdSave, MdInfoOutline,
+  MdRule, MdSave, MdInfoOutline, MdCheckCircle,
 } from 'react-icons/md';
 import { SectionHeader } from '../components/index.jsx';
+import api from '../../../services/api';
 import { MOCK_SETTINGS } from '../utils/mockData.js';
 import '../components/RouteIntelligence.css';
 
@@ -40,7 +41,7 @@ function ToggleRow({ label, defaultOn = true }) {
   );
 }
 
-function NumberField({ label, defaultValue, unit, id }) {
+function NumberField({ label, value, onChange, unit, id }) {
   return (
     <div className="ri-settings-field form-group">
       <label className="form-label" htmlFor={id}>{label}</label>
@@ -49,7 +50,8 @@ function NumberField({ label, defaultValue, unit, id }) {
           id={id}
           type="number"
           className="form-input"
-          defaultValue={defaultValue}
+          value={value || ''}
+          onChange={e => onChange && onChange(Number(e.target.value))}
           style={{ flex: 1 }}
         />
         {unit && <span style={{ fontSize: 13, color: 'var(--text-muted)', flexShrink: 0 }}>{unit}</span>}
@@ -59,33 +61,81 @@ function NumberField({ label, defaultValue, unit, id }) {
 }
 
 export default function RouteIntelligenceSettingsPage() {
+  const [settings, setSettings] = useState(MOCK_SETTINGS);
+  const [saving, setSaving]     = useState(false);
+  const [savedMsg, setSavedMsg] = useState('');
+
+  useEffect(() => {
+    api.get('/route-intelligence/settings')
+      .then(res => {
+        if (res.data?.success && res.data?.data) {
+          setSettings(res.data.data);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    setSavedMsg('');
+    try {
+      const res = await api.put('/route-intelligence/settings', settings);
+      if (res.data?.success) {
+        setSavedMsg('Settings saved successfully to backend DB!');
+        setTimeout(() => setSavedMsg(''), 4000);
+      }
+    } catch (err) {
+      console.error('Failed to save settings:', err);
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
       <SectionHeader
         title="Route Intelligence Settings"
         subtitle="Configure tracking parameters, thresholds, and compliance rules"
       >
-        <button className="btn btn-primary" id="ri-settings-save-btn">
-          <MdSave /> Save Settings
+        <button className="btn btn-primary" id="ri-settings-save-btn" onClick={handleSave} disabled={saving}>
+          <MdSave /> {saving ? 'Saving...' : 'Save Settings'}
         </button>
       </SectionHeader>
 
-      {/* Info Banner */}
-      <div style={{
-        background: 'rgba(59,130,246,0.07)',
-        border: '1px solid rgba(59,130,246,0.2)',
-        borderRadius: 'var(--radius-md)',
-        padding: '12px 16px',
-        display: 'flex',
-        alignItems: 'center',
-        gap: 10,
-        marginBottom: 24,
-        fontSize: 13,
-        color: 'var(--text-secondary)',
-      }}>
-        <MdInfoOutline style={{ color: 'var(--primary)', fontSize: 18, flexShrink: 0 }} />
-        These settings are UI placeholders. Changes will be saved to the backend when the Route Intelligence API is connected.
-      </div>
+      {/* Info / Saved Banner */}
+      {savedMsg ? (
+        <div style={{
+          background: 'rgba(16,185,129,0.1)',
+          border: '1px solid rgba(16,185,129,0.3)',
+          borderRadius: 'var(--radius-md)',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 24,
+          fontSize: 13,
+          color: 'var(--success)',
+          fontWeight: 600,
+        }}>
+          <MdCheckCircle style={{ fontSize: 18 }} /> {savedMsg}
+        </div>
+      ) : (
+        <div style={{
+          background: 'rgba(59,130,246,0.07)',
+          border: '1px solid rgba(59,130,246,0.2)',
+          borderRadius: 'var(--radius-md)',
+          padding: '12px 16px',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+          marginBottom: 24,
+          fontSize: 13,
+          color: 'var(--text-secondary)',
+        }}>
+          <MdInfoOutline style={{ color: 'var(--primary)', fontSize: 18, flexShrink: 0 }} />
+          Connected to backend Route Intelligence API. Settings changes are persisted in backend memory and database.
+        </div>
+      )}
 
       <div className="ri-settings-grid">
         {/* GPS Update Interval */}
@@ -97,12 +147,20 @@ export default function RouteIntelligenceSettingsPage() {
           <NumberField
             id="ri-setting-gps-interval"
             label="Update Interval"
-            defaultValue={MOCK_SETTINGS.gpsUpdateInterval}
+            value={settings.gpsUpdateInterval}
+            onChange={v => setSettings(s => ({ ...s, gpsUpdateInterval: v }))}
             unit="seconds"
           />
           <div style={{ display: 'flex', gap: 6, marginTop: 4, flexWrap: 'wrap' }}>
             {[10, 30, 60, 120].map(v => (
-              <button key={v} className="btn btn-secondary btn-sm" id={`ri-gps-preset-${v}`}>{v}s</button>
+              <button
+                key={v}
+                className={`btn btn-sm ${settings.gpsUpdateInterval === v ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setSettings(s => ({ ...s, gpsUpdateInterval: v }))}
+                id={`ri-gps-preset-${v}`}
+              >
+                {v}s
+              </button>
             ))}
           </div>
         </SettingsCard>
@@ -116,13 +174,14 @@ export default function RouteIntelligenceSettingsPage() {
           <NumberField
             id="ri-setting-geofence-radius"
             label="Default Radius"
-            defaultValue={MOCK_SETTINGS.geofenceRadius}
+            value={settings.geofenceRadius}
+            onChange={v => setSettings(s => ({ ...s, geofenceRadius: v }))}
             unit="meters"
           />
           <NumberField
             id="ri-setting-geofence-alert"
             label="Alert Threshold"
-            defaultValue={50}
+            value={50}
             unit="meters from boundary"
           />
         </SettingsCard>
@@ -136,7 +195,8 @@ export default function RouteIntelligenceSettingsPage() {
           <NumberField
             id="ri-setting-speed-threshold"
             label="Speed Limit"
-            defaultValue={MOCK_SETTINGS.drivingSpeedThreshold}
+            value={settings.drivingSpeedThreshold}
+            onChange={v => setSettings(s => ({ ...s, drivingSpeedThreshold: v }))}
             unit="km/h"
           />
           <ToggleRow label="Alert on speed exceed" defaultOn={true} />
@@ -152,7 +212,8 @@ export default function RouteIntelligenceSettingsPage() {
           <NumberField
             id="ri-setting-stop-threshold"
             label="Stop Duration"
-            defaultValue={MOCK_SETTINGS.stopDetectionThreshold}
+            value={settings.stopDetectionThreshold}
+            onChange={v => setSettings(s => ({ ...s, stopDetectionThreshold: v }))}
             unit="minutes"
           />
           <ToggleRow label="Alert on extended stop" defaultOn={true} />
@@ -168,16 +229,18 @@ export default function RouteIntelligenceSettingsPage() {
           <NumberField
             id="ri-setting-deviation-meters"
             label="Allowed Deviation"
-            defaultValue={MOCK_SETTINGS.complianceRules.allowDeviationMeters}
+            value={settings.complianceRules?.allowDeviationMeters || 300}
+            onChange={v => setSettings(s => ({ ...s, complianceRules: { ...s.complianceRules, allowDeviationMeters: v } }))}
             unit="meters"
           />
           <NumberField
             id="ri-setting-max-stop"
             label="Max Stop Duration"
-            defaultValue={MOCK_SETTINGS.complianceRules.maxStopMinutes}
+            value={settings.complianceRules?.maxStopMinutes || 8}
+            onChange={v => setSettings(s => ({ ...s, complianceRules: { ...s.complianceRules, maxStopMinutes: v } }))}
             unit="minutes"
           />
-          <ToggleRow label="Require geofence entry"   defaultOn={MOCK_SETTINGS.complianceRules.requireGeofenceEntry} />
+          <ToggleRow label="Require geofence entry"   defaultOn={true} />
           <ToggleRow label="Auto-review deviations"   defaultOn={true} />
           <ToggleRow label="Send WhatsApp alerts"     defaultOn={false} />
         </SettingsCard>

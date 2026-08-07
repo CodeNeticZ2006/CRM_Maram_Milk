@@ -1,6 +1,8 @@
 import { motion } from 'framer-motion';
-import { MdHexagon, MdLogin, MdLogout, MdBolt, MdAdd } from 'react-icons/md';
+import { MdHexagon, MdLogin, MdLogout, MdBolt, MdAdd, MdRefresh } from 'react-icons/md';
+import { useState, useEffect, useCallback } from 'react';
 import { SectionHeader, AnalyticsCard, StatusBadge, EventSeverityIcon } from '../components/index.jsx';
+import api from '../../../services/api';
 import { MOCK_GEOFENCES, MOCK_TERRITORIES, MOCK_LIVE_EVENTS } from '../utils/mockData.js';
 import {
   LeafletMapContainer, RoutePolygon, DeliveryPartnerMarker,
@@ -18,17 +20,48 @@ const GEOFENCE_TYPE_META = {
 };
 
 export default function GeofencingPage() {
-  const totalEntries  = MOCK_GEOFENCES.reduce((a, g) => a + g.entries, 0);
-  const totalExits    = MOCK_GEOFENCES.reduce((a, g) => a + g.exits, 0);
-  const activeGf      = MOCK_GEOFENCES.filter(g => g.status === 'active').length;
+  const [geofences, setGeofences]     = useState(MOCK_GEOFENCES);
+  const [loading, setLoading]         = useState(true);
+  const [isDb2Loaded, setIsDb2Loaded] = useState(false);
+
+  const fetchGeofences = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await api.get('/route-intelligence/geofences');
+      if (res.data?.success && res.data?.data && res.data.data.length > 0) {
+        setGeofences(res.data.data);
+        setIsDb2Loaded(true);
+      }
+    } catch (err) {
+      console.warn('⚠️ Failed to fetch DB2 geofences:', err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchGeofences();
+  }, [fetchGeofences]);
+
+  const totalEntries  = geofences.reduce((a, g) => a + (g.entries || 0), 0);
+  const totalExits    = geofences.reduce((a, g) => a + (g.exits || 0), 0);
+  const activeGf      = geofences.filter(g => g.status === 'active').length;
   const assignedTerr  = MOCK_TERRITORIES.filter(t => t.status !== 'inactive').length;
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
       <SectionHeader
         title="Geofencing"
-        subtitle="Configure and monitor geofence boundaries for all territories and depots"
+        subtitle={
+          <span>
+            Configure and monitor geofence boundaries for all territories and depots
+            {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
+          </span>
+        }
       >
+        <button className="btn btn-secondary btn-sm" onClick={fetchGeofences} disabled={loading}>
+          <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
+        </button>
         <button className="btn btn-primary btn-sm" id="ri-add-geofence-btn">
           <MdAdd /> New Geofence
         </button>
@@ -36,7 +69,7 @@ export default function GeofencingPage() {
 
       {/* KPI Cards */}
       <div className="ri-stat-grid-4">
-        <AnalyticsCard icon={<MdHexagon />}  label="Assigned Territories" value={assignedTerr}  color="var(--primary)" />
+        <AnalyticsCard icon={<MdHexagon />}  label="Assigned DB2 Routes" value={geofences.length} color="var(--primary)" />
         <AnalyticsCard icon={<MdBolt />}     label="Active Geofences"     value={activeGf}       color="var(--success)" />
         <AnalyticsCard icon={<MdLogin />}    label="Today's Entries"      value={totalEntries}   color="var(--info)"    />
         <AnalyticsCard icon={<MdLogout />}   label="Today's Exits"        value={totalExits}     color="var(--accent)"  />
@@ -89,12 +122,12 @@ export default function GeofencingPage() {
 
         <div className="card">
           <div className="card-header" style={{ paddingBottom: 16 }}>
-            <span className="card-title">Configured Geofences</span>
+            <span className="card-title">Configured DB2 Geofences</span>
             <button className="btn btn-secondary btn-sm"><MdAdd /></button>
           </div>
           <div className="card-body" style={{ padding: '0 16px 16px' }}>
             <div className="ri-geofence-list">
-              {MOCK_GEOFENCES.map(gf => {
+              {geofences.map(gf => {
                 const meta = GEOFENCE_TYPE_META[gf.type] || GEOFENCE_TYPE_META.route;
                 return (
                   <div key={gf.id} className="ri-geofence-item">
@@ -129,7 +162,7 @@ export default function GeofencingPage() {
           <span className="card-title">Live Geofence Events</span>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span className="ri-live-dot" />
-            <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>LIVE</span>
+            <span style={{ fontSize: 12, color: 'var(--success)', fontWeight: 600 }}>LIVE (DB2)</span>
           </div>
         </div>
         <div className="card-body">

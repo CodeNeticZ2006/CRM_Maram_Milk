@@ -21,6 +21,7 @@ const whatsappRoutes      = require('./routes/whatsapp.routes');
 const reportsRoutes       = require('./routes/reports.routes');
 const accessControlRoutes = require('./routes/accessControl.routes');
 const inventoryRoutes     = require('./routes/inventory.routes');
+const routeIntelligenceRoutes = require('./routes/routeIntelligence.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -80,6 +81,7 @@ app.use('/api/whatsapp',      whatsappRoutes);
 app.use('/api/reports',       reportsRoutes);
 app.use('/api/access-control', accessControlRoutes);
 app.use('/api/inventory',      inventoryRoutes);
+app.use('/api/route-intelligence', routeIntelligenceRoutes);
 
 // 404 handler
 app.use((req, res) => {
