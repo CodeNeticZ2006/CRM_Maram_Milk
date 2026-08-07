@@ -201,6 +201,35 @@ img { max-width: 100%; display: block; }
 
 .nav-item.active .nav-icon { opacity: 1; }
 
+/* Collapsible group button (Route Intelligence) */
+.nav-section-group-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 20px;
+  width: 100%;
+  background: rgba(59,130,246,0.08);
+  border: none;
+  border-left: 3px solid var(--primary);
+  color: var(--sidebar-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  text-align: left;
+  margin-bottom: 2px;
+}
+.nav-section-group-btn:hover {
+  background: rgba(59,130,246,0.15);
+  color: #fff;
+}
+
+/* Indented submenu items */
+.nav-item-sub {
+  padding-left: 36px;
+  font-size: 13px;
+}
+
 .nav-badge {
   margin-left: auto;
   background: var(--danger);

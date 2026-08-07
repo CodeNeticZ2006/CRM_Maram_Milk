@@ -27,6 +27,15 @@ const SmsPage          = lazy(() => import('./pages/Sms/SmsPage'));
 const AccessControlPage = lazy(() => import('./pages/AccessControl/AccessControlPage'));
 const SettingsPage     = lazy(() => import('./pages/Settings/SettingsPage'));
 
+// Route Intelligence Module
+const LiveOperationsPage            = lazy(() => import('./pages/RouteIntelligence/pages/LiveOperationsPage'));
+const TerritoryMonitoringPage       = lazy(() => import('./pages/RouteIntelligence/pages/TerritoryMonitoringPage'));
+const GeofencingPage                = lazy(() => import('./pages/RouteIntelligence/pages/GeofencingPage'));
+const RouteCompliancePage           = lazy(() => import('./pages/RouteIntelligence/pages/RouteCompliancePage'));
+const RouteReplayPage               = lazy(() => import('./pages/RouteIntelligence/pages/RouteReplayPage'));
+const RIAnalyticsPage               = lazy(() => import('./pages/RouteIntelligence/pages/AnalyticsPage'));
+const RouteIntelligenceSettingsPage = lazy(() => import('./pages/RouteIntelligence/pages/RouteIntelligenceSettingsPage'));
+
 // Page loader fallback
 function PageLoader() {
   return (
@@ -102,6 +111,29 @@ export default function App() {
           } />
           <Route path="/settings" element={
             <Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>
+          } />
+
+          {/* ── Route Intelligence Module ─────────────────────────── */}
+          <Route path="/route-intelligence/live" element={
+            <Suspense fallback={<PageLoader />}><LiveOperationsPage /></Suspense>
+          } />
+          <Route path="/route-intelligence/territories" element={
+            <Suspense fallback={<PageLoader />}><TerritoryMonitoringPage /></Suspense>
+          } />
+          <Route path="/route-intelligence/geofencing" element={
+            <Suspense fallback={<PageLoader />}><GeofencingPage /></Suspense>
+          } />
+          <Route path="/route-intelligence/compliance" element={
+            <Suspense fallback={<PageLoader />}><RouteCompliancePage /></Suspense>
+          } />
+          <Route path="/route-intelligence/replay" element={
+            <Suspense fallback={<PageLoader />}><RouteReplayPage /></Suspense>
+          } />
+          <Route path="/route-intelligence/analytics" element={
+            <Suspense fallback={<PageLoader />}><RIAnalyticsPage /></Suspense>
+          } />
+          <Route path="/route-intelligence/settings" element={
+            <Suspense fallback={<PageLoader />}><RouteIntelligenceSettingsPage /></Suspense>
           } />
         </Route>
 

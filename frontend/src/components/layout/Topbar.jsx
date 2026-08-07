@@ -18,6 +18,14 @@ const PAGE_TITLES = {
   '/sms': 'SMS / Notifications',
   '/access-control': 'User Access Control',
   '/settings': 'Settings',
+  // Route Intelligence
+  '/route-intelligence/live':        '📍 Live Operations',
+  '/route-intelligence/territories':  '📍 Territory Monitoring',
+  '/route-intelligence/geofencing':   '📍 Geofencing',
+  '/route-intelligence/compliance':   '📍 Route Compliance',
+  '/route-intelligence/replay':       '📍 Route Replay',
+  '/route-intelligence/analytics':    '📍 Route Analytics',
+  '/route-intelligence/settings':     '📍 Route Intelligence Settings',
 };
 
 export default function Topbar() {

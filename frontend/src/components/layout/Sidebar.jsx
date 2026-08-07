@@ -1,10 +1,13 @@
 import { NavLink, useNavigate } from 'react-router-dom';
-import { motion } from 'framer-motion';
+import { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import {
   MdDashboard, MdPeople, MdCategory, MdLocalShipping, MdPause,
   MdSubscriptions, MdShoppingCart, MdBarChart, MdTrendingUp,
   MdAccountBalanceWallet, MdPayment, MdWhatsapp, MdFeedback,
-  MdSms, MdAdminPanelSettings, MdLogout, MdSettings
+  MdSms, MdAdminPanelSettings, MdLogout, MdSettings,
+  MdMap, MdSatellite, MdHexagon, MdRule, MdHistory, MdInsights,
+  MdTune, MdExpandMore, MdExpandLess,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
@@ -26,6 +29,14 @@ const ROUTE_PERMISSION_MAP = {
   '/sms': 'SMS',
   '/access-control': 'ACCESS_CONTROL',
   '/settings': 'SETTINGS',
+  // Route Intelligence — always visible to SuperAdmin
+  '/route-intelligence/live':        'ROUTE_INTELLIGENCE',
+  '/route-intelligence/territories':  'ROUTE_INTELLIGENCE',
+  '/route-intelligence/geofencing':   'ROUTE_INTELLIGENCE',
+  '/route-intelligence/compliance':   'ROUTE_INTELLIGENCE',
+  '/route-intelligence/replay':       'ROUTE_INTELLIGENCE',
+  '/route-intelligence/analytics':    'ROUTE_INTELLIGENCE',
+  '/route-intelligence/settings':     'ROUTE_INTELLIGENCE',
 };
 
 const NAV_SECTIONS = [
@@ -74,12 +85,29 @@ const NAV_SECTIONS = [
       { to: '/access-control', icon: <MdAdminPanelSettings />, label: 'User Access Control' },
       { to: '/settings', icon: <MdSettings />, label: 'Settings' },
     ]
+  },
+  {
+    label: 'Route Intelligence',
+    isGroup: true,
+    groupIcon: <MdMap />,
+    items: [
+      { to: '/route-intelligence/live',        icon: <MdSatellite />,  label: 'Live Operations'    },
+      { to: '/route-intelligence/territories',  icon: <MdMap />,        label: 'Territory Monitoring'},
+      { to: '/route-intelligence/geofencing',   icon: <MdHexagon />,    label: 'Geofencing'          },
+      { to: '/route-intelligence/compliance',   icon: <MdRule />,       label: 'Route Compliance'    },
+      { to: '/route-intelligence/replay',       icon: <MdHistory />,    label: 'Route Replay'        },
+      { to: '/route-intelligence/analytics',    icon: <MdInsights />,   label: 'Analytics'           },
+      { to: '/route-intelligence/settings',     icon: <MdTune />,       label: 'Settings'            },
+    ]
   }
 ];
 
 export default function Sidebar({ pendingCount }) {
   const { admin, logout } = useAuthStore();
   const navigate = useNavigate();
+  const [openGroups, setOpenGroups] = useState({ 'Route Intelligence': true });
+
+  const toggleGroup = (label) => setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
 
   const handleLogout = () => {
     logout();
@@ -127,18 +155,59 @@ export default function Sidebar({ pendingCount }) {
       <nav className="sidebar-nav">
         {filteredSections.map((section) => (
           <div className="nav-section" key={section.label}>
-            <div className="nav-section-label">{section.label}</div>
-            {section.items.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
-              >
-                <span className="nav-icon">{item.icon}</span>
-                {item.label}
-                {item.badge && <span className="nav-badge">{item.badge}</span>}
-              </NavLink>
-            ))}
+            {section.isGroup ? (
+              /* Collapsible group header for Route Intelligence */
+              <>
+                <button
+                  className="nav-section-group-btn"
+                  onClick={() => toggleGroup(section.label)}
+                  id={`sidebar-group-${section.label.replace(/\s/g,'-').toLowerCase()}`}
+                >
+                  <span className="nav-icon" style={{ fontSize: 16, color: 'var(--primary)' }}>{section.groupIcon}</span>
+                  <span style={{ flex: 1, fontSize: 12, fontWeight: 600, letterSpacing: '0.4px', color: '#fff' }}>{section.label}</span>
+                  {openGroups[section.label] ? <MdExpandLess style={{ fontSize: 16 }} /> : <MdExpandMore style={{ fontSize: 16 }} />}
+                </button>
+                <AnimatePresence initial={false}>
+                  {openGroups[section.label] && (
+                    <motion.div
+                      key="ri-submenu"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: 'auto', opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={{ duration: 0.2 }}
+                      style={{ overflow: 'hidden' }}
+                    >
+                      {section.items.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
+                        >
+                          <span className="nav-icon">{item.icon}</span>
+                          {item.label}
+                        </NavLink>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </>
+            ) : (
+              /* Regular section */
+              <>
+                <div className="nav-section-label">{section.label}</div>
+                {section.items.map((item) => (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
+                  >
+                    <span className="nav-icon">{item.icon}</span>
+                    {item.label}
+                    {item.badge && <span className="nav-badge">{item.badge}</span>}
+                  </NavLink>
+                ))}
+              </>
+            )}
           </div>
         ))}
       </nav>

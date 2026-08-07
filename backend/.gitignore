@@ -10,6 +10,7 @@ npm-debug.log*
 .cache/
 coverage/
 *.tsbuildinfo
+test_db.js
 
 # Temporary utility scripts
 src/utils/update_admin.js

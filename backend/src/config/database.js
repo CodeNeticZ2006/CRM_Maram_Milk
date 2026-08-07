@@ -6,7 +6,9 @@ require('dotenv').config();
 // ================================================
 const crmPool = new Pool({
   connectionString: process.env.CRM_DB_URL,
-  ssl: { rejectUnauthorized: false },
+  ssl: process.env.CRM_DB_URL && (process.env.CRM_DB_URL.includes('localhost') || process.env.CRM_DB_URL.includes('127.0.0.1'))
+    ? false
+    : { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
@@ -17,7 +19,9 @@ const crmPool = new Pool({
 // ================================================
 const appPool = new Pool({
   connectionString: process.env.APP_DB_URL,
-  ssl: { rejectUnauthorized: true },
+  ssl: process.env.APP_DB_URL && (process.env.APP_DB_URL.includes('localhost') || process.env.APP_DB_URL.includes('127.0.0.1'))
+    ? false
+    : { rejectUnauthorized: true },
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 10000,
