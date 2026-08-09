@@ -7,6 +7,7 @@ const {
   correctStock,
   getStockHistory,
   getLowStockItems,
+  getDpAttendanceAudit,
   updateInventory,
 } = require('../controllers/inventory.controller');
 
@@ -15,6 +16,7 @@ router.use(authenticate);
 router.get('/',               getInventory);
 router.get('/history',        getStockHistory);
 router.get('/low-stock',      getLowStockItems);
+router.get('/dp-attendance',  getDpAttendanceAudit);
 
 // Write / Stock Addition endpoints (Super Admin / Write permission required)
 router.post('/add-stock',     requirePermission('INVENTORY', true), addStock);

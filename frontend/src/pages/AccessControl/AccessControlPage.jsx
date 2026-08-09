@@ -2,7 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MdAdd, MdClose, MdSecurity, MdVpnKey, MdCheckCircle, MdPersonAdd,
-  MdPhone, MdEmail, MdRefresh, MdShield, MdSupervisorAccount, MdLocalShipping, MdLock
+  MdPhone, MdEmail, MdRefresh, MdShield, MdSupervisorAccount,
+  MdLocalShipping, MdLock, MdPhoneIphone, MdTwoWheeler, MdWorkspacePremium, MdFlashOn
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -56,7 +57,9 @@ function CreateUserModal({ onClose, onCreated }) {
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div className="modal" style={{ maxWidth: 640 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
         <div className="modal-header">
-          <h2 className="modal-title">➕ Create User / Manager Account</h2>
+          <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <MdPersonAdd /> Create User / Manager Account
+          </h2>
           <button className="icon-btn" onClick={onClose}><MdClose /></button>
         </div>
         <form onSubmit={handleSubmit}>
@@ -119,8 +122,8 @@ function CreateUserModal({ onClose, onCreated }) {
 
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button id="save-user-account-btn" type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? <span className="loading-spinner" /> : '✅ Create Account'}
+            <button id="save-user-account-btn" type="submit" className="btn btn-primary" disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+              {loading ? <span className="loading-spinner" /> : <><MdCheckCircle /> Create Account</>}
             </button>
           </div>
         </form>
@@ -205,10 +208,10 @@ export default function AccessControlPage() {
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ display: 'flex', borderBottom: '1px solid var(--border)', flexWrap: 'wrap' }}>
           {[
-            { id: 'crm_users', label: '🛡️ CRM & Super Admins (DB1)', count: crmUsers.length + 1 },
-            { id: 'manager_app', label: '📱 Manager App Users (DB2)', count: managerUsers.length },
-            { id: 'delivery_persons', label: '🛵 Delivery Persons / DPs (DB2)', count: deliveryPersons.length },
-            { id: 'demo_credentials', label: '🔑 Demo Credentials & Roles', count: 3 },
+            { id: 'crm_users', icon: <MdSecurity />, label: 'CRM & Super Admins (DB1)', count: crmUsers.length + 1 },
+            { id: 'manager_app', icon: <MdPhoneIphone />, label: 'Manager App Users (DB2)', count: managerUsers.length },
+            { id: 'delivery_persons', icon: <MdTwoWheeler />, label: 'Delivery Persons / DPs (DB2)', count: deliveryPersons.length },
+            { id: 'demo_credentials', icon: <MdVpnKey />, label: 'Demo Credentials & Roles', count: 3 },
           ].map(tab => (
             <button
               key={tab.id}
@@ -222,6 +225,7 @@ export default function AccessControlPage() {
                 marginBottom: -1,
               }}
             >
+              {tab.icon}
               {tab.label}
               <span style={{ background: activeTab === tab.id ? 'var(--primary)' : 'var(--border)', color: activeTab === tab.id ? '#fff' : 'var(--text-secondary)', padding: '2px 8px', borderRadius: 12, fontSize: 11 }}>
                 {tab.count}
@@ -239,7 +243,6 @@ export default function AccessControlPage() {
                   <tr><th>User Name</th><th>Role</th><th>Email</th><th>Access Level</th><th>Status</th><th>Last Login</th></tr>
                 </thead>
                 <tbody>
-                  {/* Default Super Admin */}
                   <tr>
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -252,11 +255,10 @@ export default function AccessControlPage() {
                     </td>
                     <td><span className="badge badge-success">Super Admin</span></td>
                     <td style={{ fontSize: 13, fontFamily: 'monospace' }}>admin@marammilk.com</td>
-                    <td><span style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700 }}>⚡ FULL_CONTROL (ALL_MODULES)</span></td>
-                    <td><span className="badge badge-success"><MdCheckCircle /> Active</span></td>
+                    <td><span style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '3px 10px', borderRadius: 20, fontSize: 11, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}><MdFlashOn /> FULL_CONTROL (ALL_MODULES)</span></td>
+                    <td><span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><MdCheckCircle /> Active</span></td>
                     <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>Active Session</td>
                   </tr>
-                  {/* Dynamically Created CRM Users */}
                   {crmUsers.map(u => (
                     <tr key={u.id}>
                       <td>
@@ -336,7 +338,8 @@ export default function AccessControlPage() {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
                 {[
                   {
-                    title: '👑 Super Admin (Full Web Access)',
+                    icon: <MdWorkspacePremium />,
+                    title: 'Super Admin (Full Web Access)',
                     email: 'admin@marammilk.com',
                     pass: 'Sarfaz@marammilk',
                     role: 'Super Admin',
@@ -345,7 +348,8 @@ export default function AccessControlPage() {
                     bg: 'rgba(16,185,129,0.06)'
                   },
                   {
-                    title: '🏢 Branch Manager Demo',
+                    icon: <MdSupervisorAccount />,
+                    title: 'Branch Manager Demo',
                     email: 'manager@marammilk.com',
                     pass: 'Manager@2026',
                     role: 'Manager',
@@ -354,7 +358,8 @@ export default function AccessControlPage() {
                     bg: 'rgba(59,130,246,0.06)'
                   },
                   {
-                    title: '👀 Demo Read-Only Account',
+                    icon: <MdSecurity />,
+                    title: 'Demo Read-Only Account',
                     email: 'demo@marammilk.com',
                     pass: 'Demo@2026',
                     role: 'Demo User',
@@ -365,7 +370,9 @@ export default function AccessControlPage() {
                 ].map(cred => (
                   <div key={cred.title} className="card" style={{ background: cred.bg, borderColor: cred.color + '30' }}>
                     <div className="card-body">
-                      <div style={{ fontWeight: 700, fontSize: 15, color: cred.color, marginBottom: 8 }}>{cred.title}</div>
+                      <div style={{ fontWeight: 700, fontSize: 15, color: cred.color, marginBottom: 8, display: 'flex', alignItems: 'center', gap: 6 }}>
+                        {cred.icon} {cred.title}
+                      </div>
                       <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 12 }}>{cred.access}</div>
                       <div style={{ background: 'var(--bg-main)', padding: 12, borderRadius: 8, border: '1px solid var(--border)', fontSize: 12 }}>
                         <div><span style={{ color: 'var(--text-muted)' }}>Email: </span><strong style={{ fontFamily: 'monospace', color: 'var(--primary)' }}>{cred.email}</strong></div>

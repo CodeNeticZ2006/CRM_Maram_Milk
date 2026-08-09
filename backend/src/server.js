@@ -22,6 +22,7 @@ const reportsRoutes       = require('./routes/reports.routes');
 const accessControlRoutes = require('./routes/accessControl.routes');
 const inventoryRoutes     = require('./routes/inventory.routes');
 const routeIntelligenceRoutes = require('./routes/routeIntelligence.routes');
+const emptyBottlesRoutes  = require('./routes/emptyBottles.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -82,6 +83,7 @@ app.use('/api/reports',       reportsRoutes);
 app.use('/api/access-control', accessControlRoutes);
 app.use('/api/inventory',      inventoryRoutes);
 app.use('/api/route-intelligence', routeIntelligenceRoutes);
+app.use('/api/empty-bottles',  emptyBottlesRoutes);
 
 // 404 handler
 app.use((req, res) => {

@@ -366,6 +366,37 @@ const runMigrations = async () => {
       created_at TIMESTAMPTZ DEFAULT NOW()
     )`,
 
+    `CREATE TABLE IF NOT EXISTS empty_bottle_incidents (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      date DATE NOT NULL DEFAULT CURRENT_DATE,
+      dp_ref_id VARCHAR(100) NOT NULL,
+      dp_name VARCHAR(100) NOT NULL,
+      route_name VARCHAR(100),
+      bottle_type VARCHAR(30) DEFAULT '1 Litre Bottle',
+      broken_count INTEGER DEFAULT 0,
+      missing_count INTEGER DEFAULT 0,
+      manager_notes TEXT,
+      raised_by VARCHAR(100) DEFAULT 'Manager App',
+      status VARCHAR(30) DEFAULT 'Pending Review',
+      resolution_notes TEXT,
+      resolved_by VARCHAR(100),
+      created_at TIMESTAMPTZ DEFAULT NOW()
+    )`,
+
+    `CREATE TABLE IF NOT EXISTS dp_attendance_logs (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      dp_ref_id VARCHAR(100) NOT NULL,
+      dp_name VARCHAR(100) NOT NULL,
+      date DATE NOT NULL,
+      status VARCHAR(20) DEFAULT 'Present' CHECK (status IN ('Present','Absent','Leave','Half Day')),
+      checkin_time TIMESTAMPTZ,
+      checkout_time TIMESTAMPTZ,
+      route_name VARCHAR(100),
+      notes TEXT,
+      created_at TIMESTAMPTZ DEFAULT NOW(),
+      UNIQUE(dp_ref_id, date)
+    )`,
+
     `CREATE TABLE IF NOT EXISTS feedback (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       customer_id UUID REFERENCES customers(id),

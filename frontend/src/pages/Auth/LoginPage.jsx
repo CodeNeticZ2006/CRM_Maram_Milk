@@ -1,7 +1,10 @@
 import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { MdEmail, MdLock, MdVisibility, MdVisibilityOff } from 'react-icons/md';
-import { FaDroplet } from 'react-icons/fa6';
+import {
+  MdEmail, MdLock, MdVisibility, MdVisibilityOff,
+  MdLocalDrink, MdBarChart, MdRoute, MdPayment,
+  MdWhatsapp, MdSecurity
+} from 'react-icons/md';
 import { motion } from 'framer-motion';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
@@ -25,7 +28,7 @@ export default function LoginPage() {
     if (!cleanEmail || !cleanPass) return toast.error('Please fill in all fields');
     const result = await login(cleanEmail, cleanPass);
     if (result.success) {
-      toast.success('Welcome back! 👋');
+      toast.success('Welcome back!');
       navigate('/dashboard');
     } else {
       toast.error(result.message);
@@ -37,19 +40,21 @@ export default function LoginPage() {
       {/* Left Panel */}
       <div className="auth-left">
         <div className="auth-brand">
-          <div className="auth-brand-icon">🥛</div>
+          <div className="auth-brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MdLocalDrink style={{ fontSize: 24, color: '#fff' }} />
+          </div>
           <div className="auth-brand-name">Maram Milk</div>
           <div className="auth-brand-sub">Super Admin Control Center</div>
         </div>
         <div className="auth-features">
           {[
-            { icon: '📊', title: 'Complete Dashboard', desc: 'Real-time stats, wallet analytics, delivery tracking' },
-            { icon: '🛣️', title: 'Route Optimization', desc: 'OSRM-powered smart delivery route planning' },
-            { icon: '💳', title: 'Secure Payments', desc: 'WhatsApp Pay, Razorpay, UPI — all in one place' },
-            { icon: '📱', title: 'WhatsApp Operations', desc: 'Manage customer requests directly from the CRM' },
+            { icon: <MdBarChart />, title: 'Complete Dashboard', desc: 'Real-time stats, wallet analytics, delivery tracking' },
+            { icon: <MdRoute />, title: 'Route Optimization', desc: 'OSRM-powered smart delivery route planning' },
+            { icon: <MdPayment />, title: 'Secure Payments', desc: 'WhatsApp Pay, Razorpay, UPI — all in one place' },
+            { icon: <MdWhatsapp />, title: 'WhatsApp Operations', desc: 'Manage customer requests directly from the CRM' },
           ].map((f) => (
             <div className="auth-feature" key={f.title}>
-              <div className="auth-feature-icon">{f.icon}</div>
+              <div className="auth-feature-icon" style={{ fontSize: 20, color: 'var(--primary)' }}>{f.icon}</div>
               <div className="auth-feature-text">
                 <h4>{f.title}</h4>
                 <p>{f.desc}</p>
@@ -67,7 +72,7 @@ export default function LoginPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
         >
-          <h1 className="auth-card-title">Welcome back 👋</h1>
+          <h1 className="auth-card-title">Welcome Back</h1>
           <p className="auth-card-sub">Sign in to your Super Admin account</p>
 
           <form onSubmit={handleSubmit}>
@@ -117,14 +122,15 @@ export default function LoginPage() {
               type="submit"
               className="btn btn-primary w-full btn-lg"
               disabled={loading}
+              style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}
             >
-              {loading ? <span className="loading-spinner" /> : '🔐 Sign In'}
+              <MdLock /> {loading ? 'Signing In...' : 'Sign In'}
             </button>
           </form>
 
           <div className="auth-divider" />
-          <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center' }}>
-            🛡️ Secured with JWT authentication · Maram Milk CRM v1.0
+          <p style={{ fontSize: 12, color: 'var(--text-muted)', textAlign: 'center', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+            <MdSecurity style={{ color: 'var(--primary)', fontSize: 14 }} /> Secured with JWT authentication · Maram Milk CRM v1.0
           </p>
         </motion.div>
       </div>

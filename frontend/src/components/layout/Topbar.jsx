@@ -10,6 +10,7 @@ const PAGE_TITLES = {
   '/pause': 'Pause Management',
   '/logistics': 'Logistics & Routes',
   '/ecom-orders': 'Ecom Orders',
+  '/empty-bottles': 'Empty Bottle Management',
   '/wallet': 'Wallet Management',
   '/payments': 'Payments & Invoices',
   '/whatsapp': 'WhatsApp Operations',

@@ -4,7 +4,11 @@ import {
   MdInventory, MdAdd, MdHistory, MdWarningAmber,
   MdCheckCircle, MdErrorOutline, MdRefresh, MdSearch,
   MdFilterList, MdEdit, MdSync, MdOutlineAssignmentReturn,
-  MdClose, MdLocalShipping, MdQrCode, MdStickyNote2
+  MdClose, MdLocalShipping, MdQrCode, MdStickyNote2,
+  MdCalendarToday, MdCancel, MdEventBusy, MdPerson,
+  MdDirectionsBike, MdVerified, MdWarning, MdEventNote,
+  MdChevronLeft, MdChevronRight, MdSave, MdBusiness,
+  MdInventory2, MdFlashOn
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -18,23 +22,43 @@ export default function InventoryPage() {
   const isSuperAdmin = (admin?.email || '').toLowerCase() === 'admin@marammilk.com' ||
                        admin?.role === 'SuperAdmin' || admin?.role === 'Super Admin';
 
-  const [activeTab, setActiveTab]         = useState('inventory'); // 'inventory' | 'history'
+  const [activeTab, setActiveTab]         = useState('inventory'); // 'inventory' | 'history' | 'attendance'
   const [items, setItems]                 = useState([]);
   const [summary, setSummary]             = useState({ totalStock: 0, todayAddedStock: 0, lowStockCount: 0, outOfStockCount: 0, totalProducts: 0 });
   const [lowStockAlerts, setLowAlerts]   = useState([]);
   const [history, setHistory]             = useState([]);
   const [historyTotal, setHistoryTotal]   = useState(0);
   const [selectedDate, setSelectedDate]   = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+  const [availableDates, setAvailableDates] = useState([]);
   const [loading, setLoading]             = useState(true);
   const [historyLoading, setHistoryLoad] = useState(false);
   const [search, setSearch]               = useState('');
   const [historySearch, setHistSearch]    = useState('');
   const [isDb2Synced, setIsDb2Synced]     = useState(true);
 
-  // Modals
+  // DP Attendance State
+  const [dpAttendance, setDpAttendance]   = useState([]);
+  const [allDps, setAllDps]               = useState([]);
+  const [timeFilter, setTimeFilter]       = useState('this_month');
+  const [selectedDpId, setSelectedDpId]   = useState('');
+  const [startDate, setStartDate]         = useState('');
+  const [endDate, setEndDate]             = useState('');
+  const [attendanceLoad, setAttLoad]     = useState(false);
+  const [selectedDayDetail, setDayDetail] = useState(null);
+
+  // Calendar always starts in the current IST month and fetches that exact month from DB2.
+  const [currentCalendarDate, setCurrentCalendarDate] = useState(() => {
+    const istDate = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+    const [year, month] = istDate.split('-').map(Number);
+    return new Date(year, month - 1, 1);
+  });
+
+  // Stock Add/Update Modals
   const [showAddModal, setShowAddModal]       = useState(false);
   const [showCorrectModal, setShowCorrectModal] = useState(false);
-  const [confirmDialog, setConfirmDialog]     = useState(null); // { type: 'ADD'|'CORRECT', payload: {} }
+  const [showDb2UpdateModal, setShowDb2UpdateModal] = useState(null); // DB2 specific modal item
+  const [db2Form, setDb2Form]                 = useState({ newStockAdded: 0, currentStock: 0 });
+  const [confirmDialog, setConfirmDialog]     = useState(null);
 
   // Form State for Add Stock
   const [addForm, setAddForm] = useState({
@@ -55,7 +79,7 @@ export default function InventoryPage() {
 
   const [submitting, setSubmitting] = useState(false);
 
-  // ── Fetch Current Inventory ───────────────────────────────────────────────
+  // Fetch Inventory (incorporating DB2 Manager App Stock fields)
   const fetchInventory = useCallback(async () => {
     setLoading(true);
     try {
@@ -64,9 +88,10 @@ export default function InventoryPage() {
         setItems(res.data.data || []);
         if (res.data.summary) setSummary(res.data.summary);
         if (res.data.lowStockAlerts) setLowAlerts(res.data.lowStockAlerts);
+        if (res.data.availableDates) setAvailableDates(res.data.availableDates);
         setIsDb2Synced(true);
       }
-    } catch (err) {
+    } catch {
       toast.error('Failed to load inventory stock.');
       setIsDb2Synced(false);
     } finally {
@@ -74,7 +99,7 @@ export default function InventoryPage() {
     }
   }, [selectedDate]);
 
-  // ── Fetch Stock History Ledger ─────────────────────────────────────────────
+  // Fetch Stock History Ledger
   const fetchHistory = useCallback(async () => {
     setHistoryLoad(true);
     try {
@@ -90,15 +115,61 @@ export default function InventoryPage() {
     }
   }, [historySearch]);
 
+  // Fetch DP Attendance Audit
+  const fetchDpAttendance = useCallback(async () => {
+    setAttLoad(true);
+    try {
+      const params = {
+        timeFilter,
+        dpId: selectedDpId,
+        month: `${currentCalendarDate.getFullYear()}-${String(currentCalendarDate.getMonth() + 1).padStart(2, '0')}`,
+      };
+      if (timeFilter === 'custom' && startDate && endDate) {
+        params.startDate = startDate;
+        params.endDate = endDate;
+      }
+      const res = await api.get('/inventory/dp-attendance', { params });
+      if (res.data?.success) {
+        setDpAttendance(res.data.data || []);
+        if (res.data.allDps) setAllDps(res.data.allDps);
+      }
+    } catch {
+      toast.error('Failed to load DP attendance audit.');
+    } finally {
+      setAttLoad(false);
+    }
+  }, [timeFilter, selectedDpId, startDate, endDate, currentCalendarDate]);
+
   useEffect(() => {
     fetchInventory();
   }, [fetchInventory]);
 
   useEffect(() => {
     if (activeTab === 'history') fetchHistory();
-  }, [activeTab, fetchHistory]);
+    else if (activeTab === 'attendance') fetchDpAttendance();
+  }, [activeTab, fetchHistory, fetchDpAttendance]);
 
-  // Open Add Stock Modal
+  // DB2 Direct Stock Override Handler
+  const handleDb2Update = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.post('/inventory/update', {
+        inventoryItemId: showDb2UpdateModal.id,
+        date: selectedDate,
+        newStockAdded: db2Form.newStockAdded,
+        currentStock: db2Form.currentStock,
+      });
+      toast.success(`Stock updated in DB2 for ${showDb2UpdateModal.name}!`);
+      setShowDb2UpdateModal(null);
+      fetchInventory();
+    } catch {
+      toast.error('Failed to update DB2 stock.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const openAddModal = (item = null) => {
     const targetItem = item || items[0];
     setAddForm({
@@ -112,7 +183,6 @@ export default function InventoryPage() {
     setShowAddModal(true);
   };
 
-  // Open Correct Stock Modal
   const openCorrectModal = (item) => {
     setCorrectForm({
       inventoryItemId: item.id,
@@ -122,7 +192,6 @@ export default function InventoryPage() {
     setShowCorrectModal(true);
   };
 
-  // Trigger Confirmation Step before submission
   const triggerAddConfirmation = (e) => {
     e.preventDefault();
     if (!addForm.inventoryItemId) return toast.error('Please select a product.');
@@ -155,13 +224,12 @@ export default function InventoryPage() {
     });
   };
 
-  // Execute Add Stock API call
   const executeAddStock = async () => {
     setSubmitting(true);
     try {
       const res = await api.post('/inventory/add-stock', confirmDialog.payload);
       if (res.data?.success) {
-        toast.success(`✅ Stock updated! +${confirmDialog.qty} ${confirmDialog.unit} added for ${confirmDialog.item?.name}. DB2 Synced.`);
+        toast.success(`Stock updated! +${confirmDialog.qty} ${confirmDialog.unit} added for ${confirmDialog.item?.name}. DB2 Synced.`);
         setShowAddModal(false);
         setConfirmDialog(null);
         fetchInventory();
@@ -174,13 +242,12 @@ export default function InventoryPage() {
     }
   };
 
-  // Execute Correct Stock API call
   const executeCorrectStock = async () => {
     setSubmitting(true);
     try {
       const res = await api.post('/inventory/correct-stock', confirmDialog.payload);
       if (res.data?.success) {
-        toast.success(`✅ Stock corrected for ${confirmDialog.item?.name} to ${confirmDialog.newStock} units. DB2 Synced.`);
+        toast.success(`Stock corrected for ${confirmDialog.item?.name} to ${confirmDialog.newStock} units. DB2 Synced.`);
         setShowCorrectModal(false);
         setConfirmDialog(null);
         fetchInventory();
@@ -193,11 +260,41 @@ export default function InventoryPage() {
     }
   };
 
-  // Filter items
   const filteredItems = items.filter(i =>
     i.name.toLowerCase().includes(search.toLowerCase()) ||
     (i.material || '').toLowerCase().includes(search.toLowerCase())
   );
+
+  // Generate 7-column Monthly Sun-Sat Calendar Grid (Picture 2 format)
+  const getMonthGridDays = () => {
+    const year = currentCalendarDate.getFullYear();
+    const month = currentCalendarDate.getMonth();
+    const firstDayIndex = new Date(year, month, 1).getDay(); // 0 = Sun
+    const totalDaysInMonth = new Date(year, month + 1, 0).getDate();
+
+    const grid = [];
+    // Leading empty cells
+    for (let i = 0; i < firstDayIndex; i++) {
+      grid.push(null);
+    }
+    // Days of month
+    for (let d = 1; d <= totalDaysInMonth; d++) {
+      grid.push(d);
+    }
+    return grid;
+  };
+
+  const handlePrevMonth = () => {
+    setCurrentCalendarDate(prev => new Date(prev.getFullYear(), prev.getMonth() - 1, 1));
+  };
+
+  const handleNextMonth = () => {
+    setCurrentCalendarDate(prev => new Date(prev.getFullYear(), prev.getMonth() + 1, 1));
+  };
+
+  const targetDpRecord = selectedDpId
+    ? dpAttendance.find(d => d.dpId === selectedDpId)
+    : dpAttendance[0];
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
@@ -206,12 +303,12 @@ export default function InventoryPage() {
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <h1 style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)', margin: 0, letterSpacing: '-0.5px' }}>
-              Inventory Management
+              Inventory & DP Audit Management
             </h1>
-            {isDb2Synced && <span className="badge badge-success" style={{ fontSize: 11 }}>DB2 Live Sync</span>}
+            {isDb2Synced && <span className="badge badge-success" style={{ fontSize: 11, display: 'inline-flex', alignItems: 'center', gap: 4 }}><MdSync /> DB2 Live Sync</span>}
           </div>
           <p style={{ fontSize: 13, color: 'var(--text-muted)', margin: '4px 0 0' }}>
-            Single source of truth for stock additions, audit history, and Manager App synchronization
+            Single source of truth for DB2 stock, inventory ledger, and Delivery Person attendance audit
           </p>
         </div>
 
@@ -219,148 +316,22 @@ export default function InventoryPage() {
           <button className="btn btn-secondary btn-sm" onClick={fetchInventory} disabled={loading}>
             <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
           </button>
-          <button className="btn btn-secondary btn-sm" onClick={() => setActiveTab(t => t === 'inventory' ? 'history' : 'inventory')}>
-            <MdHistory /> {activeTab === 'inventory' ? 'Stock Ledger' : 'Current Stock'}
-          </button>
           <button className="btn btn-primary" id="inventory-add-stock-btn" onClick={() => openAddModal()}>
             <MdAdd style={{ fontSize: 18 }} /> Add Stock
           </button>
         </div>
       </div>
 
-      {/* Super Admin Single Source Notice Banner */}
-      <div style={{
-        background: 'rgba(59,130,246,0.06)',
-        border: '1px solid rgba(59,130,246,0.2)',
-        borderRadius: 'var(--radius-md)',
-        padding: '12px 18px',
-        display: 'flex',
-        alignItems: 'center',
-        justify: 'space-between',
-        gap: 12,
-        marginBottom: 20,
-        fontSize: 13,
-        color: 'var(--text-secondary)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <MdSync style={{ color: 'var(--primary)', fontSize: 20, flexShrink: 0 }} />
-          <span>
-            <strong>Centralized Inventory Rule:</strong> Only Super Admin CRM can add or adjust stock. Manager App users have read-only stock consumption.
-          </span>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0 }}>
-          <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Date:</label>
-          <input
-            type="date"
-            className="form-input"
-            style={{ padding: '4px 10px', fontSize: 12, width: 140 }}
-            value={selectedDate}
-            onChange={e => setSelectedDate(e.target.value)}
-          />
-        </div>
-      </div>
-
-      {/* KPI Cards */}
-      <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
-        <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-value" style={{ color: 'var(--primary)' }}>{summary.totalStock.toLocaleString()}</div>
-            <div style={{ padding: 8, borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', fontSize: 20 }}><MdInventory /></div>
-          </div>
-          <div className="stat-label">Total Stock Available</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Across {summary.totalProducts} registered products</div>
-        </div>
-
-        <div className="stat-card" style={{ '--card-accent': summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-value" style={{ color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
-              {summary.lowStockCount}
-            </div>
-            <div style={{ padding: 8, borderRadius: 8, background: summary.lowStockCount > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)', fontSize: 20 }}>
-              <MdWarningAmber />
-            </div>
-          </div>
-          <div className="stat-label">Low Stock Products</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-            {summary.lowStockCount > 0 ? 'Requires stock addition' : 'All stock levels healthy'}
-          </div>
-        </div>
-
-        <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-value" style={{ color: 'var(--success)' }}>+{summary.todayAddedStock.toLocaleString()}</div>
-            <div style={{ padding: 8, borderRadius: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--success)', fontSize: 20 }}><MdAdd /></div>
-          </div>
-          <div className="stat-label">Today's Stock Added</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Added by Super Admin today</div>
-        </div>
-
-        <div className="stat-card" style={{ '--card-accent': summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-            <div className="stat-value" style={{ color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
-              {summary.outOfStockCount}
-            </div>
-            <div style={{ padding: 8, borderRadius: 8, background: summary.outOfStockCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(6,182,212,0.1)', color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)', fontSize: 20 }}>
-              <MdErrorOutline />
-            </div>
-          </div>
-          <div className="stat-label">Out of Stock Products</div>
-          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-            {summary.outOfStockCount > 0 ? 'Urgent replenishment needed' : 'Zero items depleted'}
-          </div>
-        </div>
-      </div>
-
-      {/* Low Stock Alert Section (If any item is low stock) */}
-      {lowStockAlerts.length > 0 && (
-        <div className="card" style={{ marginBottom: 20, border: '1px solid rgba(245,158,11,0.3)', background: 'rgba(245,158,11,0.04)' }}>
-          <div className="card-header" style={{ borderBottom: '1px solid rgba(245,158,11,0.2)' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <MdWarningAmber style={{ color: 'var(--warning)', fontSize: 20 }} />
-              <span className="card-title" style={{ color: 'var(--warning)' }}>Low Stock Replenishment Alerts ({lowStockAlerts.length})</span>
-            </div>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Stock below threshold (20 units)</span>
-          </div>
-          <div className="card-body" style={{ padding: '14px 20px' }}>
-            <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-              {lowStockAlerts.map(alert => (
-                <div key={alert.id} style={{
-                  background: 'var(--bg-card)',
-                  border: '1px solid var(--border)',
-                  borderRadius: 'var(--radius-md)',
-                  padding: '12px 16px',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: 16,
-                  flex: 1,
-                  minWidth: 260,
-                }}>
-                  <div style={{ flex: 1 }}>
-                    <div style={{ fontWeight: 700, fontSize: 14 }}>{alert.name}</div>
-                    <div style={{ fontSize: 12, color: 'var(--danger)', fontWeight: 600, marginTop: 2 }}>
-                      Current: {alert.currentStock} {alert.unit} (Threshold: {alert.minThreshold || 20})
-                    </div>
-                  </div>
-                  <button className="btn btn-warning btn-sm" onClick={() => openAddModal(alert)} style={{ fontSize: 12 }}>
-                    + Add Stock
-                  </button>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Tab Controls & Search Bar */}
+      {/* Main Module Tab Controls */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-body" style={{ padding: '12px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', gap: 6 }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
             <button
               className={`btn btn-sm ${activeTab === 'inventory' ? 'btn-primary' : 'btn-secondary'}`}
               onClick={() => setActiveTab('inventory')}
               id="inventory-tab-current"
             >
-              <MdInventory /> Current Inventory
+              <MdInventory /> Current Inventory & DB2 Stock
             </button>
             <button
               className={`btn btn-sm ${activeTab === 'history' ? 'btn-primary' : 'btn-secondary'}`}
@@ -369,112 +340,176 @@ export default function InventoryPage() {
             >
               <MdHistory /> Stock Ledger Audit ({historyTotal})
             </button>
+            <button
+              className={`btn btn-sm ${activeTab === 'attendance' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setActiveTab('attendance')}
+              id="inventory-tab-dp-attendance"
+            >
+              <MdCalendarToday /> DP Attendance Audit (DB2)
+            </button>
           </div>
 
-          <div style={{ position: 'relative', width: 260 }}>
-            <MdSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
-            <input
-              type="text"
-              className="form-input"
-              placeholder={activeTab === 'inventory' ? 'Search products...' : 'Search ledger history...'}
-              value={activeTab === 'inventory' ? search : historySearch}
-              onChange={e => activeTab === 'inventory' ? setSearch(e.target.value) : setHistSearch(e.target.value)}
-              style={{ paddingLeft: 34, width: '100%', fontSize: 13 }}
-            />
-          </div>
+          {activeTab !== 'attendance' && (
+            <div style={{ position: 'relative', width: 260 }}>
+              <MdSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
+              <input
+                type="text"
+                className="form-input"
+                placeholder={activeTab === 'inventory' ? 'Search products...' : 'Search ledger history...'}
+                value={activeTab === 'inventory' ? search : historySearch}
+                onChange={e => activeTab === 'inventory' ? setSearch(e.target.value) : setHistSearch(e.target.value)}
+                style={{ paddingLeft: 34, width: '100%', fontSize: 13 }}
+              />
+            </div>
+          )}
         </div>
       </div>
 
-      {/* TAB 1: CURRENT INVENTORY TABLE */}
+      {/* ── TAB 1: CURRENT INVENTORY (Incorporating DB2 Manager App Stock fields) ────────────────────────── */}
       {activeTab === 'inventory' && (
-        <div className="card">
-          <div className="card-header">
-            <span className="card-title">Product Stock Inventory</span>
-            <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filteredItems.length} products</span>
+        <div>
+          {/* Date Picker Bar */}
+          <div style={{ background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: 10, padding: '10px 16px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+              <MdSync style={{ color: 'var(--primary)', fontSize: 18 }} />
+              <span><strong>DB2 Manager App Live Stock (maram_milk_db)</strong> — Tracks carried-over stock, new stock added, and expected stock.</span>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Target Date:</label>
+              <input
+                type="date"
+                className="form-input"
+                style={{ width: 150, padding: '4px 10px', fontSize: 12.5 }}
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+              />
+            </div>
           </div>
-          <div className="table-wrapper">
-            <table className="table">
-              <thead>
-                <tr>
-                  <th>Product</th>
-                  <th>Category / Material</th>
-                  <th>Available Stock</th>
-                  <th>Unit</th>
-                  <th>Status</th>
-                  <th>Last Updated</th>
-                  <th>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map(item => {
-                  const statusColor = item.status === 'In Stock' ? 'badge-success' : item.status === 'Low Stock' ? 'badge-warning' : 'badge-danger';
-                  return (
-                    <tr key={item.id}>
-                      <td>
-                        <div style={{ fontWeight: 700, fontSize: 14, color: 'var(--text-primary)' }}>{item.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>ID: {item.id.slice(0,8)}</div>
-                      </td>
-                      <td style={{ fontSize: 13 }}>{item.material || 'Milk'}</td>
-                      <td>
-                        <span style={{
-                          fontSize: 16,
-                          fontWeight: 800,
-                          color: item.currentStock <= 0 ? 'var(--danger)' : item.currentStock <= 20 ? 'var(--warning)' : 'var(--text-primary)'
-                        }}>
-                          {item.currentStock.toLocaleString()}
-                        </span>
-                      </td>
-                      <td style={{ fontSize: 13, color: 'var(--text-secondary)' }}>{item.unit}</td>
-                      <td>
-                        <span className={`badge ${statusColor}`}>{item.status}</span>
-                      </td>
-                      <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                        {item.updatedAt ? new Date(item.updatedAt).toLocaleString() : 'Today'}
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 6 }}>
-                          <button
-                            className="btn btn-primary btn-sm"
-                            style={{ fontSize: 12, padding: '4px 10px' }}
-                            onClick={() => openAddModal(item)}
-                            id={`inventory-add-btn-${item.id}`}
-                          >
-                            <MdAdd /> Add Stock
-                          </button>
-                          <button
-                            className="btn btn-secondary btn-sm"
-                            style={{ fontSize: 12, padding: '4px 10px' }}
-                            onClick={() => openCorrectModal(item)}
-                            id={`inventory-correct-btn-${item.id}`}
-                          >
-                            <MdEdit /> Correct
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-                {filteredItems.length === 0 && (
+
+          {/* KPI Cards */}
+          <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
+            <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stat-value" style={{ color: 'var(--primary)' }}>{summary.totalStock.toLocaleString()}</div>
+                <div style={{ padding: 8, borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', fontSize: 20 }}><MdInventory /></div>
+              </div>
+              <div className="stat-label">Total Stock Available</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Across {summary.totalProducts} registered products</div>
+            </div>
+
+            <div className="stat-card" style={{ '--card-accent': summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stat-value" style={{ color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
+                  {summary.lowStockCount}
+                </div>
+                <div style={{ padding: 8, borderRadius: 8, background: summary.lowStockCount > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)', fontSize: 20 }}>
+                  <MdWarningAmber />
+                </div>
+              </div>
+              <div className="stat-label">Low Stock Products</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                {summary.lowStockCount > 0 ? 'Requires stock addition' : 'All stock levels healthy'}
+              </div>
+            </div>
+
+            <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stat-value" style={{ color: 'var(--success)' }}>+{summary.todayAddedStock.toLocaleString()}</div>
+                <div style={{ padding: 8, borderRadius: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--success)', fontSize: 20 }}><MdAdd /></div>
+              </div>
+              <div className="stat-label">Today's Stock Added</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Added by Super Admin today</div>
+            </div>
+
+            <div className="stat-card" style={{ '--card-accent': summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div className="stat-value" style={{ color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
+                  {summary.outOfStockCount}
+                </div>
+                <div style={{ padding: 8, borderRadius: 8, background: summary.outOfStockCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(6,182,212,0.1)', color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)', fontSize: 20 }}>
+                  <MdErrorOutline />
+                </div>
+              </div>
+              <div className="stat-label">Out of Stock Products</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                {summary.outOfStockCount > 0 ? 'Urgent replenishment needed' : 'Zero items depleted'}
+              </div>
+            </div>
+          </div>
+
+          {/* Table with Manager App Inventory fields merged (Carried Over, New Stock Added, Current Available, Expected) */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Product Stock & DB2 Manager App Inventory</span>
+              <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filteredItems.length} products</span>
+            </div>
+            <div className="table-wrapper">
+              <table className="table">
+                <thead>
                   <tr>
-                    <td colSpan={7} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                      No inventory items found.
-                    </td>
+                    <th style={{ minWidth: 150 }}>Item Name</th>
+                    <th>Material / Unit</th>
+                    <th>Carried Over</th>
+                    <th>New Stock Added</th>
+                    <th>Current Available</th>
+                    <th>Expected Stock</th>
+                    <th>Status</th>
+                    <th style={{ minWidth: 140 }}>Actions</th>
                   </tr>
-                )}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {filteredItems.map(item => {
+                    const statusColor = item.status === 'In Stock' ? 'badge-success' : item.status === 'Low Stock' ? 'badge-warning' : 'badge-danger';
+                    return (
+                      <tr key={item.id}>
+                        <td style={{ fontWeight: 700 }}>
+                          <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{item.name}</div>
+                        </td>
+                        <td><span className="badge badge-gray">{item.material || 'Milk'} ({item.unit})</span></td>
+                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.carriedOverStock ?? 0} {item.unit}</td>
+                        <td style={{ fontWeight: 700, color: 'var(--primary)' }}>+{item.newStockAdded ?? 0} {item.unit}</td>
+                        <td>
+                          <span style={{
+                            fontSize: 15,
+                            fontWeight: 800,
+                            color: item.currentStock <= 0 ? 'var(--danger)' : item.currentStock <= 20 ? 'var(--warning)' : 'var(--text-primary)'
+                          }}>
+                            {item.currentStock.toLocaleString()} {item.unit}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.expectedStock ?? item.currentStock} {item.unit}</td>
+                        <td><span className={`badge ${statusColor}`}>{item.status}</span></td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 6 }}>
+                            <button className="btn btn-primary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => openAddModal(item)}>
+                              <MdAdd /> Add
+                            </button>
+                            <button className="btn btn-secondary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => {
+                              setShowDb2UpdateModal(item);
+                              setDb2Form({ newStockAdded: item.newStockAdded || 0, currentStock: item.currentStock || 0 });
+                            }}>
+                              <MdEdit /> DB2 Override
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: READ-ONLY STOCK HISTORY LEDGER TABLE */}
+      {/* ── TAB 2: STOCK LEDGER AUDIT ───────────────────────────────────────── */}
       {activeTab === 'history' && (
         <div className="card">
           <div className="card-header">
             <div>
               <span className="card-title">Stock History Ledger</span>
               <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                Read-only immutable audit log of all stock additions and corrections
+                Read-only audit log of all stock additions and corrections
               </div>
             </div>
             <span className="badge badge-blue">{historyTotal} history records</span>
@@ -518,67 +553,414 @@ export default function InventoryPage() {
                       </td>
                       <td style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{row.unit}</td>
                       <td style={{ fontSize: 12 }}>
-                        {row.supplier && <div>🏢 {row.supplier}</div>}
-                        {row.batch_number && <div>📦 Batch: {row.batch_number}</div>}
-                        {!row.supplier && !row.batch_number && <span style={{ color: 'var(--text-muted)' }}>—</span>}
+                        {row.supplier && <div>Supplier: {row.supplier}</div>}
+                        {row.batch_number && <div>Batch: {row.batch_number}</div>}
                       </td>
                       <td style={{ fontSize: 12.5, fontWeight: 600 }}>{row.added_by}</td>
                       <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{row.remarks || '—'}</td>
                     </tr>
                   );
                 })}
-                {history.length === 0 && (
-                  <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: 40, color: 'var(--text-muted)' }}>
-                      No history ledger entries recorded yet.
-                    </td>
-                  </tr>
-                )}
               </tbody>
             </table>
           </div>
         </div>
       )}
 
-      {/* ── MODAL 1: ADD STOCK ────────────────────────────────────────────── */}
+      {/* ── TAB 3: DP ATTENDANCE AUDIT (NEW MONTHLY CALENDAR GRID & popup clean-up) ───────────────────────── */}
+      {activeTab === 'attendance' && (
+        <div>
+          {/* Filter Bar */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-body" style={{ padding: 16 }}>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdFilterList style={{ color: 'var(--primary)', fontSize: 20 }} />
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>Time Filter:</span>
+                  <select
+                    className="form-input"
+                    style={{ width: 150 }}
+                    value={timeFilter}
+                    onChange={e => {
+                      const nextFilter = e.target.value;
+                      setTimeFilter(nextFilter);
+                      if (nextFilter === 'custom' && (!startDate || !endDate)) {
+                        const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                        setStartDate(today);
+                        setEndDate(today);
+                      }
+                    }}
+                  >
+                    <option value="this_month">This Month</option>
+                    <option value="today">Today</option>
+                    <option value="this_week">This Week</option>
+                    <option value="custom">Custom Range</option>
+                  </select>
+                  {timeFilter === 'custom' && (
+                    <>
+                      <input className="form-input" type="date" value={startDate} onChange={e => setStartDate(e.target.value)} aria-label="Attendance start date" />
+                      <span style={{ color: 'var(--text-muted)' }}>to</span>
+                      <input className="form-input" type="date" value={endDate} onChange={e => setEndDate(e.target.value)} aria-label="Attendance end date" />
+                    </>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginLeft: 'auto' }}>
+                  <MdPerson style={{ color: 'var(--primary)', fontSize: 20 }} />
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>Select DP for Audit Calendar:</span>
+                  <select
+                    className="form-input"
+                    style={{ width: 220 }}
+                    value={selectedDpId}
+                    onChange={e => setSelectedDpId(e.target.value)}
+                  >
+                    <option value="">— Select Delivery Person —</option>
+                    {allDps.map(dp => (
+                      <option key={dp.id} value={dp.id}>{dp.name} ({dp.dpCode})</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Attendance Overview Table with dedicated NO. OF DAYS ABSENT column */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MdDirectionsBike style={{ color: 'var(--primary)' }} /> Delivery Person Attendance & Absence Audit Table
+              </div>
+              <span className="badge badge-blue">{dpAttendance.length} Delivery Persons</span>
+            </div>
+            <div className="table-wrapper">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ minWidth: 140 }}>DELIVERY PERSON</th>
+                    <th style={{ minWidth: 110 }}>VEHICLE NO</th>
+                    <th style={{ minWidth: 120 }}>ASSIGNED ROUTE</th>
+                    <th>TOTAL DAYS</th>
+                    <th style={{ color: '#10b981' }}>PRESENT DAYS</th>
+                    <th style={{ color: '#ef4444', minWidth: 140 }}>NO. OF DAYS ABSENT</th>
+                    <th style={{ color: '#d97706', minWidth: 120 }}>STANDBY DAYS</th>
+                    <th>OVERALL ATTENDANCE %</th>
+                    <th style={{ minWidth: 180 }}>GREEN / RED / YELLOW PREVIEW</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {attendanceLoad ? (
+                    <tr><td colSpan={8} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 attendance records...</td></tr>
+                  ) : dpAttendance.map(dp => (
+                    <tr
+                      key={dp.dpId}
+                      style={{ cursor: 'pointer', background: selectedDpId === dp.dpId ? 'rgba(59,130,246,0.05)' : 'transparent' }}
+                      onClick={() => setSelectedDpId(dp.dpId)}
+                    >
+                      <td style={{ fontWeight: 700 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                            <MdPerson />
+                          </div>
+                          <div>
+                            <div>{dp.dpName}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.dpCode}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{dp.vehicleNumber}</td>
+                      <td><span className="badge badge-gray">{dp.assignedRoute}</span></td>
+                      <td style={{ fontWeight: 600 }}>{dp.totalDays} Days</td>
+                      <td>
+                        <span className="badge badge-success" style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <MdCheckCircle /> {dp.presentDays} Present
+                        </span>
+                      </td>
+                      {/* DEDICATED HIGHLIGHTED COLUMN FOR DAYS ABSENT */}
+                      <td>
+                        <span className="badge badge-danger" style={{ fontWeight: 800, fontSize: 12.5, padding: '4px 12px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <MdCancel /> {dp.absentDays} Days Absent
+                        </span>
+                      </td>
+                      {/* DEDICATED HIGHLIGHTED COLUMN FOR STANDBY DAYS */}
+                      <td>
+                        <span className="badge badge-warning" style={{ fontWeight: 800, fontSize: 12.5, padding: '4px 12px', background: 'rgba(245,158,11,0.12)', color: '#d97706', border: '1px solid rgba(245,158,11,0.25)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                          <MdEventNote /> {dp.standbyDays || 0} Standby
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${dp.attendancePercentage >= 90 ? 'badge-success' : dp.attendancePercentage >= 75 ? 'badge-warning' : 'badge-danger'}`} style={{ fontWeight: 800 }}>
+                          {dp.attendancePercentage}%
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 180 }}>
+                          {dp.calendarGrid.slice(0, 14).map((cd, idx) => {
+                            const st = String(cd.status).toUpperCase();
+                            const isPres = st === 'PRESENT';
+                            const isAbs = st === 'ABSENT';
+                            const isStby = st === 'STANDBY' || st === 'ON_CALL';
+                            return (
+                              <div
+                                key={idx}
+                                title={`${cd.date}: ${cd.status}`}
+                                style={{
+                                  width: 10,
+                                  height: 10,
+                                  borderRadius: 2,
+                                  background: isPres ? '#10b981' : isAbs ? '#ef4444' : isStby ? '#f59e0b' : '#94a3b8',
+                                }}
+                              />
+                            );
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* ── FULL 7-COLUMN MONTHLY GRID CALENDAR (MATCHING PICTURE 2 FORMAT) ───────────────────────── */}
+          <div className="card">
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <MdEventNote style={{ color: 'var(--primary)', fontSize: 22 }} />
+                <div>
+                  <span className="card-title">
+                    Monthly Audit Calendar: <strong>{targetDpRecord ? targetDpRecord.dpName : 'Delivery Person'}</strong>
+                  </span>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Click any day cell to view assigned route details
+                  </div>
+                </div>
+              </div>
+
+              {/* Month Navigation (< August 2026 >) */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <button className="icon-btn" onClick={handlePrevMonth} title="Previous Month">
+                  <MdChevronLeft style={{ fontSize: 22 }} />
+                </button>
+                <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', minWidth: 130, textAlign: 'center' }}>
+                  {currentCalendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                </span>
+                <button className="icon-btn" onClick={handleNextMonth} title="Next Month">
+                  <MdChevronRight style={{ fontSize: 22 }} />
+                </button>
+              </div>
+
+              {/* Status Legend (PRESENT, ABSENT & STANDBY) */}
+              <div style={{ display: 'flex', gap: 14, fontSize: 12, alignItems: 'center' }}>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#10b981', borderRadius: 2 }} /> Green = PRESENT</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#ef4444', borderRadius: 2 }} /> Red = ABSENT</span>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#f59e0b', borderRadius: 2 }} /> Yellow = STANDBY</span>
+              </div>
+            </div>
+
+            <div className="card-body">
+              {/* 7-Column Sun to Sat Day Headers */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, textAlign: 'center', fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+                <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+              </div>
+
+              {/* Sun-Sat Day Cells Grid */}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+                {getMonthGridDays().map((dayNum, idx) => {
+                  if (dayNum === null) {
+                    return <div key={`empty-${idx}`} style={{ minHeight: 64, background: 'transparent' }} />;
+                  }
+
+                  const year = currentCalendarDate.getFullYear();
+                  const monthStr = String(currentCalendarDate.getMonth() + 1).padStart(2, '0');
+                  const dayStr = String(dayNum).padStart(2, '0');
+                  const fullDateStr = `${year}-${monthStr}-${dayStr}`;
+                  const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                  const isFutureDate = fullDateStr > todayIST;
+
+                  const DB2_START_DATE = '2026-07-15';
+                  const isBeforeDb2Date = fullDateStr < DB2_START_DATE;
+
+                  const dayRecord = targetDpRecord?.calendarGrid?.find(c => c.date === fullDateStr) || {
+                    date: fullDateStr,
+                    status: isFutureDate ? 'Upcoming' : isBeforeDb2Date ? 'No DB2 Record' : 'ABSENT',
+                    isFuture: isFutureDate,
+                    isBeforeDb2: isBeforeDb2Date,
+                    route: targetDpRecord?.assignedRoute || null,
+                  };
+
+                  const isInactiveCell = dayRecord.status === 'Upcoming' || dayRecord.status === 'No DB2 Record' || dayRecord.isFuture || dayRecord.isBeforeDb2;
+                  const stUpper = String(dayRecord.status).toUpperCase();
+                  const isPres = stUpper === 'PRESENT';
+                  const isAbs = stUpper === 'ABSENT';
+                  const isStby = stUpper === 'STANDBY' || stUpper === 'ON_CALL';
+
+                  const bgColor = isInactiveCell
+                    ? 'rgba(255,255,255,0.02)'
+                    : isPres
+                    ? 'rgba(16,185,129,0.12)'
+                    : isAbs
+                    ? 'rgba(239,68,68,0.14)'
+                    : 'rgba(245,158,11,0.12)';
+
+                  const borderColor = isInactiveCell
+                    ? 'var(--border)'
+                    : isPres
+                    ? 'rgba(16,185,129,0.35)'
+                    : isAbs
+                    ? 'rgba(239,68,68,0.4)'
+                    : 'rgba(245,158,11,0.35)';
+
+                  const textColor = isInactiveCell
+                    ? 'var(--text-muted)'
+                    : isPres
+                    ? '#10b981'
+                    : isAbs
+                    ? '#ef4444'
+                    : '#d97706';
+
+                  return (
+                    <motion.div
+                      key={`day-${dayNum}`}
+                      whileHover={{ scale: isInactiveCell ? 1 : 1.03 }}
+                      onClick={() => !isInactiveCell && setDayDetail({ dpName: targetDpRecord?.dpName || 'Delivery Person', ...dayRecord })}
+                      style={{
+                        minHeight: 68,
+                        borderRadius: 10,
+                        padding: '8px 10px',
+                        background: bgColor,
+                        border: `1px solid ${borderColor}`,
+                        cursor: isInactiveCell ? 'default' : 'pointer',
+                        opacity: isInactiveCell ? 0.4 : 1,
+                        display: 'flex',
+                        flexDirection: 'column',
+                        justify: 'space-between',
+                      }}
+                    >
+                      <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', textAlign: 'left' }}>
+                        {dayNum}
+                      </div>
+                      <div style={{ fontSize: 10, fontWeight: 700, color: textColor, textAlign: 'right' }}>
+                        {isInactiveCell ? '—' : dayRecord.status}
+                      </div>
+                    </motion.div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── SIMPLIFIED ATTENDANCE DETAIL POPUP (PICTURE 3 REQUEST: NO CHECK-IN/OUT, SHOW ROUTE ONLY) ── */}
+      <AnimatePresence>
+        {selectedDayDetail && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setDayDetail(null)}>
+            <motion.div className="modal" style={{ maxWidth: 420 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ fontSize: 18, fontWeight: 800 }}>Attendance Detail</h2>
+                <button className="icon-btn" onClick={() => setDayDetail(null)}><MdClose /></button>
+              </div>
+              <div className="modal-body" style={{ padding: '20px 24px' }}>
+                <div style={{ fontWeight: 800, fontSize: 18, color: 'var(--text-primary)', marginBottom: 8 }}>
+                  {selectedDayDetail.dpName}
+                </div>
+                <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', marginBottom: 6 }}>
+                  Date: <strong>{selectedDayDetail.date}</strong>
+                </div>
+                <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', marginBottom: 12 }}>
+                  Status:{' '}
+                  <strong style={{ color: selectedDayDetail.status === 'Present' ? '#10b981' : selectedDayDetail.status === 'Absent' ? '#ef4444' : '#d97706' }}>
+                    {selectedDayDetail.status}
+                  </strong>
+                </div>
+                <div style={{ fontSize: 13, color: 'var(--text-muted)', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
+                  Route: <strong style={{ color: 'var(--text-primary)' }}>{selectedDayDetail.route || 'Manager Assigned DB2 Route'}</strong>
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* DB2 Direct Override Modal */}
+      <AnimatePresence>
+        {showDb2UpdateModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowDb2UpdateModal(null)}>
+            <motion.div className="modal" style={{ maxWidth: 480 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdEdit style={{ color: 'var(--primary)' }} /> DB2 Stock Override — {showDb2UpdateModal.name}
+                </h2>
+                <button className="icon-btn" onClick={() => setShowDb2UpdateModal(null)}><MdClose /></button>
+              </div>
+              <form onSubmit={handleDb2Update}>
+                <div className="modal-body">
+                  <div style={{ background: 'rgba(59,130,246,0.06)', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 12.5 }}>
+                    Target Date: <strong>{selectedDate}</strong><br />
+                    Material: <strong>{showDb2UpdateModal.material} ({showDb2UpdateModal.unit})</strong>
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 14 }}>
+                    <label className="form-label">New Stock Added ({showDb2UpdateModal.unit})</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="form-input"
+                      value={db2Form.newStockAdded}
+                      onChange={e => setDb2Form({ ...db2Form, newStockAdded: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Current Available Stock ({showDb2UpdateModal.unit})</label>
+                    <input
+                      type="number"
+                      step="any"
+                      min="0"
+                      className="form-input"
+                      value={db2Form.currentStock}
+                      onChange={e => setDb2Form({ ...db2Form, currentStock: e.target.value })}
+                      required
+                    />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowDb2UpdateModal(null)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={submitting}>
+                    {submitting ? 'Saving...' : 'Save to DB2'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Stock Addition & Correction Modals */}
       <AnimatePresence>
         {showAddModal && (
           <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <motion.div
-              className="card"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              style={{ width: '100%', maxWidth: 520, padding: 0, overflow: 'hidden' }}
-            >
+            <motion.div className="card" style={{ width: '100%', maxWidth: 520, padding: 0, overflow: 'hidden' }}>
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-main)' }}>
                 <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <MdAdd style={{ color: 'var(--primary)' }} /> Add Inventory Stock
                 </span>
                 <button className="icon-btn" onClick={() => setShowAddModal(false)}><MdClose /></button>
               </div>
-
               <form onSubmit={triggerAddConfirmation} style={{ padding: 20 }}>
-                {/* Product Dropdown */}
                 <div className="form-group" style={{ marginBottom: 14 }}>
                   <label className="form-label">Select Product *</label>
                   <select
                     className="form-input"
                     value={addForm.inventoryItemId}
-                    onChange={e => {
-                      const sel = items.find(i => i.id === e.target.value);
-                      setAddForm(f => ({ ...f, inventoryItemId: e.target.value, unit: sel ? sel.unit : 'Litres' }));
-                    }}
+                    onChange={e => setAddForm(f => ({ ...f, inventoryItemId: e.target.value }))}
                     required
-                    id="add-stock-product-select"
                   >
                     {items.map(i => (
                       <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock} {i.unit})</option>
                     ))}
                   </select>
                 </div>
-
-                {/* Quantity & Unit */}
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 14 }}>
                   <div className="form-group">
                     <label className="form-label">Quantity to Add *</label>
@@ -586,12 +968,9 @@ export default function InventoryPage() {
                       type="number"
                       step="0.1"
                       className="form-input"
-                      placeholder="e.g. 50"
                       value={addForm.quantityAdded}
                       onChange={e => setAddForm(f => ({ ...f, quantityAdded: e.target.value }))}
                       required
-                      min="0.1"
-                      id="add-stock-qty-input"
                     />
                   </div>
                   <div className="form-group">
@@ -604,46 +983,9 @@ export default function InventoryPage() {
                     />
                   </div>
                 </div>
-
-                {/* Supplier & Batch Number */}
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
-                  <div className="form-group">
-                    <label className="form-label">Supplier (Optional)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. Mother Dairy / Local Dairy"
-                      value={addForm.supplier}
-                      onChange={e => setAddForm(f => ({ ...f, supplier: e.target.value }))}
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Batch Number (Optional)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      placeholder="e.g. BATCH-2026-08A"
-                      value={addForm.batchNumber}
-                      onChange={e => setAddForm(f => ({ ...f, batchNumber: e.target.value }))}
-                    />
-                  </div>
-                </div>
-
-                {/* Remarks */}
-                <div className="form-group" style={{ marginBottom: 20 }}>
-                  <label className="form-label">Remarks / Notes</label>
-                  <textarea
-                    className="form-input"
-                    rows={2}
-                    placeholder="e.g. Morning fresh milk batch received at warehouse"
-                    value={addForm.remarks}
-                    onChange={e => setAddForm(f => ({ ...f, remarks: e.target.value }))}
-                  />
-                </div>
-
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                   <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-primary" id="add-stock-submit-btn">Continue to Confirm</button>
+                  <button type="submit" className="btn btn-primary">Continue to Confirm</button>
                 </div>
               </form>
             </motion.div>
@@ -651,105 +993,21 @@ export default function InventoryPage() {
         )}
       </AnimatePresence>
 
-      {/* ── MODAL 2: CORRECT STOCK ────────────────────────────────────────────── */}
-      <AnimatePresence>
-        {showCorrectModal && (
-          <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <motion.div
-              className="card"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              style={{ width: '100%', maxWidth: 480, padding: 0, overflow: 'hidden' }}
-            >
-              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'var(--bg-main)' }}>
-                <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <MdEdit style={{ color: 'var(--warning)' }} /> Stock Quantity Correction
-                </span>
-                <button className="icon-btn" onClick={() => setShowCorrectModal(false)}><MdClose /></button>
-              </div>
-
-              <form onSubmit={triggerCorrectConfirmation} style={{ padding: 20 }}>
-                <div className="form-group" style={{ marginBottom: 14 }}>
-                  <label className="form-label">Correct Total Available Stock *</label>
-                  <input
-                    type="number"
-                    step="0.1"
-                    className="form-input"
-                    value={correctForm.newTotalStock}
-                    onChange={e => setCorrectForm(f => ({ ...f, newTotalStock: e.target.value }))}
-                    required
-                    min="0"
-                    id="correct-stock-qty-input"
-                  />
-                </div>
-
-                <div className="form-group" style={{ marginBottom: 20 }}>
-                  <label className="form-label">Reason / Remarks for Adjustment *</label>
-                  <textarea
-                    className="form-input"
-                    rows={3}
-                    placeholder="e.g. Audit correction after physical stock count at warehouse"
-                    value={correctForm.remarks}
-                    onChange={e => setCorrectForm(f => ({ ...f, remarks: e.target.value }))}
-                    required
-                  />
-                </div>
-
-                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
-                  <button type="button" className="btn btn-secondary" onClick={() => setShowCorrectModal(false)}>Cancel</button>
-                  <button type="submit" className="btn btn-warning" id="correct-stock-submit-btn">Continue to Confirm</button>
-                </div>
-              </form>
-            </motion.div>
-          </div>
-        )}
-      </AnimatePresence>
-
-      {/* ── CONFIRMATION DIALOG ───────────────────────────────────────────── */}
+      {/* Confirmation Dialog */}
       <AnimatePresence>
         {confirmDialog && (
           <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
-            <motion.div
-              className="card"
-              initial={{ scale: 0.9, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              exit={{ scale: 0.9, opacity: 0 }}
-              style={{ width: '100%', maxWidth: 440, padding: 24 }}
-            >
+            <motion.div className="card" style={{ width: '100%', maxWidth: 440, padding: 24 }}>
               <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', marginBottom: 10 }}>
-                {confirmDialog.type === 'ADD' ? '🔒 Confirm Stock Addition' : '🔒 Confirm Stock Correction'}
+                {confirmDialog.type === 'ADD' ? 'Confirm Stock Addition' : 'Confirm Stock Correction'}
               </div>
-
-              <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', marginBottom: 16, lineHeight: 1.5 }}>
-                {confirmDialog.type === 'ADD' ? (
-                  <>
-                    Are you sure you want to add <strong>+{confirmDialog.qty} {confirmDialog.unit}</strong> to <strong>{confirmDialog.item?.name}</strong>?
-                    <div style={{ marginTop: 10, padding: '10px 12px', background: 'rgba(16,185,129,0.06)', borderRadius: 8, border: '1px solid rgba(16,185,129,0.2)' }}>
-                      <div>Current Stock: {confirmDialog.item?.currentStock} {confirmDialog.unit}</div>
-                      <div style={{ fontWeight: 700, color: 'var(--success)' }}>New Total Stock: {confirmDialog.item?.currentStock + confirmDialog.qty} {confirmDialog.unit}</div>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    Are you sure you want to set available stock of <strong>{confirmDialog.item?.name}</strong> to <strong>{confirmDialog.newStock} units</strong>?
-                  </>
-                )}
+              <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', marginBottom: 16 }}>
+                Are you sure you want to proceed with this stock update for <strong>{confirmDialog.item?.name}</strong>?
               </div>
-
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 20 }}>
-                ⚡ This action will write a read-only audit log in CRM and synchronize live with Manager App DB2.
-              </div>
-
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button className="btn btn-secondary" onClick={() => setConfirmDialog(null)} disabled={submitting}>Cancel</button>
-                <button
-                  className="btn btn-primary"
-                  onClick={confirmDialog.type === 'ADD' ? executeAddStock : executeCorrectStock}
-                  disabled={submitting}
-                  id="confirm-inventory-save-btn"
-                >
-                  {submitting ? 'Saving & Syncing...' : 'Yes, Confirm & Save'}
+                <button className="btn btn-primary" onClick={confirmDialog.type === 'ADD' ? executeAddStock : executeCorrectStock} disabled={submitting}>
+                  {submitting ? 'Saving...' : 'Yes, Confirm & Save'}
                 </button>
               </div>
             </motion.div>

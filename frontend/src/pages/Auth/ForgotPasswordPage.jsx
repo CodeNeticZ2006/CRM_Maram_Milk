@@ -1,7 +1,10 @@
 import { useState, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MdEmail, MdPhone, MdLock, MdVisibility, MdVisibilityOff, MdArrowBack } from 'react-icons/md';
+import {
+  MdEmail, MdPhone, MdLock, MdVisibility, MdVisibilityOff,
+  MdArrowBack, MdLocalDrink, MdSend, MdCheckCircle
+} from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 
@@ -21,7 +24,6 @@ export default function ForgotPasswordPage() {
   const [resendTimer, setResendTimer] = useState(0);
   const otpRefs = useRef([]);
 
-  // ── Step 1: Request OTP ────────────────────────────────
   const handleRequestOTP = async (e) => {
     e.preventDefault();
     if (!identifier.trim()) return toast.error('Please enter your email or phone');
@@ -43,7 +45,6 @@ export default function ForgotPasswordPage() {
     }, 1000);
   };
 
-  // ── OTP Input Handling ─────────────────────────────────
   const handleOtpChange = (index, value) => {
     if (!/^\d?$/.test(value)) return;
     const newOtp = [...otp];
@@ -75,7 +76,6 @@ export default function ForgotPasswordPage() {
     } finally { setLoading(false); }
   };
 
-  // ── Step 3: Reset Password ─────────────────────────────
   const handleResetPassword = async (e) => {
     e.preventDefault();
     if (newPassword.length < 8) return toast.error('Password must be at least 8 characters');
@@ -94,27 +94,29 @@ export default function ForgotPasswordPage() {
     <div className="auth-page">
       <div className="auth-left">
         <div className="auth-brand">
-          <div className="auth-brand-icon">🥛</div>
+          <div className="auth-brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MdLocalDrink style={{ fontSize: 24, color: '#fff' }} />
+          </div>
           <div className="auth-brand-name">Maram Milk</div>
           <div className="auth-brand-sub">Password Recovery</div>
         </div>
         <div className="auth-features">
           <div className="auth-feature">
-            <div className="auth-feature-icon">📧</div>
+            <div className="auth-feature-icon" style={{ fontSize: 20, color: 'var(--primary)' }}><MdEmail /></div>
             <div className="auth-feature-text">
               <h4>Email OTP</h4>
               <p>Receive a 6-digit OTP to your registered email address</p>
             </div>
           </div>
           <div className="auth-feature">
-            <div className="auth-feature-icon">📱</div>
+            <div className="auth-feature-icon" style={{ fontSize: 20, color: 'var(--primary)' }}><MdPhone /></div>
             <div className="auth-feature-text">
               <h4>SMS OTP</h4>
               <p>Get OTP via SMS to your registered mobile number</p>
             </div>
           </div>
           <div className="auth-feature">
-            <div className="auth-feature-icon">🔐</div>
+            <div className="auth-feature-icon" style={{ fontSize: 20, color: 'var(--primary)' }}><MdLock /></div>
             <div className="auth-feature-text">
               <h4>Secure Recovery</h4>
               <p>OTP expires in 10 minutes. Max 3 attempts per request</p>
@@ -170,8 +172,8 @@ export default function ForgotPasswordPage() {
                       />
                     </div>
                   </div>
-                  <button type="submit" className="btn btn-primary w-full btn-lg" disabled={loading}>
-                    {loading ? <span className="loading-spinner" /> : '📤 Send OTP'}
+                  <button type="submit" className="btn btn-primary w-full btn-lg" disabled={loading} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <MdSend /> {loading ? 'Sending OTP...' : 'Send OTP'}
                   </button>
                 </form>
 
@@ -208,8 +210,8 @@ export default function ForgotPasswordPage() {
                       />
                     ))}
                   </div>
-                  <button type="submit" className="btn btn-primary w-full btn-lg" disabled={loading}>
-                    {loading ? <span className="loading-spinner" /> : '✅ Verify OTP'}
+                  <button type="submit" className="btn btn-primary w-full btn-lg" disabled={loading} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <MdCheckCircle /> {loading ? 'Verifying...' : 'Verify OTP'}
                   </button>
                 </form>
 
@@ -266,8 +268,8 @@ export default function ForgotPasswordPage() {
                       />
                     </div>
                   </div>
-                  <button type="submit" className="btn btn-primary w-full btn-lg" disabled={loading}>
-                    {loading ? <span className="loading-spinner" /> : '🔐 Reset Password'}
+                  <button type="submit" className="btn btn-primary w-full btn-lg" disabled={loading} style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                    <MdLock /> {loading ? 'Resetting...' : 'Reset Password'}
                   </button>
                 </form>
               </motion.div>
@@ -276,13 +278,13 @@ export default function ForgotPasswordPage() {
             {/* STEP 4: Done */}
             {step === STEPS.DONE && (
               <motion.div key="done" initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} style={{ textAlign: 'center', padding: '20px 0' }}>
-                <div style={{ fontSize: 64, marginBottom: 16 }}>✅</div>
+                <MdCheckCircle style={{ fontSize: 56, color: '#10b981', marginBottom: 16 }} />
                 <h1 className="auth-card-title">Password Reset!</h1>
                 <p className="auth-card-sub" style={{ marginBottom: 28 }}>
                   Your password has been reset successfully.
                 </p>
                 <button onClick={() => navigate('/login')} className="btn btn-primary w-full btn-lg">
-                  → Go to Login
+                  Go to Login
                 </button>
               </motion.div>
             )}

@@ -18,6 +18,7 @@ const SubscriptionsPage = lazy(() => import('./pages/Subscriptions/Subscriptions
 const PausePage        = lazy(() => import('./pages/Pause/PausePage'));
 const LogisticsPage    = lazy(() => import('./pages/Logistics/LogisticsPage'));
 const EcomOrdersPage   = lazy(() => import('./pages/EcomOrders/EcomOrdersPage'));
+const EmptyBottlesPage = lazy(() => import('./pages/EmptyBottles/EmptyBottlesPage'));
 const WalletPage       = lazy(() => import('./pages/Wallet/WalletPage'));
 const PaymentsPage     = lazy(() => import('./pages/Payments/PaymentsPage'));
 const WhatsAppPage     = lazy(() => import('./pages/WhatsApp/WhatsAppPage'));
@@ -88,6 +89,9 @@ export default function App() {
           } />
           <Route path="/ecom-orders" element={
             <Suspense fallback={<PageLoader />}><EcomOrdersPage /></Suspense>
+          } />
+          <Route path="/empty-bottles" element={
+            <Suspense fallback={<PageLoader />}><EmptyBottlesPage /></Suspense>
           } />
           <Route path="/wallet" element={
             <Suspense fallback={<PageLoader />}><WalletPage /></Suspense>

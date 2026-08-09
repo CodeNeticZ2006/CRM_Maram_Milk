@@ -7,7 +7,8 @@ import {
   MdAccountBalanceWallet, MdPayment, MdWhatsapp, MdFeedback,
   MdSms, MdAdminPanelSettings, MdLogout, MdSettings,
   MdMap, MdSatellite, MdHexagon, MdRule, MdHistory, MdInsights,
-  MdTune, MdExpandMore, MdExpandLess, MdInventory,
+  MdTune, MdExpandMore, MdExpandLess, MdInventory, MdWineBar,
+  MdLocalDrink, MdWorkspacePremium,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
@@ -21,6 +22,7 @@ const ROUTE_PERMISSION_MAP = {
   '/pause': 'PAUSE_MANAGEMENT',
   '/logistics': 'LOGISTICS',
   '/ecom-orders': 'ECOM_ORDERS',
+  '/empty-bottles': 'EMPTY_BOTTLES',
   '/wallet': 'WALLET',
   '/payments': 'PAYMENTS',
   '/whatsapp': 'WHATSAPP',
@@ -62,6 +64,7 @@ const NAV_SECTIONS = [
       { to: '/inventory', icon: <MdInventory />, label: 'Inventory' },
       { to: '/logistics', icon: <MdLocalShipping />, label: 'Logistics' },
       { to: '/ecom-orders', icon: <MdShoppingCart />, label: 'Ecom Orders' },
+      { to: '/empty-bottles', icon: <MdWineBar />, label: 'Empty Bottles' },
     ]
   },
   {
@@ -145,7 +148,9 @@ export default function Sidebar({ pendingCount }) {
       {/* Logo */}
       <div className="sidebar-logo">
         <div className="brand">
-          <div className="brand-icon">🥛</div>
+          <div className="brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <MdLocalDrink style={{ fontSize: 22, color: '#fff' }} />
+          </div>
           <div>
             <div className="brand-name">Maram Milk</div>
             <div className="brand-sub">{isSuperAdmin ? 'Super Admin CRM' : `${admin?.role || 'CRM'} Portal`}</div>
@@ -220,8 +225,8 @@ export default function Sidebar({ pendingCount }) {
           <div className="admin-avatar">{initials}</div>
           <div className="admin-info">
             <div className="admin-name">{admin?.name || 'Sarfaz Ahamed'}</div>
-            <div className="admin-role" style={{ color: isSuperAdmin ? '#10b981' : 'var(--primary)' }}>
-              {isSuperAdmin ? '👑 Dedicated Super Admin' : (admin?.role || 'Manager')}
+            <div className="admin-role" style={{ color: isSuperAdmin ? '#10b981' : 'var(--primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
+              {isSuperAdmin ? <><MdWorkspacePremium style={{ fontSize: 14 }} /> Dedicated Super Admin</> : (admin?.role || 'Manager')}
             </div>
           </div>
           <button onClick={handleLogout} title="Logout" style={{ background: 'none', border: 'none', color: 'var(--sidebar-text)', fontSize: 18, cursor: 'pointer', padding: 4 }}>
