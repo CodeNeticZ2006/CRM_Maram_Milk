@@ -1,9 +1,10 @@
 const { readFromApp, readFromCRM, writeToCRM } = require('../config/database');
 
-// GET /api/empty-bottles — Get DB2 DP-wise empty bottle return logs
+// GET /api/empty-bottles — Get DB2 DP-wise empty bottle return logs with date filters
 const getEmptyBottleLogs = async (req, res, next) => {
   try {
-    const { date, dpId } = req.query;
+    const { timeFilter = 'this_month', dpId, startDate, endDate, month } = req.query;
+
     let dpRows = [];
     let routeRows = [];
     let allocRows = [];
@@ -13,10 +14,10 @@ const getEmptyBottleLogs = async (req, res, next) => {
     // 1. Fetch DB2 data
     try {
       const [dpRes, rRes, aRes, lRes] = await Promise.all([
-        readFromApp('SELECT id, name, "dpCode", "vehicleNumber", zone FROM "DeliveryPerson" ORDER BY name ASC'),
+        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
-        readFromApp('SELECT id, date, "routeId", "dpId", "qty1LBottle", "qtyHalfLBottle" FROM "RouteAllocation" ORDER BY "createdAt" DESC LIMIT 200'),
-        readFromApp('SELECT id, date, "routeId", "dpId", "actualDelivered1L", "actualDeliveredHalfL", "deliveryCompleted", "flagIssue", notes, reason FROM "EmptyBottleLog" ORDER BY "createdAt" DESC LIMIT 200'),
+        readFromApp('SELECT id, date, "routeId", "dpId", "qty1LBottle", "qtyHalfLBottle" FROM "RouteAllocation" ORDER BY "createdAt" DESC'),
+        readFromApp('SELECT id, date, "routeId", "dpId", "oneLBottlesCollected", "halfLBottlesCollected", "actualDelivered1L", "actualDeliveredHalfL", "deliveryCompleted", "flagIssue", notes, reason FROM "EmptyBottleLog" ORDER BY "createdAt" DESC'),
       ]);
       dpRows = dpRes.rows;
       routeRows = rRes.rows;
@@ -42,25 +43,130 @@ const getEmptyBottleLogs = async (req, res, next) => {
       ];
     }
 
-    // Process logs DP-wise
+    // Baseline dates: IST Today and DB2 System Inception Date (Mid-July 2026: 2026-07-15)
+    const DB2_START_DATE = '2026-07-15';
+    const todayObj = new Date();
+    const todayStr = todayObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // e.g. '2026-08-09'
+
+    let datesList = [];
+    let currentYear = todayObj.getFullYear();
+    let currentMonth = todayObj.getMonth(); // 0-indexed (7 = August)
+    if (timeFilter === 'this_month' && /^\d{4}-\d{2}$/.test(month || '')) {
+      currentYear = Number(month.slice(0, 4));
+      currentMonth = Number(month.slice(5, 7)) - 1;
+    }
+
+    if (timeFilter === 'today') {
+      datesList = [todayStr];
+    } else if (timeFilter === 'this_week') {
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date(todayObj);
+        d.setDate(todayObj.getDate() - i);
+        datesList.push(d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+      }
+    } else if (timeFilter === 'custom' && startDate && endDate) {
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const curr = new Date(start);
+      while (curr <= end && datesList.length < 60) {
+        datesList.push(curr.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+        curr.setDate(curr.getDate() + 1);
+      }
+    } else {
+      // Default: this_month — generate all days for current selected month
+      const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+      for (let d = 1; d <= totalDaysInMonth; d++) {
+        const dObj = new Date(currentYear, currentMonth, d);
+        datesList.push(dObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+      }
+    }
+
+    // Process empty bottle collection logs DP-wise across selected time filter dates
     const dpLogs = dpRows.map((dp, i) => {
-      const assignedRoute = routeRows.find(r => r.assignedDpId === dp.id || r.zone === dp.zone);
-      const alloc = allocRows.find(a => a.dpId === dp.id);
-      const log = logRows.find(l => l.dpId === dp.id);
+      const assignedRoute = routeRows.find(r => String(r.assignedDpId) === String(dp.id) || r.zone === dp.zone);
 
-      const issued1L = alloc ? parseInt(alloc.qty1LBottle || 40) : 40 + (i * 5);
-      const issuedHalfL = alloc ? parseInt(alloc.qtyHalfLBottle || 30) : 30 + (i * 4);
+      let totalIssued1L = 0;
+      let totalReturned1L = 0;
+      let totalMissing1L = 0;
+      let totalIssuedHalfL = 0;
+      let totalReturnedHalfL = 0;
+      let totalMissingHalfL = 0;
+      let flagCount = 0;
 
-      const returned1L = log ? parseInt(log.actualDelivered1L || issued1L - (i % 2)) : Math.max(0, issued1L - (i === 1 ? 3 : 1));
-      const returnedHalfL = log ? parseInt(log.actualDeliveredHalfL || issuedHalfL) : Math.max(0, issuedHalfL - (i === 2 ? 2 : 0));
+      const dateLogs = datesList.map((dStr) => {
+        const isFuture = dStr > todayStr;
+        const isBeforeDb2 = dStr < DB2_START_DATE;
 
-      const missing1L = Math.max(0, issued1L - returned1L);
-      const missingHalfL = Math.max(0, issuedHalfL - returnedHalfL);
-      const totalIssued = issued1L + issuedHalfL;
-      const totalReturned = returned1L + returnedHalfL;
-      const returnRate = totalIssued > 0 ? Math.round((totalReturned / totalIssued) * 100) : 100;
+        const alloc = allocRows.find(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode)) && String(a.date || '').slice(0, 10) === dStr);
+        const log   = logRows.find(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode)) && String(l.date || '').slice(0, 10) === dStr);
 
-      const hasFlag = log?.flagIssue || missing1L > 2 || missingHalfL > 2 || i === 1;
+        let issued1L = 0;
+        let issuedHalfL = 0;
+        let returned1L = 0;
+        let returnedHalfL = 0;
+        let missing1L = 0;
+        let missingHalfL = 0;
+        let hasFlag = false;
+
+        if (!isBeforeDb2 && !isFuture) {
+          issued1L = alloc ? parseInt(alloc.qty1LBottle || 40) : 40;
+          issuedHalfL = alloc ? parseInt(alloc.qtyHalfLBottle || 30) : 30;
+
+          if (log) {
+            const val1L = log.oneLBottlesCollected ?? log.actualDelivered1L;
+            const valHalfL = log.halfLBottlesCollected ?? log.actualDeliveredHalfL;
+            returned1L = val1L !== undefined && val1L !== null ? parseInt(val1L) : issued1L;
+            returnedHalfL = valHalfL !== undefined && valHalfL !== null ? parseInt(valHalfL) : issuedHalfL;
+            hasFlag = Boolean(log.flagIssue);
+          } else {
+            // Clean 100% return for normal completed route deliveries without DB2 flag
+            returned1L = issued1L;
+            returnedHalfL = issuedHalfL;
+            hasFlag = false;
+          }
+
+          missing1L = Math.max(0, issued1L - returned1L);
+          missingHalfL = Math.max(0, issuedHalfL - returnedHalfL);
+
+          if (missing1L > 0 || missingHalfL > 0) {
+            hasFlag = true;
+          }
+
+          totalIssued1L += issued1L;
+          totalReturned1L += returned1L;
+          totalMissing1L += missing1L;
+          totalIssuedHalfL += issuedHalfL;
+          totalReturnedHalfL += returnedHalfL;
+          totalMissingHalfL += missingHalfL;
+          if (hasFlag) flagCount++;
+        }
+
+        const dayIssued = issued1L + issuedHalfL;
+        const dayReturned = returned1L + returnedHalfL;
+        const dayReturnRate = dayIssued > 0 ? Math.round((dayReturned / dayIssued) * 100) : 100;
+
+        return {
+          date: dStr,
+          isFuture,
+          isBeforeDb2,
+          issued1L,
+          issuedHalfL,
+          returned1L,
+          returnedHalfL,
+          missing1L,
+          missingHalfL,
+          dayIssued,
+          dayReturned,
+          returnRate: dayReturnRate,
+          hasFlag,
+          notes: log?.notes || (hasFlag ? `${missing1L + missingHalfL} empty bottles broken / unreturned` : null),
+          routeName: routeRows.find(r => String(r.id) === String(alloc?.routeId || log?.routeId))?.name || assignedRoute?.name || 'Assigned Route',
+        };
+      });
+
+      const totalIssuedOverall = totalIssued1L + totalIssuedHalfL;
+      const totalReturnedOverall = totalReturned1L + totalReturnedHalfL;
+      const overallReturnRate = totalIssuedOverall > 0 ? Math.round((totalReturnedOverall / totalIssuedOverall) * 100) : 100;
 
       return {
         id: dp.id,
@@ -69,33 +175,40 @@ const getEmptyBottleLogs = async (req, res, next) => {
         vehicleNumber: dp.vehicleNumber || 'TN 39 AB 1000',
         routeName: assignedRoute ? assignedRoute.name : `Route ${i + 1}`,
         zone: dp.zone || 'Zone A',
-        issued1L,
-        issuedHalfL,
-        returned1L,
-        returnedHalfL,
-        missing1L,
-        missingHalfL,
-        totalIssued,
-        totalReturned,
-        returnRate,
-        hasFlag,
-        flagReason: hasFlag ? (log?.reason || `${missing1L + missingHalfL} empty bottles unreturned / broken`) : null,
+        issued1L: totalIssued1L,
+        issuedHalfL: totalIssuedHalfL,
+        returned1L: totalReturned1L,
+        returnedHalfL: totalReturnedHalfL,
+        missing1L: totalMissing1L,
+        missingHalfL: totalMissingHalfL,
+        totalIssued: totalIssuedOverall,
+        totalReturned: totalReturnedOverall,
+        returnRate: overallReturnRate,
+        hasFlag: flagCount > 0,
+        flagCount,
+        dateLogs,
         source: 'DB2',
       };
     });
 
-    const totalIssuedOverall = dpLogs.reduce((acc, d) => acc + d.totalIssued, 0);
-    const totalReturnedOverall = dpLogs.reduce((acc, d) => acc + d.totalReturned, 0);
+    // Filter if specific dpId requested
+    const filteredData = dpId ? dpLogs.filter(a => a.id === dpId || a.dpName.toLowerCase().includes(dpId.toLowerCase())) : dpLogs;
+
+    const totalIssuedOverall = filteredData.reduce((acc, d) => acc + d.totalIssued, 0);
+    const totalReturnedOverall = filteredData.reduce((acc, d) => acc + d.totalReturned, 0);
     const overallReturnRate = totalIssuedOverall > 0 ? Math.round((totalReturnedOverall / totalIssuedOverall) * 100) : 100;
 
     res.json({
       success: true,
-      data: dpLogs,
+      timeFilter,
+      datesList,
+      data: filteredData,
+      allDps: dpRows.map(d => ({ id: d.id, name: d.name, dpCode: d.dpCode })),
       stats: {
         totalIssued: totalIssuedOverall,
         totalReturned: totalReturnedOverall,
         returnRate: overallReturnRate,
-        pendingIncidents: crmIncidents.filter(i => i.status === 'Pending Review').length + dpLogs.filter(d => d.hasFlag).length,
+        pendingIncidents: crmIncidents.filter(i => i.status === 'Pending Review').length + filteredData.filter(d => d.hasFlag).length,
       },
       incidents: crmIncidents,
     });

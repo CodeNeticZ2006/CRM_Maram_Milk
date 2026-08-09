@@ -8,7 +8,7 @@ import {
   MdSms, MdAdminPanelSettings, MdLogout, MdSettings,
   MdMap, MdSatellite, MdHexagon, MdRule, MdHistory, MdInsights,
   MdTune, MdExpandMore, MdExpandLess, MdInventory, MdWineBar,
-  MdLocalDrink, MdWorkspacePremium,
+  MdLocalDrink, MdWorkspacePremium, MdClose,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
@@ -107,7 +107,7 @@ const NAV_SECTIONS = [
   }
 ];
 
-export default function Sidebar({ pendingCount }) {
+export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
   const { admin, logout } = useAuthStore();
   const navigate = useNavigate();
   const [openGroups, setOpenGroups] = useState({ 'Route Intelligence': true });
@@ -139,14 +139,9 @@ export default function Sidebar({ pendingCount }) {
   const initials = admin?.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'SA';
 
   return (
-    <motion.aside
-      className="sidebar"
-      initial={{ x: -260 }}
-      animate={{ x: 0 }}
-      transition={{ duration: 0.3 }}
-    >
-      {/* Logo */}
-      <div className="sidebar-logo">
+    <aside className={`sidebar ${mobileOpen ? 'open' : ''}`}>
+      {/* Logo & Mobile Close Header */}
+      <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="brand">
           <div className="brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <MdLocalDrink style={{ fontSize: 22, color: '#fff' }} />
@@ -156,6 +151,17 @@ export default function Sidebar({ pendingCount }) {
             <div className="brand-sub">{isSuperAdmin ? 'Super Admin CRM' : `${admin?.role || 'CRM'} Portal`}</div>
           </div>
         </div>
+        {/* Mobile Close Button */}
+        {onCloseMobile && (
+          <button
+            className="icon-btn"
+            style={{ border: 'none', color: '#94a3b8', background: 'transparent' }}
+            onClick={onCloseMobile}
+            title="Close menu"
+          >
+            <MdClose style={{ fontSize: 24 }} />
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
@@ -188,6 +194,7 @@ export default function Sidebar({ pendingCount }) {
                         <NavLink
                           key={item.to}
                           to={item.to}
+                          onClick={onCloseMobile}
                           className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
                         >
                           <span className="nav-icon">{item.icon}</span>
@@ -206,6 +213,7 @@ export default function Sidebar({ pendingCount }) {
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    onClick={onCloseMobile}
                     className={({ isActive }) => `nav-item${isActive ? ' active' : ''}`}
                   >
                     <span className="nav-icon">{item.icon}</span>
@@ -234,6 +242,6 @@ export default function Sidebar({ pendingCount }) {
           </button>
         </div>
       </div>
-    </motion.aside>
+    </aside>
   );
 }

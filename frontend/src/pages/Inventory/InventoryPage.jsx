@@ -758,13 +758,16 @@ export default function InventoryPage() {
             </div>
 
             <div className="card-body">
-              {/* 7-Column Sun to Sat Day Headers */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, textAlign: 'center', fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
-                <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
-              </div>
+              {/* Responsive Touch-Scroll Grid Container for Mobile Devices */}
+              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                <div style={{ minWidth: 540 }}>
+                  {/* 7-Column Sun to Sat Day Headers */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, textAlign: 'center', fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+                    <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+                  </div>
 
-              {/* Sun-Sat Day Cells Grid */}
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+                  {/* Sun-Sat Day Cells Grid */}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
                 {getMonthGridDays().map((dayNum, idx) => {
                   if (dayNum === null) {
                     return <div key={`empty-${idx}`} style={{ minHeight: 64, background: 'transparent' }} />;
@@ -849,7 +852,9 @@ export default function InventoryPage() {
             </div>
           </div>
         </div>
-      )}
+      </div>
+    </div>
+  )}
 
       {/* ── SIMPLIFIED ATTENDANCE DETAIL POPUP (PICTURE 3 REQUEST: NO CHECK-IN/OUT, SHOW ROUTE ONLY) ── */}
       <AnimatePresence>
