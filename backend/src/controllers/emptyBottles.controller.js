@@ -98,7 +98,10 @@ const getEmptyBottleLogs = async (req, res, next) => {
         const isBeforeDb2 = dStr < DB2_START_DATE;
 
         const alloc = allocRows.find(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode)) && String(a.date || '').slice(0, 10) === dStr);
-        const log   = logRows.find(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode)) && String(l.date || '').slice(0, 10) === dStr);
+        // Use filter (not find) — a DP can serve multiple routes in one day, producing multiple EmptyBottleLog records.
+        // All matching records must be summed to get the correct daily total.
+        const dayLogs = logRows.filter(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode)) && String(l.date || '').slice(0, 10) === dStr);
+        const log     = dayLogs[0] || null; // reference record for notes / flagIssue / routeName
 
         let issued1L = 0;
         let issuedHalfL = 0;
@@ -108,36 +111,26 @@ const getEmptyBottleLogs = async (req, res, next) => {
         let missingHalfL = 0;
         let hasFlag = false;
 
-        if (!isBeforeDb2 && !isFuture) {
-          issued1L = alloc ? parseInt(alloc.qty1LBottle || 40) : 40;
-          issuedHalfL = alloc ? parseInt(alloc.qtyHalfLBottle || 30) : 30;
+        // Only count this day if actual EmptyBottleLog record(s) exist in DB2.
+        // If no log is present, skip entirely — do NOT assume 100% return or add phantom bottles.
+        if (!isBeforeDb2 && !isFuture && dayLogs.length > 0) {
+          // SUM across ALL logs for this DP+date (handles multi-route DPs with 2+ entries per day)
+          issued1L    = dayLogs.reduce((s, l) => s + (parseInt(l.actualDelivered1L)    || 0), 0);
+          issuedHalfL = dayLogs.reduce((s, l) => s + (parseInt(l.actualDeliveredHalfL) || 0), 0);
+          returned1L    = dayLogs.reduce((s, l) => s + (parseInt(l.oneLBottlesCollected)  || 0), 0);
+          returnedHalfL = dayLogs.reduce((s, l) => s + (parseInt(l.halfLBottlesCollected) || 0), 0);
+          // hasFlag is driven ONLY by the DB's flagIssue column — no auto-override
+          hasFlag = dayLogs.some(l => Boolean(l.flagIssue));
 
-          if (log) {
-            const val1L = log.oneLBottlesCollected ?? log.actualDelivered1L;
-            const valHalfL = log.halfLBottlesCollected ?? log.actualDeliveredHalfL;
-            returned1L = val1L !== undefined && val1L !== null ? parseInt(val1L) : issued1L;
-            returnedHalfL = valHalfL !== undefined && valHalfL !== null ? parseInt(valHalfL) : issuedHalfL;
-            hasFlag = Boolean(log.flagIssue);
-          } else {
-            // Clean 100% return for normal completed route deliveries without DB2 flag
-            returned1L = issued1L;
-            returnedHalfL = issuedHalfL;
-            hasFlag = false;
-          }
-
-          missing1L = Math.max(0, issued1L - returned1L);
+          missing1L    = Math.max(0, issued1L    - returned1L);
           missingHalfL = Math.max(0, issuedHalfL - returnedHalfL);
 
-          if (missing1L > 0 || missingHalfL > 0) {
-            hasFlag = true;
-          }
-
-          totalIssued1L += issued1L;
-          totalReturned1L += returned1L;
-          totalMissing1L += missing1L;
-          totalIssuedHalfL += issuedHalfL;
-          totalReturnedHalfL += returnedHalfL;
-          totalMissingHalfL += missingHalfL;
+          totalIssued1L       += issued1L;
+          totalReturned1L     += returned1L;
+          totalMissing1L      += missing1L;
+          totalIssuedHalfL    += issuedHalfL;
+          totalReturnedHalfL  += returnedHalfL;
+          totalMissingHalfL   += missingHalfL;
           if (hasFlag) flagCount++;
         }
 
