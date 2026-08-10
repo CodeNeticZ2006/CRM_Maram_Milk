@@ -103,7 +103,7 @@ const getRoutes = async (req, res, next) => {
 
     const crmRoutes = await readFromCRM(
       `SELECT r.*, b.branch_name,
-        (SELECT COUNT(*) FROM route_assignments ra WHERE ra.route_id = r.id) as customer_count,
+        (SELECT COUNT(*) FROM customers c WHERE c.assigned_route_id = r.id::text OR c.assigned_route_id = r.route_name) as customer_count,
         'DB1' as source
        FROM routes r
        LEFT JOIN branches b ON b.id = r.branch_id
@@ -128,8 +128,20 @@ const getRoutes = async (req, res, next) => {
       { id: 'db2-14', route_name: 'West Mambalam 2',  branch_name: 'Zone A', customer_count: 0, litres: 0, default_petrol_allowance: 80,  status: 'Active', source: 'DB2-Cached' },
     ];
 
-    const db2Result   = appRoutes.length > 0 ? appRoutes : fallbackDB2Routes;
-    const finalRoutes = [...db2Result, ...crmRoutes.rows];
+    const baseList = appRoutes.length > 0 ? appRoutes : fallbackDB2Routes;
+
+    // Deduplicate by route_name (CRM routes take priority over base list so UUID matches)
+    const routeMap = new Map();
+    for (const r of baseList) {
+      routeMap.set(r.route_name.trim().toLowerCase(), r);
+    }
+    for (const r of crmRoutes.rows) {
+      const key = r.route_name.trim().toLowerCase();
+      const existing = routeMap.get(key);
+      routeMap.set(key, { ...existing, ...r, source: 'DB1' });
+    }
+
+    const finalRoutes = Array.from(routeMap.values());
 
     res.json({ success: true, data: finalRoutes, db2_count: appRoutes.length, db1_count: crmRoutes.rows.length });
   } catch (err) { next(err); }

@@ -9,6 +9,7 @@ IMPLEMENTATION_PLAN.md
 # ── Temporary Utility & Scratch Scripts ───────────────────────────
 backend/src/utils/update_admin.js
 backend/src/utils/inspect_db2.js
+backend/test_*.js
 scratch/
 tmp/
 temp/
@@ -33,8 +34,9 @@ Desktop.ini
 .env
 .env.*
 !.env.example
+*.env
 
-# ── Node.js ───────────────────────────────────────────────────────
+# ── Node.js & Package Managers ────────────────────────────────────
 node_modules/
 **/node_modules/
 npm-debug.log*
@@ -63,6 +65,5 @@ logs/
 *.tsbuildinfo
 .cache/
 coverage/
-
 
 data-*.csv

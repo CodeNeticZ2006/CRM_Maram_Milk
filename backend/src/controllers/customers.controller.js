@@ -18,10 +18,35 @@ const getCustomers = async (req, res, next) => {
       pi++;
     }
     if (status) { where.push(`c.status = $${pi++}`); params.push(status); }
+
     if (route_id) {
-      where.push(`(c.assigned_route_id = $${pi} OR r.id::text = $${pi} OR r.route_name ILIKE $${pi})`);
-      params.push(route_id);
-      pi++;
+      // Find route_name if route_id is a UUID or DB2 key
+      const routeCheck = await readFromCRM(
+        `SELECT id, route_name FROM routes WHERE id::text = $1 OR LOWER(route_name) = LOWER($1)`,
+        [route_id]
+      ).catch(() => ({ rows: [] }));
+
+      let routeName = route_id;
+      if (routeCheck.rows.length > 0) {
+        routeName = routeCheck.rows[0].route_name;
+      } else {
+        const db2Map = {
+          'db2-1': 'Alwarpet', 'db2-2': 'Egmore', 'db2-3': 'Mandaveli 1', 'db2-4': 'Mandaveli 2',
+          'db2-5': 'MRC Ngr', 'db2-6': 'Mylapore 1', 'db2-7': 'Mylapore 2', 'db2-8': 'Nungambakkam',
+          'db2-9': 'Royapettah', 'db2-10': 'T-Nagar', 'db2-11': 'Teynampet', 'db2-12': 'Triplicane',
+          'db2-13': 'West Mambalam 1', 'db2-14': 'West Mambalam 2'
+        };
+        if (db2Map[route_id]) routeName = db2Map[route_id];
+      }
+
+      where.push(`(
+        c.assigned_route_id = $${pi}
+        OR r.id::text = $${pi}
+        OR r.route_name ILIKE $${pi + 1}
+        OR c.assigned_route_id ILIKE $${pi + 1}
+      )`);
+      params.push(route_id, `%${routeName}%`);
+      pi += 2;
     }
 
     const whereStr = where.join(' AND ');
@@ -91,6 +116,29 @@ const getCustomerById = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// Helper: Generate next unique customer code
+const generateCustomerCode = async () => {
+  const codeRes = await readFromCRM(`SELECT customer_code FROM customers WHERE customer_code LIKE 'MM%'`);
+  let maxNum = 0;
+  for (const row of codeRes.rows) {
+    const num = parseInt(row.customer_code.replace('MM', ''), 10);
+    if (!isNaN(num) && num > maxNum) {
+      maxNum = num;
+    }
+  }
+  let nextNum = maxNum + 1;
+  let code = `MM${String(nextNum).padStart(4, '0')}`;
+
+  let check = await readFromCRM('SELECT 1 FROM customers WHERE customer_code = $1', [code]);
+  while (check.rows.length > 0) {
+    nextNum++;
+    code = `MM${String(nextNum).padStart(4, '0')}`;
+    check = await readFromCRM('SELECT 1 FROM customers WHERE customer_code = $1', [code]);
+  }
+
+  return code;
+};
+
 // ─────────────────────────────────────────────
 // POST /api/customers — create
 // ─────────────────────────────────────────────
@@ -103,10 +151,8 @@ const createCustomer = async (req, res, next) => {
 
     if (!name || !phone) return res.status(400).json({ success: false, message: 'Name and phone are required.' });
 
-    // Generate customer code
-    const countRes = await readFromCRM('SELECT COUNT(*) FROM customers');
-    const nextNum = parseInt(countRes.rows[0].count) + 1;
-    const customer_code = `MM${String(nextNum).padStart(4, '0')}`;
+    // Generate unique customer code safely
+    const customer_code = await generateCustomerCode();
 
     const result = await writeToCRM(
       `INSERT INTO customers (customer_code, name, phone, whatsapp_number, address, lat, lng, assigned_route_id, enquiry_source, status, maps_url)
