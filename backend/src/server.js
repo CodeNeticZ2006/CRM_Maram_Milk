@@ -5,6 +5,8 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { testConnections } = require('./config/database');
 const { runMigrations } = require('./migrations/001_create_tables');
+const { runMigration002 } = require('./migrations/002_add_maps_url');
+const { runMigration003 } = require('./migrations/003_alter_assigned_route_id');
 const { seedSuperAdmin } = require('./utils/seed');
 const { errorHandler } = require('./middleware/errorHandler');
 
@@ -102,6 +104,8 @@ const start = async () => {
     // Run migrations and seeding — non-fatal if DB unavailable
     try {
       await runMigrations();
+      await runMigration002();
+      await runMigration003();
       await seedSuperAdmin();
     } catch (dbErr) {
       console.warn('⚠️  DB setup skipped (DB unreachable):', dbErr.message);

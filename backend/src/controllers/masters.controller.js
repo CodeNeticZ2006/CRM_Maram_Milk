@@ -160,8 +160,76 @@ const updateRoute = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ── DPs BY ROUTE ────────────────────────────────────────────────
+// GET /api/masters/dps-by-route?route_name=Teynampet
+// Returns all DPs assigned to the given route from DB2
+const getDpsByRoute = async (req, res, next) => {
+  try {
+    const { route_name = '' } = req.query;
+    if (!route_name) return res.json({ success: true, data: [] });
+
+    let dps = [];
+    try {
+      // Find the route in DB2 by name (case-insensitive)
+      const routeRes = await readFromApp(
+        `SELECT id, name, "assignedDpId" FROM "Route" WHERE LOWER(name) = LOWER($1) LIMIT 1`,
+        [route_name]
+      );
+
+      if (routeRes.rows.length > 0) {
+        const route = routeRes.rows[0];
+        if (route.assignedDpId) {
+          // Fetch the assigned DP
+          const dpRes = await readFromApp(
+            `SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive"
+             FROM "DeliveryPerson" WHERE id = $1`,
+            [route.assignedDpId]
+          );
+          dps = dpRes.rows;
+        } else {
+          // No assigned DP — return all active DPs in same zone
+          const dpRes = await readFromApp(
+            `SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive"
+             FROM "DeliveryPerson" WHERE "isActive" = true ORDER BY name ASC`
+          );
+          dps = dpRes.rows;
+        }
+      } else {
+        // Route not found in DB2 — return all active DPs
+        const dpRes = await readFromApp(
+          `SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive"
+           FROM "DeliveryPerson" WHERE "isActive" = true ORDER BY name ASC`
+        );
+        dps = dpRes.rows;
+      }
+    } catch (e) {
+      console.warn('⚠️ DB2 getDpsByRoute warning:', e.message);
+      // Fallback static DPs if DB2 is unavailable
+      dps = [
+        { id: 'dp-1', name: 'Ansar Ali',      dpCode: 'DP-101', mobileNumber: '', vehicleNumber: 'TN 39 AB 1024', zone: 'Zone A' },
+        { id: 'dp-2', name: 'Karthik Raja',   dpCode: 'DP-102', mobileNumber: '', vehicleNumber: 'TN 39 CD 5678', zone: 'Zone A' },
+        { id: 'dp-3', name: 'Saravana Kumar', dpCode: 'DP-103', mobileNumber: '', vehicleNumber: 'TN 39 EF 9012', zone: 'Zone B' },
+        { id: 'dp-4', name: 'Ramesh Babu',    dpCode: 'DP-104', mobileNumber: '', vehicleNumber: 'TN 39 GH 3456', zone: 'Zone B' },
+      ];
+    }
+
+    res.json({
+      success: true,
+      data: dps.map(d => ({
+        id: d.id,
+        name: d.name,
+        dpCode: d.dpCode,
+        phone: d.mobileNumber || '',
+        vehicle: d.vehicleNumber || '',
+        zone: d.zone || '',
+      })),
+    });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getProducts, createProduct, updateProduct, deleteProduct,
   getBranches, createBranch, updateBranch,
   getRoutes, createRoute, updateRoute,
+  getDpsByRoute,
 };

@@ -1,9 +1,9 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  MdAdd, MdSearch, MdFilterList, MdClose, MdEdit, MdPerson,
-  MdPhone, MdLocationOn, MdAccountBalanceWallet, MdCheckCircle,
-  MdCancel, MdRefresh, MdNotes, MdOpenInNew
+  MdAdd, MdSearch, MdClose, MdEdit, MdDelete,
+  MdCheckCircle, MdCancel, MdRefresh, MdOpenInNew, MdMap,
+  MdDirectionsBike, MdWarning,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -18,6 +18,59 @@ const StatusBadge = ({ status }) => {
   return <span className={map[status] || 'badge badge-gray'}>{status}</span>;
 };
 
+// ── Delete Confirm Modal ──────────────────────────────────────────
+function DeleteConfirmModal({ customer, onClose, onDeleted }) {
+  const [loading, setLoading] = useState(false);
+
+  const handleDelete = async () => {
+    setLoading(true);
+    try {
+      await api.delete(`/customers/${customer.id}`);
+      toast.success(`Customer ${customer.customer_code} deleted.`);
+      onDeleted();
+      onClose();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete customer.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div className="modal" style={{ maxWidth: 440 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+        <div className="modal-header">
+          <h2 className="modal-title" style={{ color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <MdWarning /> Delete Customer
+          </h2>
+          <button className="icon-btn" onClick={onClose}><MdClose /></button>
+        </div>
+        <div className="modal-body">
+          <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 10, padding: 16, marginBottom: 12 }}>
+            <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4 }}>{customer.name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{customer.customer_code} · {customer.phone}</div>
+          </div>
+          <p style={{ fontSize: 13.5, color: 'var(--text-muted)', margin: 0 }}>
+            This action is <strong style={{ color: 'var(--danger)' }}>permanent</strong>. The customer, their wallet, and all notes will be removed. Subscriptions and ledger history may still reference this record.
+          </p>
+        </div>
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+          <button
+            id="confirm-delete-btn"
+            type="button"
+            className="btn btn-danger"
+            disabled={loading}
+            onClick={handleDelete}
+          >
+            {loading ? <span className="loading-spinner" /> : <><MdDelete /> Delete Permanently</>}
+          </button>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Add/Edit Customer Modal ───────────────────────────────────────
 function CustomerModal({ customer, routes, onClose, onSaved }) {
   const isEdit = !!customer;
@@ -28,11 +81,27 @@ function CustomerModal({ customer, routes, onClose, onSaved }) {
     address: customer?.address || '',
     lat: customer?.lat || '',
     lng: customer?.lng || '',
+    maps_url: customer?.maps_url || '',
     assigned_route_id: customer?.assigned_route_id || '',
     enquiry_source: customer?.enquiry_source || 'Direct',
     status: customer?.status || 'Active',
   });
   const [loading, setLoading] = useState(false);
+  const [routeDps, setRouteDps] = useState([]);
+  const [dpsLoading, setDpsLoading] = useState(false);
+
+  // When route changes, fetch DPs assigned to that route
+  useEffect(() => {
+    if (!form.assigned_route_id) { setRouteDps([]); return; }
+    const selectedRoute = routes.find(r => String(r.id) === String(form.assigned_route_id));
+    if (!selectedRoute) { setRouteDps([]); return; }
+
+    setDpsLoading(true);
+    api.get('/masters/dps-by-route', { params: { route_name: selectedRoute.route_name } })
+      .then(res => setRouteDps(res.data.data || []))
+      .catch(() => setRouteDps([]))
+      .finally(() => setDpsLoading(false));
+  }, [form.assigned_route_id, routes]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -46,7 +115,7 @@ function CustomerModal({ customer, routes, onClose, onSaved }) {
         await api.post('/customers', form);
         toast.success('Customer created successfully!');
       }
-      onSaved();
+      await onSaved(); // ← await so table refreshes before modal closes
       onClose();
     } catch (err) {
       toast.error(err.response?.data?.message || 'Failed to save customer.');
@@ -62,7 +131,7 @@ function CustomerModal({ customer, routes, onClose, onSaved }) {
 
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div className="modal" style={{ maxWidth: 600 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+      <motion.div className="modal" style={{ maxWidth: 620 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
         <div className="modal-header">
           <h2 className="modal-title">{isEdit ? '✏️ Edit Customer' : '➕ Add New Customer'}</h2>
           <button className="icon-btn" onClick={onClose}><MdClose /></button>
@@ -96,11 +165,35 @@ function CustomerModal({ customer, routes, onClose, onSaved }) {
               </div>
               <div className="form-group">
                 <label className="form-label">Latitude</label>
-                <input id="customer-lat" className="form-input" type="number" step="any" placeholder="11.6637" {...f('lat')} />
+                <input id="customer-lat" className="form-input" type="number" step="any" placeholder="13.0574" {...f('lat')} />
               </div>
               <div className="form-group">
                 <label className="form-label">Longitude</label>
-                <input id="customer-lng" className="form-input" type="number" step="any" placeholder="78.1460" {...f('lng')} />
+                <input id="customer-lng" className="form-input" type="number" step="any" placeholder="80.2700" {...f('lng')} />
+              </div>
+              <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                <label className="form-label">Google Maps URL</label>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input
+                    id="customer-maps-url"
+                    className="form-input"
+                    placeholder="https://maps.app.goo.gl/..."
+                    style={{ flex: 1 }}
+                    {...f('maps_url')}
+                  />
+                  {form.maps_url && (
+                    <a
+                      href={form.maps_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="btn btn-secondary btn-sm"
+                      title="Open in Google Maps"
+                      style={{ flexShrink: 0, display: 'flex', alignItems: 'center', gap: 4 }}
+                    >
+                      <MdMap /> Open
+                    </a>
+                  )}
+                </div>
               </div>
               <div className="form-group">
                 <label className="form-label">Assign Route</label>
@@ -115,6 +208,41 @@ function CustomerModal({ customer, routes, onClose, onSaved }) {
                   <select id="customer-status" className="form-input" {...f('status')}>
                     {['Active', 'Inactive', 'Suspended'].map(s => <option key={s} value={s}>{s}</option>)}
                   </select>
+                </div>
+              )}
+
+              {/* ── Delivery Persons Panel ── */}
+              {form.assigned_route_id && (
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <div style={{
+                    background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)',
+                    borderRadius: 10, padding: '12px 16px',
+                  }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10, fontWeight: 700, fontSize: 13, color: 'var(--primary)' }}>
+                      <MdDirectionsBike style={{ fontSize: 16 }} />
+                      Delivery Person{routeDps.length !== 1 ? 's' : ''} on this Route
+                    </div>
+                    {dpsLoading ? (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Loading delivery persons…</div>
+                    ) : routeDps.length === 0 ? (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>No delivery persons assigned to this route yet.</div>
+                    ) : (
+                      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: 8 }}>
+                        {routeDps.map(dp => (
+                          <div key={dp.id} style={{
+                            background: 'var(--bg-card)', borderRadius: 8, padding: '8px 12px',
+                            display: 'flex', flexDirection: 'column', gap: 2,
+                          }}>
+                            <div style={{ fontWeight: 700, fontSize: 13 }}>{dp.name}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.dpCode} · {dp.vehicle || '—'}</div>
+                            {dp.phone && dp.phone !== '' && (
+                              <div style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600 }}>{dp.phone}</div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -138,24 +266,22 @@ function CustomerDrawer({ customerId, onClose, onRefresh }) {
   const [activeTab, setActiveTab] = useState('info');
   const [noteText, setNoteText] = useState('');
 
-  useEffect(() => {
-    const fetch = async () => {
-      try {
-        const res = await api.get(`/customers/${customerId}`);
-        setData(res.data.data);
-      } catch { toast.error('Failed to load customer.'); }
-      finally { setLoading(false); }
-    };
-    fetch();
+  const loadCustomer = useCallback(async () => {
+    try {
+      const res = await api.get(`/customers/${customerId}`);
+      setData(res.data.data);
+    } catch { toast.error('Failed to load customer.'); }
+    finally { setLoading(false); }
   }, [customerId]);
+
+  useEffect(() => { loadCustomer(); }, [loadCustomer]);
 
   const addNote = async () => {
     if (!noteText.trim()) return;
     try {
       await api.post(`/customers/${customerId}/notes`, { note: noteText });
       setNoteText('');
-      const res = await api.get(`/customers/${customerId}`);
-      setData(res.data.data);
+      await loadCustomer();
       toast.success('Note added.');
     } catch { toast.error('Failed to add note.'); }
   };
@@ -163,8 +289,7 @@ function CustomerDrawer({ customerId, onClose, onRefresh }) {
   const toggleStatus = async (status) => {
     try {
       await api.patch(`/customers/${customerId}/status`, { status });
-      const res = await api.get(`/customers/${customerId}`);
-      setData(res.data.data);
+      await loadCustomer();
       onRefresh();
       toast.success(`Customer ${status}.`);
     } catch { toast.error('Failed to update status.'); }
@@ -236,6 +361,20 @@ function CustomerDrawer({ customerId, onClose, onRefresh }) {
                     <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 2 }}>Address</div>
                     <div style={{ fontSize: 14 }}>{data.address || '—'}</div>
                   </div>
+                  {data.maps_url && (
+                    <div style={{ gridColumn: '1 / -1' }}>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', marginBottom: 6 }}>Google Maps Location</div>
+                      <a
+                        href={data.maps_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="btn btn-secondary btn-sm"
+                        style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                      >
+                        <MdMap /> Open in Google Maps
+                      </a>
+                    </div>
+                  )}
                   <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 10, marginTop: 8 }}>
                     {data.status !== 'Active' && (
                       <button className="btn btn-success btn-sm" onClick={() => toggleStatus('Active')}>
@@ -340,7 +479,6 @@ function CustomerDrawer({ customerId, onClose, onRefresh }) {
                     />
                     <button id="customer-note-add" className="btn btn-primary btn-sm" onClick={addNote}>Add</button>
                   </div>
-                  {/* Notes rendering from re-fetched data — placeholder */}
                   <p style={{ fontSize: 12, color: 'var(--text-muted)' }}>Press Enter or click Add to save a note.</p>
                 </div>
               )}
@@ -359,23 +497,25 @@ export default function CustomersPage() {
   const [page, setPage] = useState(1);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
+  const [routeFilter, setRouteFilter] = useState('');
   const [loading, setLoading] = useState(true);
   const [routes, setRoutes] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
   const [detailId, setDetailId] = useState(null);
+  const [deleteTarget, setDeleteTarget] = useState(null);
   const limit = 20;
 
   const fetchCustomers = useCallback(async () => {
     setLoading(true);
     try {
-      const params = { page, limit, search, status: statusFilter };
+      const params = { page, limit, search, status: statusFilter, route_id: routeFilter };
       const res = await api.get('/customers', { params });
       setCustomers(res.data.data);
       setTotal(res.data.total);
     } catch { toast.error('Failed to load customers.'); }
     finally { setLoading(false); }
-  }, [page, search, statusFilter]);
+  }, [page, search, statusFilter, routeFilter]);
 
   useEffect(() => { fetchCustomers(); }, [fetchCustomers]);
 
@@ -414,6 +554,18 @@ export default function CustomersPage() {
               onChange={(e) => { setSearch(e.target.value); setPage(1); }}
             />
           </div>
+          <select
+            id="customer-route-filter"
+            className="form-input"
+            style={{ width: 180 }}
+            value={routeFilter}
+            onChange={(e) => { setRouteFilter(e.target.value); setPage(1); }}
+          >
+            <option value="">All Routes</option>
+            {routes.map(r => (
+              <option key={r.id} value={r.id}>{r.route_name}</option>
+            ))}
+          </select>
           <select
             id="customer-status-filter"
             className="form-input"
@@ -476,6 +628,7 @@ export default function CustomersPage() {
                       </div>
                     </div>
                   </td>
+                  {/* Phone column — always reads from the fetched list row, never stale */}
                   <td style={{ fontSize: 13 }}>{c.phone}</td>
                   <td><span style={{ fontSize: 12, background: 'rgba(59,130,246,0.08)', color: 'var(--primary)', padding: '2px 8px', borderRadius: 20, fontWeight: 600 }}>{c.route_name || '—'}</span></td>
                   <td style={{ fontWeight: 700, color: parseFloat(c.wallet_balance) < 0 ? 'var(--danger)' : 'var(--text-primary)' }}>
@@ -501,6 +654,15 @@ export default function CustomersPage() {
                       >
                         <MdEdit />
                       </button>
+                      <button
+                        id={`customer-delete-${c.id}`}
+                        className="btn btn-ghost btn-sm"
+                        title="Delete"
+                        style={{ color: 'var(--danger)' }}
+                        onClick={() => setDeleteTarget(c)}
+                      >
+                        <MdDelete />
+                      </button>
                     </div>
                   </td>
                 </motion.tr>
@@ -524,6 +686,13 @@ export default function CustomersPage() {
         {showAdd && <CustomerModal routes={routes} onClose={() => setShowAdd(false)} onSaved={fetchCustomers} />}
         {editCustomer && <CustomerModal customer={editCustomer} routes={routes} onClose={() => setEditCustomer(null)} onSaved={fetchCustomers} />}
         {detailId && <CustomerDrawer customerId={detailId} onClose={() => setDetailId(null)} onRefresh={fetchCustomers} />}
+        {deleteTarget && (
+          <DeleteConfirmModal
+            customer={deleteTarget}
+            onClose={() => setDeleteTarget(null)}
+            onDeleted={fetchCustomers}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

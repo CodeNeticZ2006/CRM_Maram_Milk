@@ -18,21 +18,25 @@ const getCustomers = async (req, res, next) => {
       pi++;
     }
     if (status) { where.push(`c.status = $${pi++}`); params.push(status); }
-    if (route_id) { where.push(`c.assigned_route_id = $${pi++}`); params.push(route_id); }
+    if (route_id) {
+      where.push(`(c.assigned_route_id = $${pi} OR r.id::text = $${pi} OR r.route_name ILIKE $${pi})`);
+      params.push(route_id);
+      pi++;
+    }
 
     const whereStr = where.join(' AND ');
 
     const [rows, countRes] = await Promise.all([
       readFromCRM(
-        `SELECT c.*, r.route_name
+        `SELECT c.*, COALESCE(r.route_name, c.assigned_route_id) AS route_name
          FROM customers c
-         LEFT JOIN routes r ON r.id = c.assigned_route_id
+         LEFT JOIN routes r ON r.id::text = c.assigned_route_id
          WHERE ${whereStr}
          ORDER BY c.created_at DESC
          LIMIT $${pi} OFFSET $${pi + 1}`,
         [...params, limit, offset]
       ),
-      readFromCRM(`SELECT COUNT(*) FROM customers c WHERE ${whereStr}`, params),
+      readFromCRM(`SELECT COUNT(*) FROM customers c LEFT JOIN routes r ON r.id::text = c.assigned_route_id WHERE ${whereStr}`, params),
     ]);
 
     res.json({
@@ -53,8 +57,8 @@ const getCustomerById = async (req, res, next) => {
     const { id } = req.params;
     const [customer, subscriptions, wallet, ledger] = await Promise.all([
       readFromCRM(
-        `SELECT c.*, r.route_name FROM customers c
-         LEFT JOIN routes r ON r.id = c.assigned_route_id
+        `SELECT c.*, COALESCE(r.route_name, c.assigned_route_id) AS route_name FROM customers c
+         LEFT JOIN routes r ON r.id::text = c.assigned_route_id
          WHERE c.id = $1`,
         [id]
       ),
@@ -94,7 +98,7 @@ const createCustomer = async (req, res, next) => {
   try {
     const {
       name, phone, whatsapp_number, address, lat, lng,
-      assigned_route_id, enquiry_source, status = 'Active',
+      assigned_route_id, enquiry_source, status = 'Active', maps_url,
     } = req.body;
 
     if (!name || !phone) return res.status(400).json({ success: false, message: 'Name and phone are required.' });
@@ -105,9 +109,9 @@ const createCustomer = async (req, res, next) => {
     const customer_code = `MM${String(nextNum).padStart(4, '0')}`;
 
     const result = await writeToCRM(
-      `INSERT INTO customers (customer_code, name, phone, whatsapp_number, address, lat, lng, assigned_route_id, enquiry_source, status)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10) RETURNING *`,
-      [customer_code, name, phone, whatsapp_number || phone, address, lat || null, lng || null, assigned_route_id || null, enquiry_source || 'Direct', status]
+      `INSERT INTO customers (customer_code, name, phone, whatsapp_number, address, lat, lng, assigned_route_id, enquiry_source, status, maps_url)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11) RETURNING *`,
+      [customer_code, name, phone, whatsapp_number || phone, address, lat || null, lng || null, assigned_route_id || null, enquiry_source || 'Direct', status, maps_url || null]
     );
 
     // Create wallet entry
@@ -116,7 +120,7 @@ const createCustomer = async (req, res, next) => {
     // Audit
     await writeToCRM(
       `INSERT INTO audit_logs (user_type, user_ref_id, action, entity, entity_id, ip_address) VALUES ($1,$2,$3,$4,$5,$6)`,
-      ['SuperAdmin', req.admin.id, 'CREATE_CUSTOMER', 'customers', result.rows[0].id, req.ip]
+      ['SuperAdmin', req.admin?.id || null, 'CREATE_CUSTOMER', 'customers', result.rows[0].id, req.ip]
     );
 
     res.status(201).json({ success: true, message: 'Customer created.', data: result.rows[0] });
@@ -129,17 +133,17 @@ const createCustomer = async (req, res, next) => {
 const updateCustomer = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, phone, whatsapp_number, address, lat, lng, assigned_route_id } = req.body;
+    const { name, phone, whatsapp_number, address, lat, lng, assigned_route_id, enquiry_source, status, maps_url } = req.body;
 
     await writeToCRM(
-      `UPDATE customers SET name=$1, phone=$2, whatsapp_number=$3, address=$4, lat=$5, lng=$6, assigned_route_id=$7
-       WHERE id=$8`,
-      [name, phone, whatsapp_number, address, lat || null, lng || null, assigned_route_id || null, id]
+      `UPDATE customers SET name=$1, phone=$2, whatsapp_number=$3, address=$4, lat=$5, lng=$6, assigned_route_id=$7, enquiry_source=$8, status=$9, maps_url=$10
+       WHERE id=$11`,
+      [name, phone, whatsapp_number, address, lat || null, lng || null, assigned_route_id || null, enquiry_source || 'Direct', status || 'Active', maps_url || null, id]
     );
 
     await writeToCRM(
       `INSERT INTO audit_logs (user_type, user_ref_id, action, entity, entity_id, ip_address) VALUES ($1,$2,$3,$4,$5,$6)`,
-      ['SuperAdmin', req.admin.id, 'UPDATE_CUSTOMER', 'customers', id, req.ip]
+      ['SuperAdmin', req.admin?.id || null, 'UPDATE_CUSTOMER', 'customers', id, req.ip]
     );
 
     res.json({ success: true, message: 'Customer updated.' });
@@ -163,6 +167,33 @@ const toggleCustomerStatus = async (req, res, next) => {
     );
 
     res.json({ success: true, message: `Customer status set to ${status}.` });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// DELETE /api/customers/:id — hard delete
+// ─────────────────────────────────────────────
+const deleteCustomer = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check customer exists first
+    const check = await readFromCRM('SELECT id, name, customer_code FROM customers WHERE id=$1', [id]);
+    if (!check.rows[0]) return res.status(404).json({ success: false, message: 'Customer not found.' });
+
+    const { name, customer_code } = check.rows[0];
+
+    // Delete related data first (wallet, notes) to avoid FK violations if any
+    await writeToCRM('DELETE FROM customer_notes WHERE customer_id=$1', [id]);
+    await writeToCRM('DELETE FROM wallet WHERE customer_id=$1', [id]);
+    await writeToCRM('DELETE FROM customers WHERE id=$1', [id]);
+
+    await writeToCRM(
+      `INSERT INTO audit_logs (user_type, user_ref_id, action, entity, entity_id, ip_address) VALUES ($1,$2,$3,$4,$5,$6)`,
+      ['SuperAdmin', req.admin.id, 'DELETE_CUSTOMER', 'customers', id, req.ip]
+    );
+
+    res.json({ success: true, message: `Customer ${customer_code} (${name}) deleted successfully.` });
   } catch (err) { next(err); }
 };
 
@@ -242,6 +273,6 @@ const getEnquiries = async (req, res, next) => {
 
 module.exports = {
   getCustomers, getCustomerById, createCustomer, updateCustomer,
-  toggleCustomerStatus, getCustomerLedger, addCustomerNote, getCustomerNotes,
+  toggleCustomerStatus, deleteCustomer, getCustomerLedger, addCustomerNote, getCustomerNotes,
   createEnquiry, getEnquiries,
 };

@@ -3,7 +3,7 @@ const router = express.Router();
 const { authenticate, requireSuperAdmin } = require('../middleware/auth');
 const {
   getCustomers, getCustomerById, createCustomer, updateCustomer,
-  toggleCustomerStatus, getCustomerLedger, addCustomerNote, getCustomerNotes,
+  toggleCustomerStatus, deleteCustomer, getCustomerLedger, addCustomerNote, getCustomerNotes,
   createEnquiry, getEnquiries,
 } = require('../controllers/customers.controller');
 
@@ -20,6 +20,7 @@ router.get('/:id/notes',   getCustomerNotes);
 router.post('/',            requireSuperAdmin, createCustomer);
 router.put('/:id',          requireSuperAdmin, updateCustomer);
 router.patch('/:id/status', requireSuperAdmin, toggleCustomerStatus);
+router.delete('/:id',       requireSuperAdmin, deleteCustomer);
 
 // Notes & enquiries
 router.post('/enquiry',    createEnquiry);
