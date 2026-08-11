@@ -62,7 +62,7 @@ const getLiveOperations = async (req, res, next) => {
 
     try {
       const [dpRes, routeRes, allocRes, logRes] = await Promise.all([
-        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive" FROM "DeliveryPerson" ORDER BY name ASC'),
+        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "customerCount", litres, "assignedDpId", "defaultPetrolAllowance" FROM "Route" ORDER BY name ASC'),
         readFromApp('SELECT id, date, "routeId", "dpId", "litresAllocated", "qty1LBottle", "qtyHalfLBottle", status FROM "RouteAllocation" ORDER BY "createdAt" DESC LIMIT 100'),
         readFromApp('SELECT id, date, "routeId", "dpId", "actualDelivered1L", "actualDeliveredHalfL", "deliveryCompleted", "flagIssue" FROM "EmptyBottleLog" ORDER BY "createdAt" DESC LIMIT 100'),

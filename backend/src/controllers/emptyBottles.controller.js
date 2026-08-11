@@ -14,7 +14,7 @@ const getEmptyBottleLogs = async (req, res, next) => {
     // 1. Fetch DB2 data
     try {
       const [dpRes, rRes, aRes, lRes] = await Promise.all([
-        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" ORDER BY name ASC'),
+        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
         readFromApp('SELECT id, date, "routeId", "dpId", "qty1LBottle", "qtyHalfLBottle" FROM "RouteAllocation" ORDER BY "createdAt" DESC'),
         readFromApp('SELECT id, date, "routeId", "dpId", "oneLBottlesCollected", "halfLBottlesCollected", "actualDelivered1L", "actualDeliveredHalfL", "deliveryCompleted", "flagIssue", notes, reason FROM "EmptyBottleLog" ORDER BY "createdAt" DESC'),

@@ -89,6 +89,30 @@ const getInventory = async (req, res, next) => {
       };
     });
 
+    // Custom product ordering: 1L Bottle, 500ml Bottle (Half Litre Bottle), 500ml Packet
+    const getItemPriority = (item) => {
+      const name = (item.name || '').toLowerCase();
+      const material = (item.material || '').toLowerCase();
+      const unit = (item.unit || '').toLowerCase();
+
+      if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) return 1;
+      if (
+        name.includes('half litre bottle') ||
+        name.includes('500ml bottle') ||
+        name.includes('500 ml bottle') ||
+        (material.includes('bottle') && (name.includes('500') || name.includes('half') || unit.includes('500')))
+      ) return 2;
+      if (
+        name.includes('500ml packet') ||
+        name.includes('500 ml packet') ||
+        (material.includes('packet') && (name.includes('500') || name.includes('half') || unit.includes('500')))
+      ) return 3;
+
+      return 4;
+    };
+
+    combined.sort((a, b) => getItemPriority(a) - getItemPriority(b));
+
     // 4. Calculate summary KPIs
     const totalStock = combined.reduce((acc, item) => acc + item.currentStock, 0);
     const todayAddedStock = combined.reduce((acc, item) => acc + item.newStockAdded, 0);
@@ -480,7 +504,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
     let attCrmRows = [];
     try {
       const [dpRes, rRes, aRes, lRes, attDb2Res, attCrmRes] = await Promise.all([
-        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" ORDER BY name ASC'),
+        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
         readFromApp('SELECT id, date, "dpId", "routeId", status FROM "RouteAllocation" ORDER BY "createdAt" DESC'),
         readFromApp('SELECT id, date, "dpId", "routeId", "deliveryCompleted", "flagIssue", notes FROM "EmptyBottleLog" ORDER BY "createdAt" DESC'),

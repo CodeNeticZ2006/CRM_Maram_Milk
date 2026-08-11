@@ -79,13 +79,37 @@ export default function InventoryPage() {
 
   const [submitting, setSubmitting] = useState(false);
 
+  // Custom Product Sorting Helper (1L Bottle, 500ml Bottle / Half Litre Bottle, 500ml Packet)
+  const getItemPriority = (item) => {
+    const name = (item?.name || '').toLowerCase();
+    const material = (item?.material || '').toLowerCase();
+    const unit = (item?.unit || '').toLowerCase();
+
+    if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) return 1;
+    if (
+      name.includes('half litre bottle') ||
+      name.includes('500ml bottle') ||
+      name.includes('500 ml bottle') ||
+      (material.includes('bottle') && (name.includes('500') || name.includes('half') || unit.includes('500')))
+    ) return 2;
+    if (
+      name.includes('500ml packet') ||
+      name.includes('500 ml packet') ||
+      (material.includes('packet') && (name.includes('500') || name.includes('half') || unit.includes('500')))
+    ) return 3;
+
+    return 4;
+  };
+
   // Fetch Inventory (incorporating DB2 Manager App Stock fields)
   const fetchInventory = useCallback(async () => {
     setLoading(true);
     try {
       const res = await api.get('/inventory', { params: { date: selectedDate } });
       if (res.data?.success) {
-        setItems(res.data.data || []);
+        const rawData = res.data.data || [];
+        const sortedData = [...rawData].sort((a, b) => getItemPriority(a) - getItemPriority(b));
+        setItems(sortedData);
         if (res.data.summary) setSummary(res.data.summary);
         if (res.data.lowStockAlerts) setLowAlerts(res.data.lowStockAlerts);
         if (res.data.availableDates) setAvailableDates(res.data.availableDates);
@@ -260,7 +284,9 @@ export default function InventoryPage() {
     }
   };
 
-  const filteredItems = items.filter(i =>
+  const sortedItems = [...items].sort((a, b) => getItemPriority(a) - getItemPriority(b));
+
+  const filteredItems = sortedItems.filter(i =>
     i.name.toLowerCase().includes(search.toLowerCase()) ||
     (i.material || '').toLowerCase().includes(search.toLowerCase())
   );

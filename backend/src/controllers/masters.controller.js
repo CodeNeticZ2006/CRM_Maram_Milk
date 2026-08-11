@@ -202,7 +202,7 @@ const getDpsByRoute = async (req, res, next) => {
           // No assigned DP — return all active DPs in same zone
           const dpRes = await readFromApp(
             `SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive"
-             FROM "DeliveryPerson" WHERE "isActive" = true ORDER BY name ASC`
+             FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN ('adam', 'pradeep', 'praddep', 'test', 'test dp') AND "dpCode" NOT IN ('DP018', 'DP019', 'DP020') ORDER BY name ASC`
           );
           dps = dpRes.rows;
         }
@@ -210,7 +210,7 @@ const getDpsByRoute = async (req, res, next) => {
         // Route not found in DB2 — return all active DPs
         const dpRes = await readFromApp(
           `SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive"
-           FROM "DeliveryPerson" WHERE "isActive" = true ORDER BY name ASC`
+           FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN ('adam', 'pradeep', 'praddep', 'test', 'test dp') AND "dpCode" NOT IN ('DP018', 'DP019', 'DP020') ORDER BY name ASC`
         );
         dps = dpRes.rows;
       }
