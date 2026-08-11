@@ -8,7 +8,7 @@ import {
   MdCalendarToday, MdCancel, MdEventBusy, MdPerson,
   MdDirectionsBike, MdVerified, MdWarning, MdEventNote,
   MdChevronLeft, MdChevronRight, MdSave, MdBusiness,
-  MdInventory2, MdFlashOn
+  MdInventory2, MdFlashOn, MdStorefront, MdDateRange
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -45,6 +45,14 @@ export default function InventoryPage() {
   const [endDate, setEndDate]             = useState('');
   const [attendanceLoad, setAttLoad]     = useState(false);
   const [selectedDayDetail, setDayDetail] = useState(null);
+
+  // Manager Inventory State
+  const [managerInvData, setManagerInvData]       = useState(null);
+  const [managerInvLoading, setManagerInvLoading] = useState(false);
+  const [miDate, setMiDate]                       = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+  const [miStartDate, setMiStartDate]             = useState('');
+  const [miEndDate, setMiEndDate]                 = useState('');
+  const [miRangeMode, setMiRangeMode]             = useState(false);
 
   // Calendar always starts in the current IST month and fetches that exact month from DB2.
   const [currentCalendarDate, setCurrentCalendarDate] = useState(() => {
@@ -164,6 +172,24 @@ export default function InventoryPage() {
     }
   }, [timeFilter, selectedDpId, startDate, endDate, currentCalendarDate]);
 
+  // Fetch Manager Inventory (ShopSale + ManagerInventoryLog from DB2)
+  const fetchManagerInventory = useCallback(async () => {
+    setManagerInvLoading(true);
+    try {
+      const params = miRangeMode && miStartDate && miEndDate
+        ? { startDate: miStartDate, endDate: miEndDate }
+        : { date: miDate };
+      const res = await api.get('/inventory/manager-inventory', { params });
+      if (res.data?.success) {
+        setManagerInvData(res.data);
+      }
+    } catch {
+      toast.error('Failed to load Manager Inventory data.');
+    } finally {
+      setManagerInvLoading(false);
+    }
+  }, [miDate, miStartDate, miEndDate, miRangeMode]);
+
   useEffect(() => {
     fetchInventory();
   }, [fetchInventory]);
@@ -171,7 +197,8 @@ export default function InventoryPage() {
   useEffect(() => {
     if (activeTab === 'history') fetchHistory();
     else if (activeTab === 'attendance') fetchDpAttendance();
-  }, [activeTab, fetchHistory, fetchDpAttendance]);
+    else if (activeTab === 'manager-inventory') fetchManagerInventory();
+  }, [activeTab, fetchHistory, fetchDpAttendance, fetchManagerInventory]);
 
   // DB2 Direct Stock Override Handler
   const handleDb2Update = async (e) => {
@@ -373,9 +400,17 @@ export default function InventoryPage() {
             >
               <MdCalendarToday /> DP Attendance Audit (DB2)
             </button>
+            <button
+              className={`btn btn-sm ${activeTab === 'manager-inventory' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setActiveTab('manager-inventory')}
+              id="inventory-tab-manager-inventory"
+              style={{ background: activeTab === 'manager-inventory' ? 'linear-gradient(135deg, #7c3aed, #5b21b6)' : '', borderColor: activeTab === 'manager-inventory' ? '#7c3aed' : '' }}
+            >
+              <MdStorefront /> Manager Inventory
+            </button>
           </div>
 
-          {activeTab !== 'attendance' && (
+          {(activeTab === 'inventory' || activeTab === 'history') && (
             <div style={{ position: 'relative', width: 260 }}>
               <MdSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
@@ -1045,6 +1080,342 @@ export default function InventoryPage() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── TAB 4: MANAGER INVENTORY (ShopSale + ManagerInventoryLog from DB2) ─── */}
+      {activeTab === 'manager-inventory' && (
+        <div>
+          {/* Filter Bar */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-body" style={{ padding: '14px 20px' }}>
+              <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdDateRange style={{ color: '#7c3aed', fontSize: 20 }} />
+                  <span style={{ fontSize: 13, fontWeight: 700 }}>Filter Mode:</span>
+                  <button
+                    className={`btn btn-sm ${!miRangeMode ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: 12, padding: '4px 12px' }}
+                    onClick={() => setMiRangeMode(false)}
+                    id="mi-filter-single"
+                  >
+                    Single Day
+                  </button>
+                  <button
+                    className={`btn btn-sm ${miRangeMode ? 'btn-primary' : 'btn-secondary'}`}
+                    style={{ fontSize: 12, padding: '4px 12px' }}
+                    onClick={() => setMiRangeMode(true)}
+                    id="mi-filter-range"
+                  >
+                    Date Range
+                  </button>
+                </div>
+
+                {!miRangeMode ? (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Date:</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      style={{ width: 160, padding: '4px 10px', fontSize: 12.5 }}
+                      value={miDate}
+                      onChange={e => setMiDate(e.target.value)}
+                      id="mi-date-picker"
+                    />
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>From:</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      style={{ width: 150, padding: '4px 10px', fontSize: 12.5 }}
+                      value={miStartDate}
+                      onChange={e => setMiStartDate(e.target.value)}
+                      id="mi-start-date"
+                    />
+                    <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>To:</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      style={{ width: 150, padding: '4px 10px', fontSize: 12.5 }}
+                      value={miEndDate}
+                      onChange={e => setMiEndDate(e.target.value)}
+                      id="mi-end-date"
+                    />
+                  </div>
+                )}
+
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ background: 'linear-gradient(135deg,#7c3aed,#5b21b6)', border: 'none', marginLeft: 'auto' }}
+                  onClick={fetchManagerInventory}
+                  disabled={managerInvLoading}
+                  id="mi-refresh-btn"
+                >
+                  <MdRefresh className={managerInvLoading ? 'spin' : ''} />
+                  {managerInvLoading ? 'Loading...' : 'Fetch Data'}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {managerInvLoading ? (
+            <div style={{ textAlign: 'center', padding: 60 }}>
+              <div className="loading-spinner" style={{ width: 36, height: 36, border: '3px solid var(--border)', borderTopColor: '#7c3aed', margin: '0 auto 12px' }} />
+              <p style={{ color: 'var(--text-muted)', fontSize: 13 }}>Loading Manager Inventory from DB2...</p>
+            </div>
+          ) : managerInvData ? (
+            <>
+              {/* ── Section 1: ShopSale — Daily Product Totals ── */}
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="card-header">
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <MdStorefront style={{ color: '#7c3aed', fontSize: 20 }} />
+                      Shop Sale — Daily Stock Sold
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Source: <code style={{ background: 'rgba(124,58,237,0.08)', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>ShopSale</code> table · DB2 Manager App
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: 'rgba(124,58,237,0.12)', color: '#7c3aed' }}>
+                    {managerInvData.shopSale.rows.length} entries
+                  </span>
+                </div>
+
+                {/* KPI Summary Cards */}
+                <div style={{ padding: '16px 20px' }}>
+                  <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
+                    <div className="stat-card" style={{ '--card-accent': '#7c3aed' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div className="stat-value" style={{ color: '#7c3aed' }}>
+                          {managerInvData.shopSale.summary.total1LBottle.toLocaleString()}
+                        </div>
+                        <div style={{ padding: 8, borderRadius: 8, background: 'rgba(124,58,237,0.1)', color: '#7c3aed', fontSize: 22, fontWeight: 900 }}>1L</div>
+                      </div>
+                      <div className="stat-label">1L Bottle Sold</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total qty1LBottle</div>
+                    </div>
+
+                    <div className="stat-card" style={{ '--card-accent': '#0ea5e9' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div className="stat-value" style={{ color: '#0ea5e9' }}>
+                          {managerInvData.shopSale.summary.totalHalfLBottle.toLocaleString()}
+                        </div>
+                        <div style={{ padding: 8, borderRadius: 8, background: 'rgba(14,165,233,0.1)', color: '#0ea5e9', fontSize: 20 }}><MdInventory2 /></div>
+                      </div>
+                      <div className="stat-label">Half-L Bottle Sold</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total qtyHalfLBottle</div>
+                    </div>
+
+                    <div className="stat-card" style={{ '--card-accent': '#10b981' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div className="stat-value" style={{ color: '#10b981' }}>
+                          {managerInvData.shopSale.summary.totalHalfLPacket.toLocaleString()}
+                        </div>
+                        <div style={{ padding: 8, borderRadius: 8, background: 'rgba(16,185,129,0.1)', color: '#10b981', fontSize: 20 }}><MdOutlineAssignmentReturn /></div>
+                      </div>
+                      <div className="stat-label">Half-L Packet Sold</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total qtyHalfLPacket</div>
+                    </div>
+
+                    <div className="stat-card" style={{ '--card-accent': '#f59e0b' }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                        <div className="stat-value" style={{ color: '#f59e0b' }}>
+                          {(managerInvData.shopSale.summary.total1LBottle +
+                            managerInvData.shopSale.summary.totalHalfLBottle +
+                            managerInvData.shopSale.summary.totalHalfLPacket).toLocaleString()}
+                        </div>
+                        <div style={{ padding: 8, borderRadius: 8, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: 20 }}><MdFlashOn /></div>
+                      </div>
+                      <div className="stat-label">Total Units Sold</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>All product types combined</div>
+                    </div>
+                  </div>
+
+                  {/* ShopSale Rows Table */}
+                  {managerInvData.shopSale.rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>
+                      <MdStorefront style={{ fontSize: 36, marginBottom: 8, opacity: 0.3 }} />
+                      <div>No ShopSale records found for this date.</div>
+                    </div>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Date</th>
+                            <th style={{ color: '#7c3aed' }}>1L Bottle Qty</th>
+                            <th style={{ color: '#0ea5e9' }}>Half-L Bottle Qty</th>
+                            <th style={{ color: '#10b981' }}>Half-L Packet Qty</th>
+                            <th>Total Units</th>
+                            <th>Created At</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {managerInvData.shopSale.rows.map((row, idx) => {
+                            const rowTotal = (parseInt(row.qty1LBottle || 0) + parseInt(row.qtyHalfLBottle || 0) + parseInt(row.qtyHalfLPacket || 0));
+                            return (
+                              <tr key={row.id}>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{idx + 1}</td>
+                                <td>
+                                  <span className="badge badge-gray" style={{ fontFamily: 'monospace' }}>
+                                    {row.date}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 800, fontSize: 15, color: '#7c3aed' }}>
+                                    {row.qty1LBottle ?? 0}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 800, fontSize: 15, color: '#0ea5e9' }}>
+                                    {row.qtyHalfLBottle ?? 0}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span style={{ fontWeight: 800, fontSize: 15, color: '#10b981' }}>
+                                    {row.qtyHalfLPacket ?? 0}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span className="badge" style={{ background: rowTotal > 0 ? 'rgba(245,158,11,0.12)' : 'rgba(0,0,0,0.06)', color: rowTotal > 0 ? '#f59e0b' : 'var(--text-muted)', fontWeight: 700 }}>
+                                    {rowTotal} units
+                                  </span>
+                                </td>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                  {new Date(row.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                        {/* Totals Footer */}
+                        <tfoot>
+                          <tr style={{ background: 'rgba(124,58,237,0.05)', fontWeight: 800 }}>
+                            <td colSpan={2} style={{ fontSize: 13, color: 'var(--text-secondary)' }}>TOTAL ({managerInvData.shopSale.rows.length} entries)</td>
+                            <td style={{ fontSize: 15, color: '#7c3aed', fontWeight: 900 }}>{managerInvData.shopSale.summary.total1LBottle}</td>
+                            <td style={{ fontSize: 15, color: '#0ea5e9', fontWeight: 900 }}>{managerInvData.shopSale.summary.totalHalfLBottle}</td>
+                            <td style={{ fontSize: 15, color: '#10b981', fontWeight: 900 }}>{managerInvData.shopSale.summary.totalHalfLPacket}</td>
+                            <td style={{ fontSize: 15, color: '#f59e0b', fontWeight: 900 }}>
+                              {managerInvData.shopSale.summary.total1LBottle + managerInvData.shopSale.summary.totalHalfLBottle + managerInvData.shopSale.summary.totalHalfLPacket}
+                            </td>
+                            <td />
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* ── Section 2: ManagerInventoryLog ── */}
+              <div className="card">
+                <div className="card-header">
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <MdBusiness style={{ color: '#0ea5e9', fontSize: 20 }} />
+                      Manager Inventory Log — Per Product
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Source: <code style={{ background: 'rgba(14,165,233,0.08)', padding: '1px 6px', borderRadius: 4, fontSize: 11 }}>ManagerInventoryLog</code> table · DB2 Manager App
+                    </div>
+                  </div>
+                  <span className="badge badge-blue">{managerInvData.managerInventory.totalEntries} log entries</span>
+                </div>
+
+                <div style={{ padding: '16px 20px' }}>
+                  {/* Product Summary Cards */}
+                  {managerInvData.managerInventory.byProduct.length > 0 && (
+                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
+                      {managerInvData.managerInventory.byProduct.map((p, idx) => {
+                        const colors = ['#7c3aed', '#0ea5e9', '#10b981', '#f59e0b'];
+                        const color = colors[idx % colors.length];
+                        return (
+                          <div key={p.productName} className="stat-card" style={{ '--card-accent': color, flex: '1 1 180px', minWidth: 160 }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                              <div className="stat-value" style={{ color }}>{p.totalQty.toLocaleString()}</div>
+                              <div style={{ padding: 8, borderRadius: 8, background: `${color}1a`, color, fontSize: 20 }}><MdInventory /></div>
+                            </div>
+                            <div className="stat-label" style={{ fontSize: 12 }}>{p.productName}</div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Unit: {p.unit}</div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Detailed Log Table */}
+                  {managerInvData.managerInventory.rows.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>
+                      <MdBusiness style={{ fontSize: 36, marginBottom: 8, opacity: 0.3 }} />
+                      <div>No ManagerInventoryLog records found for this date.</div>
+                    </div>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>Date</th>
+                            <th>Product</th>
+                            <th>Unit</th>
+                            <th>Quantity</th>
+                            <th>Manager</th>
+                            <th>Logged At</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {managerInvData.managerInventory.rows.map((row, idx) => (
+                            <tr key={row.id}>
+                              <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{idx + 1}</td>
+                              <td>
+                                <span className="badge badge-gray" style={{ fontFamily: 'monospace' }}>{row.date}</span>
+                              </td>
+                              <td style={{ fontWeight: 700, fontSize: 13.5 }}>{row.productName || '—'}</td>
+                              <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.productUnit || '—'}</td>
+                              <td>
+                                <span style={{ fontWeight: 800, fontSize: 15, color: '#7c3aed' }}>
+                                  {parseInt(row.quantity || 0).toLocaleString()}
+                                </span>
+                              </td>
+                              <td>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                  <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(14,165,233,0.1)', color: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
+                                    <MdPerson />
+                                  </div>
+                                  <span style={{ fontWeight: 600, fontSize: 13 }}>{row.managerName || '—'}</span>
+                                </div>
+                              </td>
+                              <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                {new Date(row.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </>
+          ) : (
+            <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
+              <MdStorefront style={{ fontSize: 52, color: '#7c3aed', opacity: 0.3, marginBottom: 12 }} />
+              <div style={{ fontSize: 15, fontWeight: 700, color: 'var(--text-secondary)', marginBottom: 6 }}>No Data Loaded</div>
+              <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>Select a date and click "Fetch Data" to load Manager Inventory from DB2.</div>
+              <button
+                className="btn btn-primary"
+                style={{ background: 'linear-gradient(135deg,#7c3aed,#5b21b6)', border: 'none' }}
+                onClick={fetchManagerInventory}
+                disabled={managerInvLoading}
+              >
+                <MdRefresh /> Load Manager Inventory
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </motion.div>
   );
 }

@@ -680,6 +680,121 @@ const getDpAttendanceAudit = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+
+// ─────────────────────────────────────────────
+// GET /api/inventory/manager-inventory — ShopSale + ManagerInventoryLog from DB2
+// ─────────────────────────────────────────────
+const getManagerInventory = async (req, res, next) => {
+  try {
+    const { date, startDate, endDate } = req.query;
+    const istToday = getISTDate();
+
+    // Build date filter
+    let shopSaleWhere = '';
+    let shopSaleParams = [];
+    let milWhere = '';
+    let milParams = [];
+
+    if (startDate && endDate) {
+      shopSaleWhere = 'WHERE date >= $1 AND date <= $2';
+      shopSaleParams = [startDate, endDate];
+      milWhere = 'WHERE mil.date >= $1 AND mil.date <= $2';
+      milParams = [startDate, endDate];
+    } else {
+      const targetDate = date || istToday;
+      shopSaleWhere = 'WHERE date = $1';
+      shopSaleParams = [targetDate];
+      milWhere = 'WHERE mil.date = $1';
+      milParams = [targetDate];
+    }
+
+    // 1. Fetch ShopSale rows
+    let shopSaleRows = [];
+    try {
+      const ssRes = await readFromApp(
+        `SELECT id, date, "qty1LBottle", "qtyHalfLBottle", "qtyHalfLPacket", "createdAt"
+         FROM "ShopSale"
+         ${shopSaleWhere}
+         ORDER BY date DESC, "createdAt" DESC`,
+        shopSaleParams
+      );
+      shopSaleRows = ssRes.rows;
+    } catch (e) {
+      console.warn('⚠️ DB2 ShopSale query warning:', e.message);
+    }
+
+    // 2. Fetch ManagerInventoryLog rows joined with Manager & InventoryItem names
+    let managerInventoryRows = [];
+    try {
+      const milRes = await readFromApp(
+        `SELECT mil.id, mil.date, mil.quantity, mil."managerId", mil."createdAt",
+                m.name AS "managerName",
+                ii.name AS "productName", ii.unit AS "productUnit"
+         FROM "ManagerInventoryLog" mil
+         LEFT JOIN "Manager" m ON m.id = mil."managerId"
+         LEFT JOIN "InventoryItem" ii ON ii.id = mil.product
+         ${milWhere}
+         ORDER BY mil.date DESC, mil."createdAt" DESC`,
+        milParams
+      );
+      managerInventoryRows = milRes.rows;
+    } catch (e) {
+      console.warn('⚠️ DB2 ManagerInventoryLog query warning:', e.message);
+    }
+
+    // 3. Aggregate ShopSale totals
+    const shopSaleSummary = shopSaleRows.reduce(
+      (acc, row) => {
+        acc.total1LBottle    += parseInt(row.qty1LBottle    || 0);
+        acc.totalHalfLBottle += parseInt(row.qtyHalfLBottle || 0);
+        acc.totalHalfLPacket += parseInt(row.qtyHalfLPacket || 0);
+        acc.totalEntries     += 1;
+        return acc;
+      },
+      { total1LBottle: 0, totalHalfLBottle: 0, totalHalfLPacket: 0, totalEntries: 0 }
+    );
+
+    // 4. Aggregate ManagerInventoryLog totals by product
+    const milByProduct = managerInventoryRows.reduce((acc, row) => {
+      const key = row.productName || row.product || 'Unknown';
+      if (!acc[key]) {
+        acc[key] = { productName: row.productName || 'Unknown', unit: row.productUnit || 'Units', totalQty: 0 };
+      }
+      acc[key].totalQty += parseInt(row.quantity || 0);
+      return acc;
+    }, {});
+
+    // 5. Sort by product priority: 1L Bottle → Half Litre Bottle (500ml B) → 500ml Packet
+    const getProductPriority = (name = '') => {
+      const n = name.toLowerCase();
+      if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && n.includes('1'))) return 1;
+      if (n.includes('half') || (n.includes('bottle') && (n.includes('500') || n.includes('half')))) return 2;
+      if (n.includes('packet') || n.includes('pack')) return 3;
+      return 4;
+    };
+
+    const sortedByProduct = Object.values(milByProduct)
+      .sort((a, b) => getProductPriority(a.productName) - getProductPriority(b.productName));
+
+    const sortedRows = [...managerInventoryRows]
+      .sort((a, b) => getProductPriority(a.productName) - getProductPriority(b.productName));
+
+    res.json({
+      success: true,
+      date: date || istToday,
+      shopSale: {
+        rows: shopSaleRows,
+        summary: shopSaleSummary,
+      },
+      managerInventory: {
+        rows: sortedRows,
+        byProduct: sortedByProduct,
+        totalEntries: sortedRows.length,
+      },
+    });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getInventory,
   updateInventory,
@@ -688,4 +803,5 @@ module.exports = {
   getStockHistory,
   getLowStockItems,
   getDpAttendanceAudit,
+  getManagerInventory,
 };
