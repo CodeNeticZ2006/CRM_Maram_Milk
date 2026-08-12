@@ -15,3 +15,6 @@ test_db.js
 # Temporary utility scripts
 src/utils/update_admin.js
 src/utils/inspect_db2.js
+src/seeds/temp_*.js
+src/seeds/check_*.js
+src/seeds/verify_*.js

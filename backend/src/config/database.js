@@ -11,7 +11,7 @@ const crmPool = new Pool({
     : { rejectUnauthorized: false },
   max: 20,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 30000,
 });
 
 // ================================================
@@ -21,10 +21,10 @@ const appPool = new Pool({
   connectionString: process.env.APP_DB_URL,
   ssl: process.env.APP_DB_URL && (process.env.APP_DB_URL.includes('localhost') || process.env.APP_DB_URL.includes('127.0.0.1'))
     ? false
-    : { rejectUnauthorized: true },
+    : { rejectUnauthorized: false },
   max: 10,
   idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 10000,
+  connectionTimeoutMillis: 30000,
 });
 
 // Test connections on startup

@@ -9,6 +9,9 @@ IMPLEMENTATION_PLAN.md
 # ── Temporary Utility & Scratch Scripts ───────────────────────────
 backend/src/utils/update_admin.js
 backend/src/utils/inspect_db2.js
+backend/src/seeds/temp_*.js
+backend/src/seeds/check_*.js
+backend/src/seeds/verify_*.js
 backend/test_*.js
 scratch/
 tmp/

@@ -130,6 +130,27 @@ const getRoutes = async (req, res, next) => {
 
     const baseList = appRoutes.length > 0 ? appRoutes : fallbackDB2Routes;
 
+    // Sync routes into DB1 routes table so FK/JOIN lookups succeed
+    for (const r of baseList) {
+      try {
+        if (r.id && r.id.includes('-') && r.id.length === 36) {
+          await writeToCRM(
+            `INSERT INTO routes (id, route_name, status)
+             VALUES ($1, $2, 'Active')
+             ON CONFLICT (id) DO UPDATE SET route_name = EXCLUDED.route_name`,
+            [r.id, r.route_name]
+          ).catch(() => {});
+        } else {
+          const check = await readFromCRM(`SELECT id FROM routes WHERE LOWER(route_name) = LOWER($1)`, [r.route_name]);
+          if (check.rows.length === 0) {
+            await writeToCRM(`INSERT INTO routes (route_name, status) VALUES ($1, 'Active')`, [r.route_name]);
+          }
+        }
+      } catch (err) {
+        // ignore individual route sync error
+      }
+    }
+
     // Deduplicate by route_name (CRM routes take priority over base list so UUID matches)
     const routeMap = new Map();
     for (const r of baseList) {
