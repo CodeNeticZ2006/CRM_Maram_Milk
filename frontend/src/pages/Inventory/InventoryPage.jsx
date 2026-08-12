@@ -314,8 +314,8 @@ export default function InventoryPage() {
   const sortedItems = [...items].sort((a, b) => getItemPriority(a) - getItemPriority(b));
 
   const filteredItems = sortedItems.filter(i =>
-    i.name.toLowerCase().includes(search.toLowerCase()) ||
-    (i.material || '').toLowerCase().includes(search.toLowerCase())
+    (i?.name || '').toLowerCase().includes((search || '').toLowerCase()) ||
+    (i?.material || '').toLowerCase().includes((search || '').toLowerCase())
   );
 
   // Generate 7-column Monthly Sun-Sat Calendar Grid (Picture 2 format)
@@ -1325,25 +1325,76 @@ export default function InventoryPage() {
                 </div>
 
                 <div style={{ padding: '16px 20px' }}>
-                  {/* Product Summary Cards */}
-                  {managerInvData.managerInventory.byProduct.length > 0 && (
-                    <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 20 }}>
-                      {managerInvData.managerInventory.byProduct.map((p, idx) => {
-                        const colors = ['#7c3aed', '#0ea5e9', '#10b981', '#f59e0b'];
-                        const color = colors[idx % colors.length];
-                        return (
-                          <div key={p.productName} className="stat-card" style={{ '--card-accent': color, flex: '1 1 180px', minWidth: 160 }}>
-                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                              <div className="stat-value" style={{ color }}>{p.totalQty.toLocaleString()}</div>
-                              <div style={{ padding: 8, borderRadius: 8, background: `${color}1a`, color, fontSize: 20 }}><MdInventory /></div>
+                  {/* Product Summary Cards (1L (B), 500ml (B), 500ml (P), Total Units) */}
+                  {(() => {
+                    const milSummary = managerInvData.managerInventory.summary || (() => {
+                      const rows = managerInvData.managerInventory.rows || [];
+                      let total1LBottle = 0, totalHalfLBottle = 0, totalHalfLPacket = 0, totalUnits = 0;
+                      rows.forEach(r => {
+                        const q = parseInt(r.quantity || 0);
+                        totalUnits += q;
+                        const n = (r.productName || r.product || '').toLowerCase();
+                        if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
+                          total1LBottle += q;
+                        } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
+                          totalHalfLPacket += q;
+                        } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
+                          totalHalfLBottle += q;
+                        } else {
+                          totalHalfLBottle += q;
+                        }
+                      });
+                      return { total1LBottle, totalHalfLBottle, totalHalfLPacket, totalUnits };
+                    })();
+
+                    return (
+                      <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
+                        <div className="stat-card" style={{ '--card-accent': '#7c3aed' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div className="stat-value" style={{ color: '#7c3aed' }}>
+                              {milSummary.total1LBottle.toLocaleString()}
                             </div>
-                            <div className="stat-label" style={{ fontSize: 12 }}>{p.productName}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Unit: {p.unit}</div>
+                            <div style={{ padding: '4px 10px', borderRadius: 8, background: 'rgba(124,58,237,0.1)', color: '#7c3aed', fontSize: 16, fontWeight: 900 }}>1L</div>
                           </div>
-                        );
-                      })}
-                    </div>
-                  )}
+                          <div className="stat-label">1L (B) BOTTLE LOGGED</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total 1L (B) Qty</div>
+                        </div>
+
+                        <div className="stat-card" style={{ '--card-accent': '#0ea5e9' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div className="stat-value" style={{ color: '#0ea5e9' }}>
+                              {milSummary.totalHalfLBottle.toLocaleString()}
+                            </div>
+                            <div style={{ padding: 8, borderRadius: 8, background: 'rgba(14,165,233,0.1)', color: '#0ea5e9', fontSize: 20 }}><MdInventory2 /></div>
+                          </div>
+                          <div className="stat-label">500ML (B) BOTTLE LOGGED</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total 500ml (B) Qty</div>
+                        </div>
+
+                        <div className="stat-card" style={{ '--card-accent': '#10b981' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div className="stat-value" style={{ color: '#10b981' }}>
+                              {milSummary.totalHalfLPacket.toLocaleString()}
+                            </div>
+                            <div style={{ padding: 8, borderRadius: 8, background: 'rgba(16,185,129,0.1)', color: '#10b981', fontSize: 20 }}><MdOutlineAssignmentReturn /></div>
+                          </div>
+                          <div className="stat-label">500ML (P) PACKET LOGGED</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total 500ml (P) Qty</div>
+                        </div>
+
+                        <div className="stat-card" style={{ '--card-accent': '#f59e0b' }}>
+                          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                            <div className="stat-value" style={{ color: '#f59e0b' }}>
+                              {milSummary.totalUnits.toLocaleString()}
+                            </div>
+                            <div style={{ padding: 8, borderRadius: 8, background: 'rgba(245,158,11,0.1)', color: '#f59e0b', fontSize: 20 }}><MdFlashOn /></div>
+                          </div>
+                          <div className="stat-label">TOTAL UNITS LOGGED</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>All product types combined</div>
+                        </div>
+                      </div>
+                    );
+                  })()}
 
                   {/* Detailed Log Table */}
                   {managerInvData.managerInventory.rows.length === 0 ? (
@@ -1366,32 +1417,52 @@ export default function InventoryPage() {
                           </tr>
                         </thead>
                         <tbody>
-                          {managerInvData.managerInventory.rows.map((row, idx) => (
-                            <tr key={row.id}>
-                              <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{idx + 1}</td>
-                              <td>
-                                <span className="badge badge-gray" style={{ fontFamily: 'monospace' }}>{row.date}</span>
-                              </td>
-                              <td style={{ fontWeight: 700, fontSize: 13.5 }}>{row.productName || '—'}</td>
-                              <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.productUnit || '—'}</td>
-                              <td>
-                                <span style={{ fontWeight: 800, fontSize: 15, color: '#7c3aed' }}>
-                                  {parseInt(row.quantity || 0).toLocaleString()}
-                                </span>
-                              </td>
-                              <td>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                                  <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(14,165,233,0.1)', color: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
-                                    <MdPerson />
+                          {managerInvData.managerInventory.rows.map((row, idx) => {
+                            const pName = (row.productName || '').toLowerCase();
+                            let badgeStyle = { background: 'rgba(0,0,0,0.06)', color: 'var(--text-primary)' };
+                            let displayLabel = row.productName || '—';
+                            if (pName.includes('1l') || pName.includes('1 l') || (pName.includes('bottle') && (pName.includes('1') || pName.includes('litre')))) {
+                              badgeStyle = { background: 'rgba(124,58,237,0.12)', color: '#7c3aed' };
+                              displayLabel = '1L Bottle';
+                            } else if (pName.includes('packet') || pName.includes('pack')) {
+                              badgeStyle = { background: 'rgba(16,185,129,0.12)', color: '#10b981' };
+                              displayLabel = '500ml Packet (P)';
+                            } else if (pName.includes('500') || pName.includes('half') || pName.includes('bottle')) {
+                              badgeStyle = { background: 'rgba(14,165,233,0.12)', color: '#0ea5e9' };
+                              displayLabel = '500ml Bottle (B)';
+                            }
+
+                            return (
+                              <tr key={row.id}>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{idx + 1}</td>
+                                <td>
+                                  <span className="badge badge-gray" style={{ fontFamily: 'monospace' }}>{row.date}</span>
+                                </td>
+                                <td>
+                                  <span className="badge" style={{ ...badgeStyle, fontWeight: 700, fontSize: 13 }}>
+                                    {displayLabel}
+                                  </span>
+                                </td>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.productUnit || '—'}</td>
+                                <td>
+                                  <span style={{ fontWeight: 800, fontSize: 15, color: '#7c3aed' }}>
+                                    {parseInt(row.quantity || 0).toLocaleString()}
+                                  </span>
+                                </td>
+                                <td>
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                    <div style={{ width: 26, height: 26, borderRadius: '50%', background: 'rgba(14,165,233,0.1)', color: '#0ea5e9', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14 }}>
+                                      <MdPerson />
+                                    </div>
+                                    <span style={{ fontWeight: 600, fontSize: 13 }}>{row.managerName || '—'}</span>
                                   </div>
-                                  <span style={{ fontWeight: 600, fontSize: 13 }}>{row.managerName || '—'}</span>
-                                </div>
-                              </td>
-                              <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
-                                {new Date(row.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })}
-                              </td>
-                            </tr>
-                          ))}
+                                </td>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                  {new Date(row.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })}
+                                </td>
+                              </tr>
+                            );
+                          })}
                         </tbody>
                       </table>
                     </div>

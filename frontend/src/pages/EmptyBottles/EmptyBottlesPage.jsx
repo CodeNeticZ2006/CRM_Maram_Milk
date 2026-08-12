@@ -76,9 +76,9 @@ export default function EmptyBottlesPage() {
   };
 
   const filteredLogs = logs.filter(l =>
-    l.dpName.toLowerCase().includes(search.toLowerCase()) ||
-    l.routeName.toLowerCase().includes(search.toLowerCase()) ||
-    l.vehicleNumber.toLowerCase().includes(search.toLowerCase())
+    (l?.dpName || '').toLowerCase().includes((search || '').toLowerCase()) ||
+    (l?.routeName || '').toLowerCase().includes((search || '').toLowerCase()) ||
+    (l?.vehicleNumber || '').toLowerCase().includes((search || '').toLowerCase())
   );
 
   const selectedDpRecord = logs.find(l => l.id === selectedDpId) || logs[0];

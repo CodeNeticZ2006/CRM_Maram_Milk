@@ -154,12 +154,14 @@ const getRoutes = async (req, res, next) => {
     // Deduplicate by route_name (CRM routes take priority over base list so UUID matches)
     const routeMap = new Map();
     for (const r of baseList) {
-      routeMap.set(r.route_name.trim().toLowerCase(), r);
+      if (r?.route_name) routeMap.set(r.route_name.trim().toLowerCase(), r);
     }
     for (const r of crmRoutes.rows) {
-      const key = r.route_name.trim().toLowerCase();
-      const existing = routeMap.get(key);
-      routeMap.set(key, { ...existing, ...r, source: 'DB1' });
+      if (r?.route_name) {
+        const key = r.route_name.trim().toLowerCase();
+        const existing = routeMap.get(key);
+        routeMap.set(key, { ...existing, ...r, source: 'DB1' });
+      }
     }
 
     const finalRoutes = Array.from(routeMap.values());

@@ -36,8 +36,8 @@ export default function RouteCompliancePage() {
   }, [fetchCompliance]);
 
   const filtered = rows.filter(row => {
-    const matchSearch = row.dp.toLowerCase().includes(search.toLowerCase()) ||
-                        row.assignedRoute.toLowerCase().includes(search.toLowerCase());
+    const matchSearch = (row?.dp || '').toLowerCase().includes((search || '').toLowerCase()) ||
+                        (row?.assignedRoute || '').toLowerCase().includes((search || '').toLowerCase());
     const matchStatus = statusFilter === 'All' || row.status === statusFilter;
     return matchSearch && matchStatus;
   });

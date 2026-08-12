@@ -185,7 +185,7 @@ const getEmptyBottleLogs = async (req, res, next) => {
     });
 
     // Filter if specific dpId requested
-    const filteredData = dpId ? dpLogs.filter(a => a.id === dpId || a.dpName.toLowerCase().includes(dpId.toLowerCase())) : dpLogs;
+    const filteredData = dpId ? dpLogs.filter(a => a.id === dpId || (a?.dpName || '').toLowerCase().includes((dpId || '').toLowerCase())) : dpLogs;
 
     const totalIssuedOverall = filteredData.reduce((acc, d) => acc + d.totalIssued, 0);
     const totalReturnedOverall = filteredData.reduce((acc, d) => acc + d.totalReturned, 0);

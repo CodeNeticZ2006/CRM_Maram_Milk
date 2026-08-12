@@ -91,9 +91,9 @@ const getInventory = async (req, res, next) => {
 
     // Custom product ordering: 1L Bottle, 500ml Bottle (Half Litre Bottle), 500ml Packet
     const getItemPriority = (item) => {
-      const name = (item.name || '').toLowerCase();
-      const material = (item.material || '').toLowerCase();
-      const unit = (item.unit || '').toLowerCase();
+      const name = (item?.name || '').toLowerCase();
+      const material = (item?.material || '').toLowerCase();
+      const unit = (item?.unit || '').toLowerCase();
 
       if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) return 1;
       if (
@@ -612,7 +612,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
           }
         } else {
           // DB2 Active Era date (July 15 to Today) — Manager App attendance schedule
-          if (dp.name.toLowerCase().includes('ansar')) {
+          if ((dp?.name || '').toLowerCase().includes('ansar')) {
             if (dStr === '2026-07-28' || dStr === '2026-08-04' || dStr === '2026-08-08') status = 'ABSENT';
             else if (dStr === '2026-08-05' || dStr === '2026-07-20') status = 'STANDBY'; // Standby on specific unassigned days
             else status = 'PRESENT';
@@ -668,7 +668,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
     });
 
     // Filter if specific dpId requested
-    const filteredData = dpId ? attendanceAudit.filter(a => a.dpId === dpId || a.dpName.toLowerCase().includes(dpId.toLowerCase())) : attendanceAudit;
+    const filteredData = dpId ? attendanceAudit.filter(a => a.dpId === dpId || (a?.dpName || '').toLowerCase().includes((dpId || '').toLowerCase())) : attendanceAudit;
 
     res.json({
       success: true,
@@ -727,12 +727,17 @@ const getManagerInventory = async (req, res, next) => {
     let managerInventoryRows = [];
     try {
       const milRes = await readFromApp(
-        `SELECT mil.id, mil.date, mil.quantity, mil."managerId", mil."createdAt",
+        `SELECT mil.id, mil.date, mil.product, mil.quantity, mil."managerId", mil."createdAt",
                 m.name AS "managerName",
-                ii.name AS "productName", ii.unit AS "productUnit"
+                COALESCE(ii.name, mil.product) AS "productName",
+                COALESCE(ii.unit, CASE
+                  WHEN mil.product ILIKE '%1l%' THEN '1L'
+                  WHEN mil.product ILIKE '%500%' THEN '500ml'
+                  ELSE 'Units'
+                END) AS "productUnit"
          FROM "ManagerInventoryLog" mil
          LEFT JOIN "Manager" m ON m.id = mil."managerId"
-         LEFT JOIN "InventoryItem" ii ON ii.id = mil.product
+         LEFT JOIN "InventoryItem" ii ON (ii.id = mil.product OR ii.name = mil.product)
          ${milWhere}
          ORDER BY mil.date DESC, mil."createdAt" DESC`,
         milParams
@@ -754,19 +759,38 @@ const getManagerInventory = async (req, res, next) => {
       { total1LBottle: 0, totalHalfLBottle: 0, totalHalfLPacket: 0, totalEntries: 0 }
     );
 
-    // 4. Aggregate ManagerInventoryLog totals by product
+    // 4. Aggregate ManagerInventoryLog totals by product & standard categories (1L B, 500ml B, 500ml P)
+    let mil1LBottle = 0;
+    let milHalfLBottle = 0;
+    let milHalfLPacket = 0;
+    let milTotalUnits = 0;
+
     const milByProduct = managerInventoryRows.reduce((acc, row) => {
-      const key = row.productName || row.product || 'Unknown';
-      if (!acc[key]) {
-        acc[key] = { productName: row.productName || 'Unknown', unit: row.productUnit || 'Units', totalQty: 0 };
+      const pName = row.productName || row.product || 'Unknown';
+      if (!acc[pName]) {
+        acc[pName] = { productName: pName, unit: row.productUnit || 'Units', totalQty: 0 };
       }
-      acc[key].totalQty += parseInt(row.quantity || 0);
+      const q = parseInt(row.quantity || 0);
+      acc[pName].totalQty += q;
+      milTotalUnits += q;
+
+      const n = pName.toLowerCase();
+      if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
+        mil1LBottle += q;
+      } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
+        milHalfLPacket += q;
+      } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
+        milHalfLBottle += q;
+      } else {
+        milHalfLBottle += q;
+      }
+
       return acc;
     }, {});
 
     // 5. Sort by product priority: 1L Bottle → Half Litre Bottle (500ml B) → 500ml Packet
-    const getProductPriority = (name = '') => {
-      const n = name.toLowerCase();
+    const getProductPriority = (name) => {
+      const n = (name || '').toLowerCase();
       if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && n.includes('1'))) return 1;
       if (n.includes('half') || (n.includes('bottle') && (n.includes('500') || n.includes('half')))) return 2;
       if (n.includes('packet') || n.includes('pack')) return 3;
@@ -789,6 +813,12 @@ const getManagerInventory = async (req, res, next) => {
       managerInventory: {
         rows: sortedRows,
         byProduct: sortedByProduct,
+        summary: {
+          total1LBottle: mil1LBottle,
+          totalHalfLBottle: milHalfLBottle,
+          totalHalfLPacket: milHalfLPacket,
+          totalUnits: milTotalUnits,
+        },
         totalEntries: sortedRows.length,
       },
     });
