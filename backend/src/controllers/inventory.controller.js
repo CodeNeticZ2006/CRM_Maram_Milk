@@ -50,6 +50,22 @@ const getInventory = async (req, res, next) => {
       console.warn('⚠️ DB2 InventoryDailyRecord query warning:', e.message);
     }
 
+    // 2b. Fetch most recent preceding daily records prior to dateStr for carry-over calculation
+    let prevRecords = [];
+    try {
+      const prevRes = await readFromApp(
+        `SELECT DISTINCT ON ("inventoryItemId")
+                id, date, "inventoryItemId", "currentStock", "expectedStock", "updatedAt"
+         FROM "InventoryDailyRecord"
+         WHERE date < $1
+         ORDER BY "inventoryItemId", date DESC`,
+        [dateStr]
+      );
+      prevRecords = prevRes.rows;
+    } catch (e) {
+      console.warn('⚠️ DB2 preceding InventoryDailyRecord query warning:', e.message);
+    }
+
     // 3. Fetch distinct dates for date picker
     let availableDates = [];
     try {
@@ -57,13 +73,46 @@ const getInventory = async (req, res, next) => {
         `SELECT DISTINCT date FROM "InventoryDailyRecord" ORDER BY date DESC LIMIT 30`
       );
       availableDates = datesRes.rows.map(r => r.date);
+      if (!availableDates.includes(dateStr)) {
+        availableDates.unshift(dateStr);
+      }
     } catch (e) { /* silent */ }
 
-    // Combine item details with current daily stock record
+    // Combine item details with current daily stock record and preceding date carry-over
     const combined = items.map(item => {
       const rec = dailyRecords.find(r => r.inventoryItemId === item.id);
-      const currStock = rec ? parseFloat(rec.currentStock || 0) : 0;
+      const prevRec = prevRecords.find(r => r.inventoryItemId === item.id);
+
+      // Carried over stock is taken from rec if available, or the previous date's current stock
+      let carriedOver = 0;
+      if (rec && parseFloat(rec.carriedOverStock || 0) > 0) {
+        carriedOver = parseFloat(rec.carriedOverStock);
+      } else if (prevRec) {
+        carriedOver = parseFloat(prevRec.currentStock || 0);
+      }
+
       const addedToday = rec ? parseFloat(rec.newStockAdded || 0) : 0;
+
+      let currStock = 0;
+      let expStock = 0;
+
+      if (rec) {
+        const recCurr = parseFloat(rec.currentStock || 0);
+        const recExp = parseFloat(rec.expectedStock || 0);
+
+        // If currentStock is 0, no stock added today, but carriedOver > 0, fallback to carriedOver
+        if (recCurr === 0 && rec.newStockAdded === 0 && carriedOver > 0) {
+          currStock = carriedOver;
+          expStock = carriedOver;
+        } else {
+          currStock = recCurr;
+          expStock = recExp > 0 ? recExp : (carriedOver + addedToday);
+        }
+      } else {
+        // No record exists for target date yet -> carried over stock is current stock
+        currStock = carriedOver + addedToday;
+        expStock = carriedOver + addedToday;
+      }
 
       let status = 'In Stock';
       if (currStock <= 0) {
@@ -78,12 +127,12 @@ const getInventory = async (req, res, next) => {
         unit: item.unit || 'Units',
         material: item.material || 'General',
         currentStock: currStock,
-        carriedOverStock: rec ? parseFloat(rec.carriedOverStock || 0) : 0,
+        carriedOverStock: carriedOver,
         newStockAdded: addedToday,
-        expectedStock: rec ? parseFloat(rec.expectedStock || 0) : 0,
+        expectedStock: expStock,
         status,
         date: dateStr,
-        updatedAt: rec ? rec.updatedAt : null,
+        updatedAt: rec ? rec.updatedAt : (prevRec ? prevRec.updatedAt : null),
         hasRecord: !!rec,
         minThreshold: LOW_STOCK_THRESHOLD,
       };
@@ -172,12 +221,23 @@ const updateInventory = async (req, res, next) => {
         [newAdded, currStock, carriedOver + newAdded, existingId]
       );
     } else {
+      // Fetch previous day stock as carriedOver if creating new record
+      const prevRes = await readFromApp(
+        `SELECT "currentStock" FROM "InventoryDailyRecord"
+         WHERE "inventoryItemId" = $1 AND date < $2
+         ORDER BY date DESC LIMIT 1`,
+        [inventoryItemId, targetDate]
+      );
+      if (prevRes.rows.length > 0) {
+        carriedOver = parseFloat(prevRes.rows[0].currentStock || 0);
+      }
+
       const newId = randomUUID();
       await writeToApp(
         `INSERT INTO "InventoryDailyRecord"
            (id, date, "inventoryItemId", "currentStock", "carriedOverStock", "newStockAdded", "expectedStock", "createdAt", "updatedAt")
-         VALUES ($1, $2, $3, $4, 0, $5, $6, NOW(), NOW())`,
-        [newId, targetDate, inventoryItemId, currStock, newAdded, newAdded]
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+        [newId, targetDate, inventoryItemId, currStock, carriedOver, newAdded, carriedOver + newAdded]
       );
     }
 
