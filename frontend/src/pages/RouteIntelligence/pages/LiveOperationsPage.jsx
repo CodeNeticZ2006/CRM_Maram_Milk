@@ -24,17 +24,27 @@ export default function LiveOperationsPage() {
   const [liveEvents, setEvents] = useState(MOCK_LIVE_EVENTS);
   const [isDb2Loaded, setIsDb2Loaded] = useState(false);
 
+  const [customers, setCustomers] = useState([]);
+
   const fetchLiveOps = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/route-intelligence/live-operations');
-      if (res.data?.success && res.data?.data) {
-        const { deliveryPartners: dps, routes: rts, stats: st, liveEvents: evs } = res.data.data;
+      const [opsRes, custRes] = await Promise.all([
+        api.get('/route-intelligence/live-operations').catch(() => null),
+        api.get('/customers', { params: { limit: 500 } }).catch(() => null),
+      ]);
+
+      if (opsRes?.data?.success && opsRes?.data?.data) {
+        const { deliveryPartners: dps, routes: rts, stats: st, liveEvents: evs } = opsRes.data.data;
         if (dps && dps.length > 0) setPartners(dps);
         if (rts && rts.length > 0) setRoutes(rts);
         if (st) setStats(st);
         if (evs && evs.length > 0) setEvents(evs);
         setIsDb2Loaded(true);
+      }
+
+      if (custRes?.data?.success && Array.isArray(custRes.data?.data)) {
+        setCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
       }
     } catch (err) {
       console.warn('⚠️ Failed to load DB2 Live Operations data:', err.message);
@@ -123,8 +133,8 @@ export default function LiveOperationsPage() {
                 />
               ))}
 
-              {/* Customers */}
-              {showCustomers && MOCK_GIS_CUSTOMERS.map(cust => (
+              {/* Customers (Dynamic from CRM DB) */}
+              {showCustomers && customers.map(cust => (
                 <CustomerMarker key={cust.id} customer={cust} />
               ))}
 

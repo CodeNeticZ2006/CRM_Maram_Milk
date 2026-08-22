@@ -58,11 +58,22 @@ async function standardizeRoutes() {
       );
     }
 
+    const LEGACY_UUID_MAP = {
+      '10409c11-bd02-4236-9b6d-d02955f0df94': '9f3ffe40-d485-4995-9dd0-ac74735c6402',
+      '7fe0a769-c7f7-4fb1-8125-6652450b912f': '9f2e4943-c2db-4ca8-9ee5-5a2c337241f9',
+      'd033acaf-6ad4-421f-af43-7bef37a2de90': '59311df6-345e-47d8-97c6-f71c0f64e1eb',
+    };
+
     // 2. Map legacy customer route text/IDs in `customers` table to standardized IDs/names
     const customersRes = await readFromCRM('SELECT id, assigned_route_id FROM customers WHERE assigned_route_id IS NOT NULL');
     for (const cust of customersRes.rows) {
       const current = cust.assigned_route_id.trim();
       const lower = current.toLowerCase();
+
+      if (LEGACY_UUID_MAP[current]) {
+        await writeToCRM('UPDATE customers SET assigned_route_id = $1 WHERE id = $2', [LEGACY_UUID_MAP[current], cust.id]);
+        continue;
+      }
 
       // Check if it's already an official UUID
       const matchUuid = OFFICIAL_ROUTES.find(r => r.id === current || r.db2_id === current);

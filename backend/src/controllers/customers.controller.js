@@ -26,6 +26,9 @@ const DB2_ROUTE_MAP = {
   'T-Nagar': 'T-Nagar 1',
   'Teynampet': 'Teynampet 1',
   'Triplicane': 'Triplicane 1',
+  '10409c11-bd02-4236-9b6d-d02955f0df94': 'Royapettah 2',
+  '7fe0a769-c7f7-4fb1-8125-6652450b912f': 'Mandaveli 2',
+  'd033acaf-6ad4-421f-af43-7bef37a2de90': 'Teynampet 1',
   'W.Mblm 1': 'West Mambalam 1',
   'W.Mblm 2': 'West Mambalam 2',
 };
