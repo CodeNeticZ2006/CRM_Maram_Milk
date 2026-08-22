@@ -85,10 +85,10 @@ export default function LogisticsPage() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 24 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start', marginBottom: 24 }}>
         {/* Delivery Persons (DPs) from DB2 */}
         <div className="card">
-          <div className="card-header"><h3 className="card-title">🛵 Delivery Persons (DPs) — Live DB2 Data</h3></div>
+          <div className="card-header"><h3 className="card-title">🛵 Delivery Persons ({deliveryPersons.length} DPs) — Live DB2 Data</h3></div>
           <div className="card-body" style={{ padding: 0 }}>
             <div className="table-wrapper">
               <table className="table">
@@ -96,7 +96,7 @@ export default function LogisticsPage() {
                 <tbody>
                   {loading ? <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24 }}>Loading...</td></tr> :
                     deliveryPersons.length === 0 ? <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No DPs registered in DB2.</td></tr> :
-                    deliveryPersons.slice(0, 10).map(dp => (
+                    deliveryPersons.map(dp => (
                       <tr key={dp.id}>
                         <td><span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>{dp.dpCode || 'DP-001'}</span></td>
                         <td style={{ fontWeight: 600 }}>{dp.name}</td>

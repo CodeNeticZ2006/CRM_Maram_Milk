@@ -47,19 +47,19 @@ const seed = async () => {
     // ── Step 1: Ensure Royapettah route exists in CRM DB ──
     let routeId;
     const existing = await readFromCRM(
-      `SELECT id FROM routes WHERE LOWER(route_name) = 'royapettah' LIMIT 1`
+      `SELECT id FROM routes WHERE LOWER(route_name) IN ('royapettah', 'royapettah 2') LIMIT 1`
     );
 
     if (existing.rows.length > 0) {
       routeId = existing.rows[0].id;
-      console.log(`ℹ️ Royapettah route already exists: ${routeId}`);
+      console.log(`ℹ️ Royapettah 2 route already exists: ${routeId}`);
     } else {
       const newRoute = await writeToCRM(
         `INSERT INTO routes (route_name, status) VALUES ($1, $2) RETURNING id`,
-        ['Royapettah', 'Active']
+        ['Royapettah 2', 'Active']
       );
       routeId = newRoute.rows[0].id;
-      console.log(`✅ Created Royapettah route: ${routeId}`);
+      console.log(`✅ Created Royapettah 2 route: ${routeId}`);
     }
 
     // ── Step 2: Get current customer code max number ──

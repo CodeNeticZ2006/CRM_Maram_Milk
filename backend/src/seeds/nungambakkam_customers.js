@@ -44,19 +44,19 @@ const seed = async () => {
     // ── Step 1: Ensure Nungambakkam route exists in CRM DB ──
     let routeId;
     const existing = await readFromCRM(
-      `SELECT id FROM routes WHERE LOWER(route_name) = 'nungambakkam' LIMIT 1`
+      `SELECT id FROM routes WHERE LOWER(route_name) IN ('nungambakkam', 'nungambakkam 1') LIMIT 1`
     );
 
     if (existing.rows.length > 0) {
       routeId = existing.rows[0].id;
-      console.log(`ℹ️ Nungambakkam route already exists: ${routeId}`);
+      console.log(`ℹ️ Nungambakkam 1 route already exists: ${routeId}`);
     } else {
       const newRoute = await writeToCRM(
         `INSERT INTO routes (route_name, status) VALUES ($1, $2) RETURNING id`,
-        ['Nungambakkam', 'Active']
+        ['Nungambakkam 1', 'Active']
       );
       routeId = newRoute.rows[0].id;
-      console.log(`✅ Created Nungambakkam route: ${routeId}`);
+      console.log(`✅ Created Nungambakkam 1 route: ${routeId}`);
     }
 
     // ── Step 2: Get current customer code max number ──

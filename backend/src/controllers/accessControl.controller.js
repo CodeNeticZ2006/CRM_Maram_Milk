@@ -66,7 +66,7 @@ const getDeliveryPersons = async (req, res, next) => {
     let dpList = [];
     try {
       const dpRes = await readFromApp(
-        'SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive", "dateOfJoining", "bankAccountDetails" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'
+        'SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive", "dateOfJoining", "bankAccountDetails" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\', \'imran\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY "dpCode" ASC, name ASC'
       );
       dpList = dpRes.rows;
     } catch (err) {

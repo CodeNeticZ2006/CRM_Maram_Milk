@@ -39,19 +39,19 @@ const seed = async () => {
     // ── Step 1: Ensure Teynampet route exists in CRM DB ──
     let routeId;
     const existing = await readFromCRM(
-      `SELECT id FROM routes WHERE LOWER(route_name) = 'teynampet' LIMIT 1`
+      `SELECT id FROM routes WHERE LOWER(route_name) IN ('teynampet', 'teynampet 1') LIMIT 1`
     );
 
     if (existing.rows.length > 0) {
       routeId = existing.rows[0].id;
-      console.log(`ℹ️  Teynampet route already exists: ${routeId}`);
+      console.log(`ℹ️  Teynampet 1 route already exists: ${routeId}`);
     } else {
       const newRoute = await writeToCRM(
         `INSERT INTO routes (route_name, status) VALUES ($1, $2) RETURNING id`,
-        ['Teynampet', 'Active']
+        ['Teynampet 1', 'Active']
       );
       routeId = newRoute.rows[0].id;
-      console.log(`✅ Created Teynampet route: ${routeId}`);
+      console.log(`✅ Created Teynampet 1 route: ${routeId}`);
     }
 
     // ── Step 2: Get current customer count for code generation ──

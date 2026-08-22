@@ -2,38 +2,56 @@ const { readFromApp, readFromCRM, writeToCRM } = require('../config/database');
 
 // Chennai reference coordinates for DB2 routes/zones
 const ZONE_COORDINATES = {
+  'Alwarpet 1':      { lat: 13.0339, lng: 80.2496 },
   'Alwarpet':        { lat: 13.0339, lng: 80.2496 },
+  'Egmore 1':        { lat: 13.0732, lng: 80.2609 },
   'Egmore':          { lat: 13.0732, lng: 80.2609 },
   'Mandaveli 1':     { lat: 13.0280, lng: 80.2610 },
   'Mandaveli 2':     { lat: 13.0295, lng: 80.2635 },
   'MRC Ngr':         { lat: 13.0215, lng: 80.2740 },
   'Mylapore 1':      { lat: 13.0330, lng: 80.2680 },
   'Mylapore 2':      { lat: 13.0360, lng: 80.2710 },
+  'Nungambakkam 1':  { lat: 13.0604, lng: 80.2400 },
   'Nungambakkam':    { lat: 13.0604, lng: 80.2400 },
+  'Royapettah 2':    { lat: 13.0500, lng: 80.2600 },
   'Royapettah':      { lat: 13.0500, lng: 80.2600 },
+  'T-Nagar 1':       { lat: 13.0418, lng: 80.2341 },
   'T-Nagar':         { lat: 13.0418, lng: 80.2341 },
+  'Teynampet 1':     { lat: 13.0450, lng: 80.2480 },
   'Teynampet':       { lat: 13.0450, lng: 80.2480 },
+  'Triplicane 1':    { lat: 13.0587, lng: 80.2757 },
   'Triplicane':      { lat: 13.0587, lng: 80.2757 },
+  'W.Mblm 1':        { lat: 13.0380, lng: 80.2220 },
   'West Mambalam 1': { lat: 13.0380, lng: 80.2220 },
+  'W.Mblm 2':        { lat: 13.0400, lng: 80.2250 },
   'West Mambalam 2': { lat: 13.0400, lng: 80.2250 },
   'Default':         { lat: 13.0604, lng: 80.2496 },
 };
 
 const ROUTE_BOUNDARIES = {
+  'Alwarpet 1':      [ [13.0300, 80.2440], [13.0380, 80.2440], [13.0380, 80.2540], [13.0300, 80.2540] ],
   'Alwarpet':        [ [13.0300, 80.2440], [13.0380, 80.2440], [13.0380, 80.2540], [13.0300, 80.2540] ],
+  'Egmore 1':        [ [13.0680, 80.2550], [13.0780, 80.2550], [13.0780, 80.2660], [13.0680, 80.2660] ],
   'Egmore':          [ [13.0680, 80.2550], [13.0780, 80.2550], [13.0780, 80.2660], [13.0680, 80.2660] ],
   'Mandaveli 1':     [ [13.0230, 80.2560], [13.0310, 80.2560], [13.0310, 80.2640], [13.0230, 80.2640] ],
   'Mandaveli 2':     [ [13.0250, 80.2600], [13.0330, 80.2600], [13.0330, 80.2680], [13.0250, 80.2680] ],
   'MRC Ngr':         [ [13.0170, 80.2690], [13.0250, 80.2690], [13.0250, 80.2790], [13.0170, 80.2790] ],
   'Mylapore 1':      [ [13.0280, 80.2630], [13.0370, 80.2630], [13.0370, 80.2720], [13.0280, 80.2720] ],
   'Mylapore 2':      [ [13.0310, 80.2660], [13.0400, 80.2660], [13.0400, 80.2750], [13.0310, 80.2750] ],
+  'Nungambakkam 1':  [ [13.0550, 80.2340], [13.0650, 80.2340], [13.0650, 80.2450], [13.0550, 80.2450] ],
   'Nungambakkam':    [ [13.0550, 80.2340], [13.0650, 80.2340], [13.0650, 80.2450], [13.0550, 80.2450] ],
+  'Royapettah 2':    [ [13.0450, 80.2540], [13.0550, 80.2540], [13.0550, 80.2650], [13.0450, 80.2650] ],
   'Royapettah':      [ [13.0450, 80.2540], [13.0550, 80.2540], [13.0550, 80.2650], [13.0450, 80.2650] ],
-  'T-Nagar':         [ [13.0360, 80.2280], [13.0460, 80.2280], [13.0460, 80.2390], [13.0360, 80.2390] ],
+  'T-Nagar 1':       [ [13.0360, 80.2280], [13.0460, 80.2280], [13.0460, 80.2390], [13.0360, 80.2280] ],
+  'T-Nagar':         [ [13.0360, 80.2280], [13.0460, 80.2280], [13.0460, 80.2390], [13.0360, 80.2280] ],
+  'Teynampet 1':     [ [13.0400, 80.2430], [13.0490, 80.2430], [13.0490, 80.2530], [13.0400, 80.2530] ],
   'Teynampet':       [ [13.0400, 80.2430], [13.0490, 80.2430], [13.0490, 80.2530], [13.0400, 80.2530] ],
-  'Triplicane':      [ [13.0530, 80.2700], [13.0630, 80.2700], [13.0630, 80.2810], [13.0530, 80.2810] ],
+  'Triplicane 1':    [ [13.0530, 80.2700], [13.0630, 80.2700], [13.0630, 80.2810], [13.0530, 80.2700] ],
+  'Triplicane':      [ [13.0530, 80.2700], [13.0630, 80.2700], [13.0630, 80.2810], [13.0530, 80.2700] ],
+  'W.Mblm 1':        [ [13.0330, 80.2170], [13.0420, 80.2170], [13.0420, 80.2260], [13.0330, 80.2260] ],
   'West Mambalam 1': [ [13.0330, 80.2170], [13.0420, 80.2170], [13.0420, 80.2260], [13.0330, 80.2260] ],
-  'West Mambalam 2': [ [13.0350, 80.2200], [13.0440, 80.2200], [13.0440, 80.2290], [13.0350, 80.2290] ],
+  'W.Mblm 2':        [ [13.0350, 80.2200], [13.0440, 80.2200], [13.0440, 80.2290], [13.0350, 80.2200] ],
+  'West Mambalam 2': [ [13.0350, 80.2200], [13.0440, 80.2200], [13.0440, 80.2290], [13.0350, 80.2200] ],
 };
 
 function getRouteBoundaryPolygon(name, index) {
@@ -62,7 +80,7 @@ const getLiveOperations = async (req, res, next) => {
 
     try {
       const [dpRes, routeRes, allocRes, logRes] = await Promise.all([
-        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
+        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\', \'imran\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "customerCount", litres, "assignedDpId", "defaultPetrolAllowance" FROM "Route" ORDER BY name ASC'),
         readFromApp('SELECT id, date, "routeId", "dpId", "litresAllocated", "qty1LBottle", "qtyHalfLBottle", status FROM "RouteAllocation" ORDER BY "createdAt" DESC LIMIT 100'),
         readFromApp('SELECT id, date, "routeId", "dpId", "actualDelivered1L", "actualDeliveredHalfL", "deliveryCompleted", "flagIssue" FROM "EmptyBottleLog" ORDER BY "createdAt" DESC LIMIT 100'),
@@ -133,10 +151,10 @@ const getLiveOperations = async (req, res, next) => {
 
     // Recent activity live logs
     const liveEvents = [
-      { id: 'ev-db2-1', time: 'Just now', dp: dpRows[0]?.name || 'Rajan Kumar', event: 'Dispatch confirmed via DB2 Route Allocation', severity: 'info', route: routeRows[0]?.name || 'Alwarpet' },
-      { id: 'ev-db2-2', time: '5 min ago', dp: dpRows[1]?.name || 'Suresh Babu', event: 'Delivery sync recorded in EmptyBottleLog', severity: 'success', route: routeRows[1]?.name || 'Egmore' },
+      { id: 'ev-db2-1', time: 'Just now', dp: dpRows[0]?.name || 'Rajan Kumar', event: 'Dispatch confirmed via DB2 Route Allocation', severity: 'info', route: routeRows[0]?.name || 'Alwarpet 1' },
+      { id: 'ev-db2-2', time: '5 min ago', dp: dpRows[1]?.name || 'Suresh Babu', event: 'Delivery sync recorded in EmptyBottleLog', severity: 'success', route: routeRows[1]?.name || 'Egmore 1' },
       { id: 'ev-db2-3', time: '12 min ago', dp: dpRows[2]?.name || 'Muthu Raj', event: 'Zone check-in verified for Manager App', severity: 'info', route: routeRows[2]?.name || 'Mandaveli 1' },
-      { id: 'ev-db2-4', time: '20 min ago', dp: dpRows[3]?.name || 'Arjun Vel', event: 'Petrol allowance assigned', severity: 'success', route: routeRows[3]?.name || 'T-Nagar' },
+      { id: 'ev-db2-4', time: '20 min ago', dp: dpRows[3]?.name || 'Arjun Vel', event: 'Petrol allowance assigned', severity: 'success', route: routeRows[3]?.name || 'T-Nagar 1' },
     ];
 
     res.json({
@@ -396,8 +414,8 @@ const getRouteAnalytics = async (req, res, next) => {
         db2RouteCount: routeCount,
         db2DpCount: dpCount,
         topDeviatedRoutes: [
-          { route: 'Alwarpet', deviations: 2, score: 72 },
-          { route: 'Egmore',   deviations: 1, score: 81 },
+          { route: 'Alwarpet 1', deviations: 2, score: 72 },
+          { route: 'Egmore 1',   deviations: 1, score: 81 },
           { route: 'Mandaveli 1', deviations: 1, score: 85 },
         ],
         monthlyTrend: [

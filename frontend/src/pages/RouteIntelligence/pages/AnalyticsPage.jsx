@@ -199,7 +199,7 @@ export default function AnalyticsPage() {
         <div className="card">
           <div className="card-header"><span className="card-title">Average Times by DB2 Route</span></div>
           <div className="card-body">
-            {['Alwarpet', 'Egmore', 'Mandaveli 1', 'Mylapore 1', 'T-Nagar'].map((r, i) => {
+            {['Alwarpet 1', 'Egmore 1', 'Mandaveli 1', 'Mylapore 1', 'T-Nagar 1'].map((r, i) => {
               const driving = [22, 19, 17, 26, 18][i];
               const stopped = [4, 9, 2, 1, 10][i];
               return (

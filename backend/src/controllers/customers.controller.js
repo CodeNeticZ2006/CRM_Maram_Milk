@@ -1,30 +1,39 @@
 const { readFromCRM, writeToCRM } = require('../config/database');
 
 const DB2_ROUTE_MAP = {
-  '69116213-871c-4d6c-88d3-84b59ac62e78': 'Alwarpet',
-  'f0afbbb8-08e7-479d-9660-aae410018e01': 'Egmore',
+  '69116213-871c-4d6c-88d3-84b59ac62e78': 'Alwarpet 1',
+  'f0afbbb8-08e7-479d-9660-aae410018e01': 'Egmore 1',
   '98791d4b-b096-49bb-bf0e-75ca51fca666': 'Mandaveli 1',
   '9f2e4943-c2db-4ca8-9ee5-5a2c337241f9': 'Mandaveli 2',
   '443e311b-0964-42dc-99de-9c18156a5d7f': 'MRC Ngr',
   'a7003dd8-219a-4546-9d9b-2969a60d716c': 'Mylapore 1',
   '780f80f9-5207-43d5-bcdc-be6b341c9cd7': 'Mylapore 2',
-  '1b4a924f-1a3c-4658-9e23-a2a060917ac2': 'Nungambakkam',
-  '9f3ffe40-d485-4995-9dd0-ac74735c6402': 'Royapettah',
-  'ab684dcb-a4eb-4135-ad41-b07158c30c4b': 'T-Nagar',
-  '59311df6-345e-47d8-97c6-f71c0f64e1eb': 'Teynampet',
-  '9835f558-456c-423f-985b-f21b981172d6': 'Triplicane',
+  '1b4a924f-1a3c-4658-9e23-a2a060917ac2': 'Nungambakkam 1',
+  '9f3ffe40-d485-4995-9dd0-ac74735c6402': 'Royapettah 2',
+  'ab684dcb-a4eb-4135-ad41-b07158c30c4b': 'T-Nagar 1',
+  '59311df6-345e-47d8-97c6-f71c0f64e1eb': 'Teynampet 1',
+  '9835f558-456c-423f-985b-f21b981172d6': 'Triplicane 1',
   'c041d6b2-ea1c-488d-a293-b755f3c66aa4': 'West Mambalam 1',
   '6f304069-2df7-496b-b991-8c69ba597859': 'West Mambalam 2',
-  'db2-1': 'Alwarpet', 'db2-2': 'Egmore', 'db2-3': 'Mandaveli 1', 'db2-4': 'Mandaveli 2',
-  'db2-5': 'MRC Ngr', 'db2-6': 'Mylapore 1', 'db2-7': 'Mylapore 2', 'db2-8': 'Nungambakkam',
-  'db2-9': 'Royapettah', 'db2-10': 'T-Nagar', 'db2-11': 'Teynampet', 'db2-12': 'Triplicane',
+  'db2-1': 'Alwarpet 1', 'db2-2': 'Egmore 1', 'db2-3': 'Mandaveli 1', 'db2-4': 'Mandaveli 2',
+  'db2-5': 'MRC Ngr', 'db2-6': 'Mylapore 1', 'db2-7': 'Mylapore 2', 'db2-8': 'Nungambakkam 1',
+  'db2-9': 'Royapettah 2', 'db2-10': 'T-Nagar 1', 'db2-11': 'Teynampet 1', 'db2-12': 'Triplicane 1',
   'db2-13': 'West Mambalam 1', 'db2-14': 'West Mambalam 2',
+  'Alwarpet': 'Alwarpet 1',
+  'Egmore': 'Egmore 1',
+  'Nungambakkam': 'Nungambakkam 1',
+  'Royapettah': 'Royapettah 2',
+  'T-Nagar': 'T-Nagar 1',
+  'Teynampet': 'Teynampet 1',
+  'Triplicane': 'Triplicane 1',
+  'W.Mblm 1': 'West Mambalam 1',
+  'W.Mblm 2': 'West Mambalam 2',
 };
 
 const formatCustomerRow = (row) => {
   if (!row) return row;
   let name = row.route_name;
-  if (!name || name === row.assigned_route_id || /^[0-9a-f-]{36}$/i.test(name) || /^db2-/i.test(name)) {
+  if (!name || name === row.assigned_route_id || /^[0-9a-f-]{36}$/i.test(name) || /^db2-/i.test(name) || DB2_ROUTE_MAP[name]) {
     if (DB2_ROUTE_MAP[row.assigned_route_id]) {
       name = DB2_ROUTE_MAP[row.assigned_route_id];
     } else if (DB2_ROUTE_MAP[row.route_name]) {
