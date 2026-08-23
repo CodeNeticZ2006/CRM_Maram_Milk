@@ -4,8 +4,9 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { SectionHeader, TerritoryCard, StatusBadge, ComplianceProgressBar } from '../components/index.jsx';
 import api from '../../../services/api';
 import { MOCK_TERRITORIES } from '../utils/mockData.js';
+import { buildActiveCustomerRoutes } from '../utils/routeGeometry.js';
 import {
-  LeafletMapContainer, RoutePolygon, DeliveryPartnerMarker, CustomerMarker,
+  LeafletMapContainer, RoutePolygon, RoutePolyline, DeliveryPartnerMarker, CustomerMarker,
   HeadOfficeMarker, HEAD_OFFICE, MOCK_GIS_PARTNERS
 } from '../maps/index.js';
 import '../components/RouteIntelligence.css';
@@ -14,20 +15,20 @@ const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
 // Default fallback Chennai bounding box generator for routes
 const FALLBACK_ROUTE_BOUNDARIES = [
-  { id: 'rb-1', name: 'Alwarpet 1',      color: '#3b82f6', coordinates: [[13.0300, 80.2440], [13.0380, 80.2440], [13.0380, 80.2540], [13.0300, 80.2540]], dp: 'Rajan Kumar', customers: 18, compliance: 94, status: 'active' },
-  { id: 'rb-2', name: 'Egmore 1',        color: '#10b981', coordinates: [[13.0680, 80.2550], [13.0780, 80.2550], [13.0780, 80.2660], [13.0680, 80.2660]], dp: 'Suresh Babu', customers: 14, compliance: 88, status: 'active' },
-  { id: 'rb-3', name: 'Mandaveli 1',   color: '#ef4444', coordinates: [[13.0230, 80.2560], [13.0310, 80.2560], [13.0310, 80.2640], [13.0230, 80.2640]], dp: 'Muthu Raj',   customers: 16, compliance: 67, status: 'breach' },
-  { id: 'rb-4', name: 'Mandaveli 2',   color: '#8b5cf6', coordinates: [[13.0250, 80.2600], [13.0330, 80.2600], [13.0330, 80.2680], [13.0250, 80.2680]], dp: 'Arjun Vel',   customers: 15, compliance: 97, status: 'active' },
-  { id: 'rb-5', name: 'MRC Ngr',       color: '#f59e0b', coordinates: [[13.0170, 80.2690], [13.0250, 80.2690], [13.0250, 80.2790], [13.0170, 80.2790]], dp: 'Prakash Nair',customers: 20, compliance: 55, status: 'stopped' },
-  { id: 'rb-6', name: 'Mylapore 1',    color: '#06b6d4', coordinates: [[13.0280, 80.2630], [13.0370, 80.2630], [13.0370, 80.2720], [13.0280, 80.2720]], dp: 'Vikram Selvan',customers: 13, compliance: 91, status: 'active' },
-  { id: 'rb-7', name: 'Mylapore 2',    color: '#ec4899', coordinates: [[13.0310, 80.2660], [13.0400, 80.2660], [13.0400, 80.2750], [13.0310, 80.2750]], dp: 'Karthik Raja',customers: 11, compliance: 89, status: 'active' },
-  { id: 'rb-8', name: 'Nungambakkam 1',color: '#14b8a6', coordinates: [[13.0550, 80.2340], [13.0650, 80.2340], [13.0650, 80.2450], [13.0550, 80.2450]], dp: 'Vijay Sethu', customers: 22, compliance: 95, status: 'active' },
-  { id: 'rb-9', name: 'Royapettah 2',   color: '#f97316', coordinates: [[13.0450, 80.2540], [13.0550, 80.2540], [13.0550, 80.2650], [13.0450, 80.2540]], dp: 'Saravanan',   customers: 17, compliance: 82, status: 'active' },
-  { id: 'rb-10', name: 'T-Nagar 1',     color: '#84cc16', coordinates: [[13.0360, 80.2280], [13.0460, 80.2280], [13.0460, 80.2390], [13.0360, 80.2390]], dp: 'Manikandan',  customers: 25, compliance: 98, status: 'active' },
-  { id: 'rb-11', name: 'Teynampet 1',   color: '#6366f1', coordinates: [[13.0400, 80.2430], [13.0490, 80.2430], [13.0490, 80.2530], [13.0400, 80.2530]], dp: 'Karthik Raja',customers: 19, compliance: 92, status: 'active' },
-  { id: 'rb-12', name: 'Triplicane 1',  color: '#a855f7', coordinates: [[13.0530, 80.2700], [13.0630, 80.2700], [13.0630, 80.2810], [13.0530, 80.2700]], dp: 'Saravanan',   customers: 24, compliance: 90, status: 'active' },
-  { id: 'rb-13', name: 'West Mambalam 1', color: '#0284c7', coordinates: [[13.0330, 80.2170], [13.0420, 80.2170], [13.0420, 80.2260], [13.0330, 80.2260]], dp: 'Ramesh Babu',  customers: 21, compliance: 96, status: 'active' },
-  { id: 'rb-14', name: 'West Mambalam 2', color: '#0d9488', coordinates: [[13.0350, 80.2200], [13.0440, 80.2200], [13.0440, 80.2290], [13.0350, 80.2200]], dp: 'Saravana Kumar', customers: 16, compliance: 93, status: 'active' },
+  { id: 'rb-1', name: 'Alwarpet 1',      color: '#3b82f6', coordinates: [[13.0300, 80.2440], [13.0380, 80.2440], [13.0380, 80.2540], [13.0300, 80.2540]], dp: 'Rajan Kumar', customers: 0, compliance: 94, status: 'active' },
+  { id: 'rb-2', name: 'Egmore 1',        color: '#10b981', coordinates: [[13.0680, 80.2550], [13.0780, 80.2550], [13.0780, 80.2660], [13.0680, 80.2660]], dp: 'Suresh Babu', customers: 0, compliance: 88, status: 'active' },
+  { id: 'rb-3', name: 'Mandaveli 1',   color: '#ef4444', coordinates: [[13.0230, 80.2560], [13.0310, 80.2560], [13.0310, 80.2640], [13.0230, 80.2640]], dp: 'Muthu Raj',   customers: 0, compliance: 67, status: 'breach' },
+  { id: 'rb-4', name: 'Mandaveli 2',   color: '#8b5cf6', coordinates: [[13.0250, 80.2600], [13.0330, 80.2600], [13.0330, 80.2680], [13.0250, 80.2680]], dp: 'Arjun Vel',   customers: 0, compliance: 97, status: 'active' },
+  { id: 'rb-5', name: 'MRC Ngr',       color: '#f59e0b', coordinates: [[13.0170, 80.2690], [13.0250, 80.2690], [13.0250, 80.2790], [13.0170, 80.2790]], dp: 'Prakash Nair',customers: 0, compliance: 55, status: 'stopped' },
+  { id: 'rb-6', name: 'Mylapore 1',    color: '#06b6d4', coordinates: [[13.0280, 80.2630], [13.0370, 80.2630], [13.0370, 80.2720], [13.0280, 80.2720]], dp: 'Vikram Selvan',customers: 0, compliance: 91, status: 'active' },
+  { id: 'rb-7', name: 'Mylapore 2',    color: '#ec4899', coordinates: [[13.0310, 80.2660], [13.0400, 80.2660], [13.0400, 80.2750], [13.0310, 80.2750]], dp: 'Karthik Raja',customers: 0, compliance: 89, status: 'active' },
+  { id: 'rb-8', name: 'Nungambakkam 1',color: '#14b8a6', coordinates: [[13.0550, 80.2340], [13.0650, 80.2340], [13.0650, 80.2450], [13.0550, 80.2450]], dp: 'Vijay Sethu', customers: 0, compliance: 95, status: 'active' },
+  { id: 'rb-9', name: 'Royapettah 2',   color: '#f97316', coordinates: [[13.0450, 80.2540], [13.0550, 80.2540], [13.0550, 80.2650], [13.0450, 80.2540]], dp: 'Saravanan',   customers: 0, compliance: 82, status: 'active' },
+  { id: 'rb-10', name: 'T-Nagar 1',     color: '#84cc16', coordinates: [[13.0360, 80.2280], [13.0460, 80.2280], [13.0460, 80.2390], [13.0360, 80.2390]], dp: 'Manikandan',  customers: 0, compliance: 98, status: 'active' },
+  { id: 'rb-11', name: 'Teynampet 1',   color: '#6366f1', coordinates: [[13.0400, 80.2430], [13.0490, 80.2430], [13.0490, 80.2530], [13.0400, 80.2530]], dp: 'Karthik Raja',customers: 0, compliance: 92, status: 'active' },
+  { id: 'rb-12', name: 'Triplicane 1',  color: '#a855f7', coordinates: [[13.0530, 80.2700], [13.0630, 80.2700], [13.0630, 80.2810], [13.0530, 80.2700]], dp: 'Saravanan',   customers: 0, compliance: 90, status: 'active' },
+  { id: 'rb-13', name: 'West Mambalam 1', color: '#0284c7', coordinates: [[13.0330, 80.2170], [13.0420, 80.2170], [13.0420, 80.2260], [13.0330, 80.2260]], dp: 'Ramesh Babu',  customers: 0, compliance: 96, status: 'active' },
+  { id: 'rb-14', name: 'West Mambalam 2', color: '#0d9488', coordinates: [[13.0350, 80.2200], [13.0440, 80.2200], [13.0440, 80.2290], [13.0350, 80.2200]], dp: 'Saravana Kumar', customers: 0, compliance: 93, status: 'active' },
 ];
 
 export default function TerritoryMonitoringPage() {
@@ -109,15 +110,15 @@ export default function TerritoryMonitoringPage() {
     });
   }, [customers]);
 
-  // Distinct routes available among real customer records
-  const availableCustomerRoutes = useMemo(() => {
-    const rSet = new Set();
-    customers.forEach(c => {
-      const rName = c.route_name || c.assigned_route_id;
-      if (rName) rSet.add(rName);
-    });
-    return Array.from(rSet).sort();
+  // Generate active customer route polylines
+  const activeCustomerRoutes = useMemo(() => {
+    return buildActiveCustomerRoutes(customers, HEAD_OFFICE);
   }, [customers]);
+
+  // Routes filtered to ONLY routes with customers
+  const activeRoutesList = useMemo(() => {
+    return routes.filter(r => r.customers > 0);
+  }, [routes]);
 
   // Filter mapped customers by route
   const filteredMappedCustomers = useMemo(() => {
@@ -207,18 +208,15 @@ export default function TerritoryMonitoringPage() {
             >
               All Routes ({mappedCustomers.length})
             </button>
-            {availableCustomerRoutes.map(rName => {
-              const count = mappedCustomers.filter(c => (c.route_name || c.assigned_route_id) === rName).length;
-              return (
-                <button
-                  key={rName}
-                  className={`btn btn-xs ${selectedRouteFilter === rName ? 'btn-primary' : 'btn-outline'}`}
-                  onClick={() => setSelectedRouteFilter(rName)}
-                >
-                  {rName} ({count})
-                </button>
-              );
-            })}
+            {activeCustomerRoutes.map(r => (
+              <button
+                key={r.id}
+                className={`btn btn-xs ${selectedRouteFilter === r.name ? 'btn-primary' : 'btn-outline'}`}
+                onClick={() => setSelectedRouteFilter(r.name)}
+              >
+                {r.name} ({r.customerCount})
+              </button>
+            ))}
           </div>
 
           {unmappedCustomers.length > 0 && (
@@ -265,11 +263,21 @@ export default function TerritoryMonitoringPage() {
           )}
 
           <LeafletMapContainer height={480} center={mapCenter} zoom={mapZoom} bounds={mapBounds}>
-            {({ showCustomers, showTerritories, showPartners }) => (
+            {({ showCustomers, showTerritories, showPartners, showRoutes }) => (
               <>
                 <HeadOfficeMarker office={HEAD_OFFICE} />
 
-                {/* DB2 Route Area Boundaries marked on map */}
+                {/* Active Route Polylines generated from real DB customer locations (Exactly 3 active customer routes) */}
+                {showRoutes && activeCustomerRoutes.map(r => (
+                  <RoutePolyline
+                    key={r.id}
+                    coordinates={r.polyline}
+                    color={r.color}
+                    routeName={`${r.name} (${r.customerCount} Customers)`}
+                  />
+                ))}
+
+                {/* Territory Boundaries (Overlay only) */}
                 {showTerritories && routes.map(r => {
                   const isSelected = selectedRouteId === r.id;
                   return (
@@ -282,15 +290,15 @@ export default function TerritoryMonitoringPage() {
                       fillOpacity={isSelected ? 0.35 : 0.15}
                       weight={isSelected ? 3.5 : 1.5}
                       title={`DB2 Route Area: ${r.name}`}
-                      subtitle={`Zone: ${r.zone || 'Zone A'} | Assigned DP: ${r.dp} | Stops: ${r.customers || 10}`}
+                      subtitle={`Zone: ${r.zone || 'Zone A'} | Assigned DP: ${r.dp} | Stops: ${r.customers || 0}`}
                       status={r.status || 'active'}
                     />
                   );
                 })}
 
-                {/* Plot Dynamic Real Customer Markers from Customer Management Module */}
-                {showCustomers && filteredMappedCustomers.map(cust => (
-                  <CustomerMarker key={cust.id} customer={cust} />
+                {/* Plot Dynamic Real Customer Markers from Customer Management Module (Always positioned at database coordinates) */}
+                {showCustomers && mappedCustomers.map(cust => (
+                  <CustomerMarker key={cust.id} customer={cust} selectedRouteFilter={selectedRouteFilter} />
                 ))}
 
                 {/* Delivery Partners */}
@@ -335,16 +343,16 @@ export default function TerritoryMonitoringPage() {
         </div>
       </div>
 
-      {/* DB2 Route Boundaries Table with Map Marking Action */}
+      {/* Routes with Customers Summary Table */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header" style={{ paddingBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span className="card-title">DB2 Route Area Boundaries</span>
+            <span className="card-title">Routes with Customers ({activeRoutesList.length > 0 ? activeRoutesList.length : activeCustomerRoutes.length})</span>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              Click any route to mark and focus its geographical area boundary on the map
+              Displaying active delivery routes generated from assigned customer locations
             </div>
           </div>
-          <span className="badge badge-blue">{routes.length} DB2 routes marked</span>
+          <span className="badge badge-success">{activeRoutesList.length > 0 ? activeRoutesList.length : activeCustomerRoutes.length} Active Routes</span>
         </div>
         <div className="table-wrapper">
           <table className="table">
@@ -359,7 +367,7 @@ export default function TerritoryMonitoringPage() {
               </tr>
             </thead>
             <tbody>
-              {routes.map(r => {
+              {(activeRoutesList.length > 0 ? activeRoutesList : activeCustomerRoutes).map(r => {
                 const isSelected = selectedRouteId === r.id;
                 return (
                   <tr

@@ -126,24 +126,51 @@ const getLiveOperations = async (req, res, next) => {
       };
     });
 
-    // Map DB2 routes
-    const routes = routeRows.map((r, i) => {
-      const assignedDp = dpRows.find(d => d.id === r.assignedDpId);
-      const colorPalette = ['#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#6366f1'];
-      return {
-        id: r.id,
-        name: r.name,
-        zone: r.zone,
-        dp: assignedDp ? assignedDp.name : 'Unassigned',
-        customers: r.customerCount || 12,
-        litres: r.litres || 0,
-        petrolAllowance: r.defaultPetrolAllowance || 60,
-        status: assignedDp ? 'active' : 'idle',
-        compliance: 85 + (i * 3) % 15,
-        color: colorPalette[i % colorPalette.length],
-        source: 'DB2',
-      };
-    });
+    // Fetch real CRM customer count per route
+    let crmCountMap = {};
+    try {
+      const custRes = await readFromCRM(
+        `SELECT c.assigned_route_id, r.route_name, COUNT(*)::int AS count
+         FROM customers c
+         LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
+         GROUP BY c.assigned_route_id, r.route_name`
+      );
+      custRes.rows.forEach(row => {
+        const count = parseInt(row.count, 10) || 0;
+        if (row.route_name) crmCountMap[row.route_name.toLowerCase().trim()] = (crmCountMap[row.route_name.toLowerCase().trim()] || 0) + count;
+        if (row.assigned_route_id) crmCountMap[row.assigned_route_id.toLowerCase().trim()] = (crmCountMap[row.assigned_route_id.toLowerCase().trim()] || 0) + count;
+      });
+    } catch (e) {
+      console.warn('⚠️ Warning fetching CRM customer counts:', e.message);
+    }
+
+    // Map DB2 routes & filter to ONLY routes with customers (>0)
+    const routes = routeRows
+      .map((r) => {
+        const assignedDp = dpRows.find(d => d.id === r.assignedDpId);
+        const realCount = crmCountMap[r.name?.toLowerCase().trim()] || crmCountMap[r.id?.toLowerCase().trim()] || (r.customerCount > 0 ? r.customerCount : 0);
+
+        let color = '#3b82f6';
+        const lowerName = (r.name || '').toLowerCase();
+        if (lowerName.includes('royapettah')) color = '#3b82f6';
+        else if (lowerName.includes('mandaveli')) color = '#a855f7';
+        else if (lowerName.includes('teynampet')) color = '#10b981';
+
+        return {
+          id: r.id,
+          name: r.name,
+          zone: r.zone,
+          dp: assignedDp ? assignedDp.name : 'Unassigned',
+          customers: realCount,
+          litres: r.litres || 0,
+          petrolAllowance: r.defaultPetrolAllowance || 60,
+          status: assignedDp ? 'active' : 'idle',
+          compliance: 92,
+          color,
+          source: 'DB2',
+        };
+      })
+      .filter(r => r.customers > 0);
 
     const activePartnersCount = deliveryPartners.filter(d => d.status === 'active').length;
     const deviationsCount     = deliveryPartners.filter(d => d.status === 'deviated').length;
@@ -250,15 +277,34 @@ const getTerritoryMonitoring = async (req, res, next) => {
       console.warn('⚠️ DB2 territory query warning:', e.message);
     }
 
+    // Fetch real CRM customer count per route
+    let crmCountMap = {};
+    try {
+      const custRes = await readFromCRM(
+        `SELECT c.assigned_route_id, r.route_name, COUNT(*)::int AS count
+         FROM customers c
+         LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
+         GROUP BY c.assigned_route_id, r.route_name`
+      );
+      custRes.rows.forEach(row => {
+        const count = parseInt(row.count, 10) || 0;
+        if (row.route_name) crmCountMap[row.route_name.toLowerCase().trim()] = (crmCountMap[row.route_name.toLowerCase().trim()] || 0) + count;
+        if (row.assigned_route_id) crmCountMap[row.assigned_route_id.toLowerCase().trim()] = (crmCountMap[row.assigned_route_id.toLowerCase().trim()] || 0) + count;
+      });
+    } catch (e) {
+      console.warn('⚠️ Warning fetching CRM customer counts in territory monitoring:', e.message);
+    }
+
     // Group by Zone
     const zoneMap = {};
     routeRows.forEach(r => {
       const zName = r.zone || 'Zone A';
+      const realCount = crmCountMap[r.name?.toLowerCase().trim()] || crmCountMap[r.id?.toLowerCase().trim()] || (r.customerCount > 0 ? r.customerCount : 0);
       if (!zoneMap[zName]) {
         zoneMap[zName] = { name: zName, routes: [], dps: [], customerCount: 0, totalLitres: 0 };
       }
       zoneMap[zName].routes.push(r.name);
-      zoneMap[zName].customerCount += (r.customerCount || 0);
+      zoneMap[zName].customerCount += realCount;
       zoneMap[zName].totalLitres += (r.litres || 0);
     });
 
@@ -277,7 +323,7 @@ const getTerritoryMonitoring = async (req, res, next) => {
       name: z.name,
       routesCount: z.routes.length || 1,
       dpsCount: z.dps.length || 1,
-      customers: z.customerCount || 15,
+      customers: z.customerCount,
       litres: z.totalLitres,
       status: idx === 1 ? 'breach' : idx === 3 ? 'inactive' : 'active',
       area: z.routes.join(', ') || z.name,
@@ -287,26 +333,35 @@ const getTerritoryMonitoring = async (req, res, next) => {
 
     const colorPalette = ['#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#a855f7', '#0284c7', '#65a30d', '#d97706'];
 
-    const db2RouteBoundaries = routeRows.map((r, idx) => {
-      const assignedDp = dpRows.find(d => d.id === r.assignedDpId);
-      const coords = getRouteBoundaryPolygon(r.name, idx);
-      const center = ZONE_COORDINATES[r.name] || ZONE_COORDINATES['Default'];
-      const color = colorPalette[idx % colorPalette.length];
-      return {
-        id: r.id,
-        name: r.name,
-        zone: r.zone || 'Zone A',
-        dp: assignedDp ? assignedDp.name : 'Unassigned',
-        customers: r.customerCount || 10,
-        litres: r.litres || 0,
-        compliance: 80 + (idx * 3) % 18,
-        status: idx === 2 ? 'breach' : 'active',
-        color,
-        coordinates: coords,
-        center: [center.lat, center.lng],
-        source: 'DB2',
-      };
-    });
+    const db2RouteBoundaries = routeRows
+      .map((r, idx) => {
+        const assignedDp = dpRows.find(d => d.id === r.assignedDpId);
+        const coords = getRouteBoundaryPolygon(r.name, idx);
+        const center = ZONE_COORDINATES[r.name] || ZONE_COORDINATES['Default'];
+        const realCount = crmCountMap[r.name?.toLowerCase().trim()] || crmCountMap[r.id?.toLowerCase().trim()] || (r.customerCount > 0 ? r.customerCount : 0);
+
+        let color = '#3b82f6';
+        const lowerName = (r.name || '').toLowerCase();
+        if (lowerName.includes('royapettah')) color = '#3b82f6';
+        else if (lowerName.includes('mandaveli')) color = '#a855f7';
+        else if (lowerName.includes('teynampet')) color = '#10b981';
+
+        return {
+          id: r.id,
+          name: r.name,
+          zone: r.zone || 'Zone A',
+          dp: assignedDp ? assignedDp.name : 'Unassigned',
+          customers: realCount,
+          litres: r.litres || 0,
+          compliance: 90,
+          status: 'active',
+          color,
+          coordinates: coords,
+          center: [center.lat, center.lng],
+          source: 'DB2',
+        };
+      })
+      .filter(r => r.customers > 0);
 
     res.json({
       success: true,

@@ -13,12 +13,12 @@ export const MOCK_DELIVERY_PARTNERS = [
 ];
 
 export const MOCK_ROUTES = [
-  { id: 'r-001', name: 'Route A — North Zone', dp: 'Rajan Kumar',    customers: 18, status: 'active',   compliance: 94, color: '#3b82f6', area: 'Kolathur, Perambur'  },
-  { id: 'r-002', name: 'Route B — South Zone', dp: 'Suresh Babu',   customers: 14, status: 'active',   compliance: 88, color: '#10b981', area: 'Adyar, Besant Nagar'  },
-  { id: 'r-003', name: 'Route C — East Zone',  dp: 'Muthu Raj',     customers: 16, status: 'deviated', compliance: 67, color: '#ef4444', area: 'Sholinganallur, OMR'   },
-  { id: 'r-004', name: 'Route D — West Zone',  dp: 'Arjun Vel',     customers: 15, status: 'active',   compliance: 97, color: '#8b5cf6', area: 'Anna Nagar, Mogappair' },
-  { id: 'r-005', name: 'Route E — Central',    dp: 'Prakash Nair',  customers: 20, status: 'stopped',  compliance: 55, color: '#f59e0b', area: 'T Nagar, Nungambakkam' },
-  { id: 'r-006', name: 'Route F — Harbor',     dp: 'Vikram Selvan', customers: 13, status: 'active',   compliance: 91, color: '#06b6d4', area: 'Mylapore, R A Puram'   },
+  { id: 'r-001', name: 'Route A — North Zone', dp: 'Rajan Kumar',    customers: 0, status: 'active',   compliance: 94, color: '#3b82f6', area: 'Kolathur, Perambur'  },
+  { id: 'r-002', name: 'Route B — South Zone', dp: 'Suresh Babu',   customers: 0, status: 'active',   compliance: 88, color: '#10b981', area: 'Adyar, Besant Nagar'  },
+  { id: 'r-003', name: 'Route C — East Zone',  dp: 'Muthu Raj',     customers: 0, status: 'deviated', compliance: 67, color: '#ef4444', area: 'Sholinganallur, OMR'   },
+  { id: 'r-004', name: 'Route D — West Zone',  dp: 'Arjun Vel',     customers: 0, status: 'active',   compliance: 97, color: '#8b5cf6', area: 'Anna Nagar, Mogappair' },
+  { id: 'r-005', name: 'Route E — Central',    dp: 'Prakash Nair',  customers: 0, status: 'stopped',  compliance: 55, color: '#f59e0b', area: 'T Nagar, Nungambakkam' },
+  { id: 'r-006', name: 'Route F — Harbor',     dp: 'Vikram Selvan', customers: 0, status: 'active',   compliance: 91, color: '#06b6d4', area: 'Mylapore, R A Puram'   },
 ];
 
 export const MOCK_GEOFENCES = [
@@ -50,16 +50,16 @@ export const MOCK_COMPLIANCE_ROWS = [
 
 export const MOCK_REPLAY_EVENTS = [
   { time: '06:20:00', event: 'Route Started',            type: 'start'   },
-  { time: '06:24:15', event: 'Stop #1 — Ravi Shankar',   type: 'delivery'},
+  { time: '06:24:15', event: 'Stop #1 — Delivery Point', type: 'delivery'},
   { time: '06:26:50', event: 'Geofence Entry — Zone A',  type: 'geo'     },
-  { time: '06:30:10', event: 'Stop #2 — Meena Devi',     type: 'delivery'},
+  { time: '06:30:10', event: 'Stop #2 — Delivery Point', type: 'delivery'},
   { time: '06:33:00', event: 'Extended Stop (6 min)',     type: 'alert'   },
-  { time: '06:39:20', event: 'Stop #3 — Ramesh Kumar',   type: 'delivery'},
+  { time: '06:39:20', event: 'Stop #3 — Delivery Point', type: 'delivery'},
   { time: '06:41:05', event: 'Speed Alert (68 kph)',      type: 'alert'   },
-  { time: '06:44:30', event: 'Stop #4 — Lakshmi Priya',  type: 'delivery'},
+  { time: '06:44:30', event: 'Stop #4 — Delivery Point', type: 'delivery'},
   { time: '06:48:00', event: 'Route Deviation Detected',  type: 'alert'   },
   { time: '06:52:15', event: 'Returned to Route',         type: 'info'    },
-  { time: '06:57:00', event: 'Stop #5 — Suresh Nair',    type: 'delivery'},
+  { time: '06:57:00', event: 'Stop #5 — Delivery Point', type: 'delivery'},
   { time: '07:02:40', event: 'Route Completed',           type: 'end'     },
 ];
 
@@ -84,12 +84,12 @@ export const MOCK_ANALYTICS = {
 };
 
 export const MOCK_TERRITORIES = [
-  { id: 't-001', name: 'North Zone',   routes: 2, dps: 2, customers: 32, status: 'active',   area: 'Kolathur, Perambur, Tondiarpet'  },
-  { id: 't-002', name: 'South Zone',   routes: 1, dps: 1, customers: 14, status: 'active',   area: 'Adyar, Besant Nagar, Thiruvanmiyur' },
-  { id: 't-003', name: 'East Zone',    routes: 1, dps: 1, customers: 16, status: 'breach',   area: 'Sholinganallur, OMR, Perungudi'   },
-  { id: 't-004', name: 'West Zone',    routes: 1, dps: 1, customers: 15, status: 'active',   area: 'Anna Nagar, Mogappair, Ambattur'  },
-  { id: 't-005', name: 'Central Zone', routes: 1, dps: 1, customers: 20, status: 'inactive', area: 'T Nagar, Nungambakkam, Egmore'    },
-  { id: 't-006', name: 'Harbor Zone',  routes: 1, dps: 1, customers: 13, status: 'active',   area: 'Mylapore, R A Puram, Mandaveli'   },
+  { id: 't-001', name: 'North Zone',   routes: 2, dps: 2, customers: 0, status: 'active',   area: 'Kolathur, Perambur, Tondiarpet'  },
+  { id: 't-002', name: 'South Zone',   routes: 1, dps: 1, customers: 0, status: 'active',   area: 'Adyar, Besant Nagar, Thiruvanmiyur' },
+  { id: 't-003', name: 'East Zone',    routes: 1, dps: 1, customers: 0, status: 'breach',   area: 'Sholinganallur, OMR, Perungudi'   },
+  { id: 't-004', name: 'West Zone',    routes: 1, dps: 1, customers: 0, status: 'active',   area: 'Anna Nagar, Mogappair, Ambattur'  },
+  { id: 't-005', name: 'Central Zone', routes: 1, dps: 1, customers: 0, status: 'inactive', area: 'T Nagar, Nungambakkam, Egmore'    },
+  { id: 't-006', name: 'Harbor Zone',  routes: 1, dps: 1, customers: 0, status: 'active',   area: 'Mylapore, R A Puram, Mandaveli'   },
 ];
 
 export const MOCK_SETTINGS = {

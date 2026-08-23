@@ -13,6 +13,10 @@ export default function MapControls({
   setShowTerritories,
   showRoutes,
   setShowRoutes,
+  showGeofences,
+  setShowGeofences,
+  showDeviations,
+  setShowDeviations,
   onResetView
 }) {
   return (
@@ -64,6 +68,28 @@ export default function MapControls({
             id="map-ctrl-routes"
           >
             <MdTimeline /> Routes
+          </button>
+        )}
+
+        {setShowGeofences && (
+          <button
+            className={`map-ctrl-btn ${showGeofences ? 'active' : ''}`}
+            onClick={() => setShowGeofences(prev => !prev)}
+            title="Toggle Geofences"
+            id="map-ctrl-geofences"
+          >
+            📍 Geofences
+          </button>
+        )}
+
+        {setShowDeviations && (
+          <button
+            className={`map-ctrl-btn ${showDeviations ? 'active' : ''}`}
+            onClick={() => setShowDeviations(prev => !prev)}
+            title="Toggle Deviations"
+            id="map-ctrl-deviations"
+          >
+            ⚠️ Deviations
           </button>
         )}
 

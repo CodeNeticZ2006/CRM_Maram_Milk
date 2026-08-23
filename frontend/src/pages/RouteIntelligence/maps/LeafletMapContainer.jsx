@@ -19,6 +19,8 @@ export default function LeafletMapContainer({
   initialShowPartners = true,
   initialShowTerritories = true,
   initialShowRoutes = true,
+  initialShowGeofences = true,
+  initialShowDeviations = true,
   // Callback when controls change
   onControlChange,
 }) {
@@ -26,6 +28,8 @@ export default function LeafletMapContainer({
   const [showPartners, setShowPartners] = useState(initialShowPartners);
   const [showTerritories, setShowTerritories] = useState(initialShowTerritories);
   const [showRoutes, setShowRoutes] = useState(initialShowRoutes);
+  const [showGeofences, setShowGeofences] = useState(initialShowGeofences);
+  const [showDeviations, setShowDeviations] = useState(initialShowDeviations);
   const [resetKey, setResetKey] = useState(0);
 
   const handleResetView = () => {
@@ -38,6 +42,8 @@ export default function LeafletMapContainer({
     showPartners,
     showTerritories,
     showRoutes,
+    showGeofences,
+    showDeviations,
   };
 
   return (
@@ -75,6 +81,10 @@ export default function LeafletMapContainer({
           setShowTerritories={setShowTerritories}
           showRoutes={showRoutes}
           setShowRoutes={setShowRoutes}
+          showGeofences={showGeofences}
+          setShowGeofences={setShowGeofences}
+          showDeviations={showDeviations}
+          setShowDeviations={setShowDeviations}
           onResetView={handleResetView}
         />
       )}

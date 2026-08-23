@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   MdDirectionsBike, MdRoute, MdWarningAmber, MdNotifications,
   MdRefresh, MdFilterList,
@@ -7,10 +7,10 @@ import {
 import { SectionHeader, AnalyticsCard, EventSeverityIcon } from '../components/index.jsx';
 import api from '../../../services/api';
 import { MOCK_DELIVERY_PARTNERS, MOCK_LIVE_EVENTS } from '../utils/mockData.js';
+import { buildActiveCustomerRoutes } from '../utils/routeGeometry.js';
 import {
   LeafletMapContainer, HeadOfficeMarker, CustomerMarker,
-  DeliveryPartnerMarker, RoutePolyline, HEAD_OFFICE,
-  MOCK_GIS_CUSTOMERS, MOCK_GIS_POLYLINES
+  DeliveryPartnerMarker, RoutePolyline, HEAD_OFFICE
 } from '../maps/index.js';
 import '../components/RouteIntelligence.css';
 
@@ -24,6 +24,7 @@ export default function LiveOperationsPage() {
   const [liveEvents, setEvents] = useState(MOCK_LIVE_EVENTS);
   const [isDb2Loaded, setIsDb2Loaded] = useState(false);
 
+  const [allCustomers, setAllCustomers] = useState([]);
   const [customers, setCustomers] = useState([]);
 
   const fetchLiveOps = useCallback(async () => {
@@ -44,6 +45,7 @@ export default function LiveOperationsPage() {
       }
 
       if (custRes?.data?.success && Array.isArray(custRes.data?.data)) {
+        setAllCustomers(custRes.data.data);
         setCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
       }
     } catch (err) {
@@ -57,10 +59,32 @@ export default function LiveOperationsPage() {
     fetchLiveOps();
   }, [fetchLiveOps]);
 
+  // Generate ONLY active route polylines connecting real customer locations
+  const activeCustomerRoutes = useMemo(() => {
+    return buildActiveCustomerRoutes(allCustomers, HEAD_OFFICE);
+  }, [allCustomers]);
+
+  // Calculate dynamic map bounds focused on actual customer coordinates
+  const mapBounds = useMemo(() => {
+    if (customers.length === 0) return null;
+    const lats = customers.map(c => parseFloat(c.lat));
+    const lngs = customers.map(c => parseFloat(c.lng));
+    const minLat = Math.min(...lats);
+    const maxLat = Math.max(...lats);
+    const minLng = Math.min(...lngs);
+    const maxLng = Math.max(...lngs);
+    const marginLat = (maxLat - minLat) * 0.1 || 0.01;
+    const marginLng = (maxLng - minLng) * 0.1 || 0.01;
+    return [
+      [minLat - marginLat, minLng - marginLng],
+      [maxLat + marginLat, maxLng + marginLng],
+    ];
+  }, [customers]);
+
   const activePartners = stats.activePartners || deliveryPartners.filter(d => d.status === 'active').length;
   const deviations     = stats.deviations || deliveryPartners.filter(d => d.status === 'deviated').length;
   const stopped        = stats.stopped || deliveryPartners.filter(d => d.status === 'stopped').length;
-  const totalRoutes    = routes.length || stats.totalRoutes || deliveryPartners.length;
+  const totalRoutes    = activeCustomerRoutes.length || 3;
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
@@ -68,13 +92,13 @@ export default function LiveOperationsPage() {
         title="Live Operations"
         subtitle={
           <span>
-            Real-time delivery partner tracking and route status
+            Real-time delivery partner tracking and route status ({activeCustomerRoutes.length} Active Customer Routes)
             {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
           </span>
         }
       >
         <button className="btn btn-secondary btn-sm" id="ri-live-refresh-btn" onClick={fetchLiveOps} disabled={loading}>
-          <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing DB2...' : 'Refresh'}
+          <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
         </button>
         <button className="btn btn-primary btn-sm" id="ri-live-filter-btn">
           <MdFilterList /> Filter
@@ -93,9 +117,9 @@ export default function LiveOperationsPage() {
         />
         <AnalyticsCard
           icon={<MdRoute />}
-          label="Active Routes"
-          value={totalRoutes}
-          sub={`Out of ${totalRoutes} planned in DB2`}
+          label="Routes with Customers"
+          value={activeCustomerRoutes.length}
+          sub="Royapettah, Mandaveli 2, Teynampet"
           color="var(--success)"
         />
         <AnalyticsCard
@@ -117,19 +141,19 @@ export default function LiveOperationsPage() {
 
       {/* Map + DP List */}
       <div className="ri-two-col">
-        <LeafletMapContainer height={445} center={[HEAD_OFFICE.lat, HEAD_OFFICE.lng]} zoom={12}>
+        <LeafletMapContainer height={445} center={[HEAD_OFFICE.lat, HEAD_OFFICE.lng]} zoom={12} bounds={mapBounds}>
           {({ showCustomers, showPartners, showRoutes }) => (
             <>
               {/* Head Office */}
               <HeadOfficeMarker office={HEAD_OFFICE} />
 
-              {/* Route Polylines */}
-              {showRoutes && MOCK_GIS_POLYLINES.map(line => (
+              {/* Dynamic Route Polylines generated from real DB customer locations (Exactly 3 active customer routes) */}
+              {showRoutes && activeCustomerRoutes.map(route => (
                 <RoutePolyline
-                  key={line.id}
-                  coordinates={line.coordinates}
-                  color={line.color}
-                  routeName={line.routeName}
+                  key={route.id}
+                  coordinates={route.polyline}
+                  color={route.color}
+                  routeName={`${route.name} (${route.customerCount} Customers)`}
                 />
               ))}
 

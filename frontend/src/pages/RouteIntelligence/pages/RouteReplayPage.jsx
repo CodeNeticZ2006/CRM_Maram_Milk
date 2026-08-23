@@ -24,17 +24,27 @@ export default function RouteReplayPage() {
   const [loading, setLoading]         = useState(true);
   const [isDb2Loaded, setIsDb2Loaded] = useState(false);
 
+  const [crmCustomers, setCrmCustomers] = useState([]);
+
   const fetchReplayData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/route-intelligence/replay');
-      if (res.data?.success && res.data?.data?.deliveryPartners?.length > 0) {
+      const [res, custRes] = await Promise.all([
+        api.get('/route-intelligence/replay').catch(() => null),
+        api.get('/customers', { params: { limit: 500 } }).catch(() => null),
+      ]);
+
+      if (res?.data?.success && res?.data?.data?.deliveryPartners?.length > 0) {
         const db2Dps = res.data.data.deliveryPartners;
         setDpList(db2Dps);
         if (db2Dps.length > 0 && !db2Dps.find(d => d.id === selectedDP)) {
           setSelectedDP(db2Dps[0].id);
         }
         setIsDb2Loaded(true);
+      }
+
+      if (custRes?.data?.success && Array.isArray(custRes.data?.data)) {
+        setCrmCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
       }
     } catch (err) {
       console.warn('⚠️ Failed to fetch DB2 replay list:', err.message);
@@ -142,36 +152,9 @@ export default function RouteReplayPage() {
                     />
                   )}
 
-                  {/* Completed Stops */}
-                  {showCustomers && MOCK_REPLAY_GIS_DATA.completedStops.map(stop => (
-                    <CustomerMarker
-                      key={stop.id}
-                      customer={{
-                        name: stop.name,
-                        type: 'Completed Stop',
-                        route: MOCK_REPLAY_GIS_DATA.route,
-                        status: 'Delivered',
-                        lat: stop.lat,
-                        lng: stop.lng,
-                        address: `Delivered at ${stop.time}`,
-                      }}
-                    />
-                  ))}
-
-                  {/* Remaining Pending Stops */}
-                  {showCustomers && MOCK_REPLAY_GIS_DATA.remainingStops.map(stop => (
-                    <CustomerMarker
-                      key={stop.id}
-                      customer={{
-                        name: stop.name,
-                        type: 'Pending Stop',
-                        route: MOCK_REPLAY_GIS_DATA.route,
-                        status: 'Pending',
-                        lat: stop.lat,
-                        lng: stop.lng,
-                        address: 'In Transit',
-                      }}
-                    />
+                  {/* Real CRM Customer Stops */}
+                  {showCustomers && crmCustomers.map(cust => (
+                    <CustomerMarker key={cust.id} customer={cust} />
                   ))}
 
                   {/* Current Replay Marker */}

@@ -14,16 +14,7 @@ export const HEAD_OFFICE = {
   status: 'Operational',
 };
 
-export const MOCK_GIS_CUSTOMERS = [
-  { id: 'cust-101', name: 'Ravi Shankar',     type: 'Customer', route: 'Route A — North Zone', lat: 13.0950, lng: 80.2650, address: 'Perambur, Chennai',      wallet: '₹1,240', status: 'Active' },
-  { id: 'cust-102', name: 'Meena Devi',      type: 'Customer', route: 'Route A — North Zone', lat: 13.0900, lng: 80.2780, address: 'Kolathur, Chennai',      wallet: '₹850',   status: 'Active' },
-  { id: 'cust-103', name: 'Ramesh Kumar',    type: 'Customer', route: 'Route B — South Zone', lat: 13.0012, lng: 80.2565, address: 'Adyar, Chennai',         wallet: '₹2,100', status: 'Active' },
-  { id: 'cust-104', name: 'Lakshmi Priya',   type: 'Customer', route: 'Route B — South Zone', lat: 13.0060, lng: 80.2680, address: 'Besant Nagar, Chennai',  wallet: '₹420',   status: 'Active' },
-  { id: 'cust-105', name: 'Suresh Nair',     type: 'Customer', route: 'Route C — East Zone',  lat: 12.9010, lng: 80.2270, address: 'Sholinganallur, OMR',   wallet: '₹1,680', status: 'Active' },
-  { id: 'cust-106', name: 'Kavitha Rajan',   type: 'Customer', route: 'Route D — West Zone',  lat: 13.0850, lng: 80.2100, address: 'Anna Nagar, Chennai',    wallet: '₹3,400', status: 'Active' },
-  { id: 'cust-107', name: 'Anand Venkatesh', type: 'Customer', route: 'Route E — Central',    lat: 13.0418, lng: 80.2341, address: 'T Nagar, Chennai',       wallet: '₹990',   status: 'Active' },
-  { id: 'cust-108', name: 'Priya Dharshini', type: 'Customer', route: 'Route F — Harbor',     lat: 13.0339, lng: 80.2683, address: 'Mylapore, Chennai',      wallet: '₹1,450', status: 'Active' },
-];
+export const MOCK_GIS_CUSTOMERS = [];
 
 export const MOCK_GIS_PARTNERS = [
   { id: 'dp-001', name: 'Rajan Kumar',    type: 'Delivery Partner', route: 'Route A — North Zone', lat: 13.0920, lng: 80.2700, speed: '38 km/h', status: 'active',   deliveries: '12 / 18' },
@@ -34,54 +25,7 @@ export const MOCK_GIS_PARTNERS = [
   { id: 'dp-006', name: 'Vikram Selvan', type: 'Delivery Partner', route: 'Route F — Harbor',     lat: 13.0350, lng: 80.2700, speed: '31 km/h', status: 'active',   deliveries: '11 / 13' },
 ];
 
-export const MOCK_GIS_POLYLINES = [
-  {
-    id: 'poly-a',
-    routeName: 'Route A — North Zone',
-    color: '#3b82f6',
-    coordinates: [
-      [13.0604, 80.2496], // HQ
-      [13.0750, 80.2580],
-      [13.0900, 80.2780], // Cust 2
-      [13.0950, 80.2650], // Cust 1
-      [13.0920, 80.2700], // DP 1
-    ]
-  },
-  {
-    id: 'poly-b',
-    routeName: 'Route B — South Zone',
-    color: '#10b981',
-    coordinates: [
-      [13.0604, 80.2496], // HQ
-      [13.0300, 80.2500],
-      [13.0012, 80.2565], // Cust 3
-      [13.0060, 80.2680], // Cust 4
-      [13.0035, 80.2620], // DP 2
-    ]
-  },
-  {
-    id: 'poly-c',
-    routeName: 'Route C — East Zone',
-    color: '#ef4444',
-    coordinates: [
-      [13.0604, 80.2496], // HQ
-      [12.9800, 80.2400],
-      [12.9010, 80.2270], // Cust 5
-      [12.9050, 80.2300], // DP 3
-    ]
-  },
-  {
-    id: 'poly-d',
-    routeName: 'Route D — West Zone',
-    color: '#8b5cf6',
-    coordinates: [
-      [13.0604, 80.2496], // HQ
-      [13.0700, 80.2300],
-      [13.0850, 80.2100], // Cust 6
-      [13.0820, 80.2150], // DP 4
-    ]
-  }
-];
+export const MOCK_GIS_POLYLINES = [];
 
 export const MOCK_GIS_TERRITORIES = [
   {
@@ -202,12 +146,6 @@ export const MOCK_REPLAY_GIS_DATA = {
     [13.0900, 80.2780],
   ],
   currentPos: [13.0900, 80.2780],
-  completedStops: [
-    { id: 'stop-1', name: 'Ravi Shankar', lat: 13.0780, lng: 80.2620, time: '06:24 AM', status: 'Delivered' },
-    { id: 'stop-2', name: 'Meena Devi', lat: 13.0900, lng: 80.2780, time: '06:30 AM', status: 'Delivered' },
-  ],
-  remainingStops: [
-    { id: 'stop-3', name: 'Kavitha Rajan', lat: 13.0950, lng: 80.2650, time: 'Pending', status: 'In Transit' },
-    { id: 'stop-4', name: 'Anand Venkatesh', lat: 13.0920, lng: 80.2700, time: 'Pending', status: 'In Transit' },
-  ]
+  completedStops: [],
+  remainingStops: [],
 };
