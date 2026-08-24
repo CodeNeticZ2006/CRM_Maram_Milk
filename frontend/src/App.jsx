@@ -16,6 +16,7 @@ const MastersPage      = lazy(() => import('./pages/Masters/MastersPage'));
 const InventoryPage    = lazy(() => import('./pages/Inventory/InventoryPage'));
 const SubscriptionsPage = lazy(() => import('./pages/Subscriptions/SubscriptionsPage'));
 const PausePage        = lazy(() => import('./pages/Pause/PausePage'));
+const DeliveryPersonAuditPage = lazy(() => import('./pages/DeliveryPersonAudit/DeliveryPersonAuditPage'));
 const LogisticsPage    = lazy(() => import('./pages/Logistics/LogisticsPage'));
 const EcomOrdersPage   = lazy(() => import('./pages/EcomOrders/EcomOrdersPage'));
 const EmptyBottlesPage = lazy(() => import('./pages/EmptyBottles/EmptyBottlesPage'));
@@ -83,6 +84,12 @@ export default function App() {
           } />
           <Route path="/pause" element={
             <Suspense fallback={<PageLoader />}><PausePage /></Suspense>
+          } />
+          <Route path="/delivery-person-audit" element={
+            <Suspense fallback={<PageLoader />}><DeliveryPersonAuditPage /></Suspense>
+          } />
+          <Route path="/route" element={
+            <Suspense fallback={<PageLoader />}><LogisticsPage /></Suspense>
           } />
           <Route path="/logistics" element={
             <Suspense fallback={<PageLoader />}><LogisticsPage /></Suspense>

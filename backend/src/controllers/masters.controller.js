@@ -229,6 +229,14 @@ const updateRoute = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+const deleteRoute = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    await writeToCRM('DELETE FROM routes WHERE id=$1', [id]);
+    res.json({ success: true, message: 'Route deleted successfully.' });
+  } catch (err) { next(err); }
+};
+
 // ── DPs BY ROUTE ────────────────────────────────────────────────
 // GET /api/masters/dps-by-route?route_name=Teynampet
 // Returns all DPs assigned to the given route from DB2
@@ -299,6 +307,6 @@ const getDpsByRoute = async (req, res, next) => {
 module.exports = {
   getProducts, createProduct, updateProduct, deleteProduct,
   getBranches, createBranch, updateBranch,
-  getRoutes, createRoute, updateRoute,
+  getRoutes, createRoute, updateRoute, deleteRoute,
   getDpsByRoute,
 };

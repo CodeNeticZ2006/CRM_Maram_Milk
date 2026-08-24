@@ -1,139 +1,412 @@
-import { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
-import { MdRefresh, MdLocalShipping, MdPerson, MdDirectionsBike } from 'react-icons/md';
+import { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import {
+  MdRefresh, MdAdd, MdEdit, MdDelete, MdSearch,
+  MdClose, MdDirectionsBike, MdCheckCircle, MdErrorOutline
+} from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 
-export default function LogisticsPage() {
-  const [data, setData] = useState(null);
-  const [deliveryPersons, setDeliveryPersons] = useState([]);
-  const [loading, setLoading] = useState(true);
+const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
-  const fetchLogistics = async () => {
+export default function LogisticsPage() {
+  const [routes, setRoutes] = useState([]);
+  const [branches, setBranches] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+
+  // Modals state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(null); // route object
+  const [showDeleteModal, setShowDeleteModal] = useState(null); // route object
+  const [submitting, setSubmitting] = useState(false);
+
+  // Forms state
+  const [routeForm, setRouteForm] = useState({
+    route_name: '',
+    branch_id: '',
+    status: 'Active',
+  });
+
+  const fetchRouteData = useCallback(async () => {
     setLoading(true);
     try {
-      const [res, dpRes] = await Promise.all([
-        api.get('/reports/logistics').catch(() => ({ data: { data: null } })),
-        api.get('/access-control/delivery-persons').catch(() => ({ data: { data: [] } })),
+      const [routeRes, branchRes] = await Promise.all([
+        api.get('/masters/routes'),
+        api.get('/masters/branches').catch(() => ({ data: { data: [] } })),
       ]);
-      setData(res.data.data);
-      setDeliveryPersons(dpRes.data.data || []);
+
+      if (routeRes.data?.success) {
+        setRoutes(routeRes.data.data || []);
+      }
+      if (branchRes.data?.success) {
+        setBranches(branchRes.data.data || []);
+      }
     } catch {
-      toast.error('Failed to load logistics data.');
+      toast.error('Failed to load routes data.');
     } finally {
       setLoading(false);
     }
+  }, []);
+
+  useEffect(() => {
+    fetchRouteData();
+  }, [fetchRouteData]);
+
+  // Open Add Modal
+  const openAddModal = () => {
+    setRouteForm({ route_name: '', branch_id: branches[0]?.id || '', status: 'Active' });
+    setShowAddModal(true);
   };
 
-  useEffect(() => { fetchLogistics(); }, []);
+  // Open Edit Modal
+  const openEditModal = (route) => {
+    setShowEditModal(route);
+    setRouteForm({
+      route_name: route.route_name || '',
+      branch_id: route.branch_id || '',
+      status: route.status || 'Active',
+    });
+  };
 
-  const deliveryStatuses = data?.today_deliveries || [];
-  const totalToday = deliveryStatuses.reduce((s, d) => s + parseInt(d.count), 0);
+  // Handle Create Route
+  const handleCreateRoute = async (e) => {
+    e.preventDefault();
+    if (!routeForm.route_name.trim()) return toast.error('Route Name is required.');
+    setSubmitting(true);
+    try {
+      const res = await api.post('/masters/routes', routeForm);
+      if (res.data?.success) {
+        toast.success(`Route "${routeForm.route_name}" created successfully!`);
+        setShowAddModal(false);
+        fetchRouteData();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to create route.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle Edit Route
+  const handleUpdateRoute = async (e) => {
+    e.preventDefault();
+    if (!routeForm.route_name.trim()) return toast.error('Route Name is required.');
+    setSubmitting(true);
+    try {
+      const res = await api.put(`/masters/routes/${showEditModal.id}`, routeForm);
+      if (res.data?.success) {
+        toast.success(`Route updated successfully!`);
+        setShowEditModal(null);
+        fetchRouteData();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update route.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  // Handle Delete Route
+  const handleDeleteRoute = async () => {
+    setSubmitting(true);
+    try {
+      const res = await api.delete(`/masters/routes/${showDeleteModal.id}`);
+      if (res.data?.success) {
+        toast.success(`Route "${showDeleteModal.route_name}" deleted.`);
+        setShowDeleteModal(null);
+        fetchRouteData();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete route.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  const filteredRoutes = routes.filter(r =>
+    (r?.route_name || '').toLowerCase().includes(search.toLowerCase()) ||
+    (r?.branch_name || '').toLowerCase().includes(search.toLowerCase())
+  );
 
   return (
-    <div>
-      <div className="page-header">
+    <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
+      {/* Page Header */}
+      <div className="page-header" style={{ marginBottom: 20 }}>
         <div>
-          <h1 className="page-title">Logistics & Route Dispatches</h1>
-          <p className="page-subtitle">Delivery Partner (DP) assignments, route tracking, and stock dispatch</p>
+          <h1 className="page-title">Route Management</h1>
+          <p className="page-subtitle">Configure, edit, and manage all distribution routes</p>
         </div>
-        <button className="btn btn-secondary btn-sm" onClick={fetchLogistics}><MdRefresh /> Refresh</button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={fetchRouteData}
+            disabled={loading}
+          >
+            <MdRefresh className={loading ? 'spin' : ''} /> Refresh
+          </button>
+          <button className="btn btn-primary" onClick={openAddModal}>
+            <MdAdd style={{ fontSize: 18 }} /> Add New Route
+          </button>
+        </div>
       </div>
 
-      {/* DB2 Manager App Sync Banner */}
-      <div className="card" style={{ marginBottom: 20, background: 'rgba(59,130,246,0.03)', borderColor: 'rgba(59,130,246,0.2)' }}>
-        <div className="card-body">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-            <div style={{ width: 44, height: 44, borderRadius: 12, background: 'rgba(59,130,246,0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', fontSize: 22 }}>
-              <MdDirectionsBike />
-            </div>
+      {/* KPI & Search Bar */}
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-body" style={{ padding: '16px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 16 }}>
+          <div style={{ display: 'flex', gap: 20, alignItems: 'center' }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 14.5 }}>Manager App & Delivery Person (DP) Integration (DB2)</div>
-              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 2 }}>
-                Delivery Person (DP) profiles, vehicle registrations, and attendance are synced in real time from the Manager App DB (DB2 - <code>maram_milk_db</code>).
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Total Configured Routes</span>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--primary)' }}>{routes.length}</div>
+            </div>
+            <div style={{ width: 1, height: 32, background: 'var(--border)' }} />
+            <div>
+              <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>Active Routes</span>
+              <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--success)' }}>
+                {routes.filter(r => (r.status || 'Active') === 'Active').length}
               </div>
             </div>
           </div>
+
+          <div style={{ position: 'relative', width: 280 }}>
+            <MdSearch style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 18 }} />
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Search route name or branch..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ paddingLeft: 36, width: '100%', fontSize: 13 }}
+            />
+          </div>
         </div>
       </div>
 
-      {/* Today's Delivery Status */}
-      <div style={{ display: 'flex', gap: 14, marginBottom: 24, flexWrap: 'wrap' }}>
-        {deliveryStatuses.map(ds => {
-          const colors = { Delivered: '#10b981', Pending: '#f59e0b', Failed: '#ef4444', Skipped: '#94a3b8' };
-          const bgs = { Delivered: 'rgba(16,185,129,0.06)', Pending: 'rgba(245,158,11,0.06)', Failed: 'rgba(239,68,68,0.06)', Skipped: 'rgba(148,163,184,0.06)' };
-          return (
-            <div key={ds.status} className="card" style={{ flex: 1, minWidth: 120, background: bgs[ds.status], borderColor: colors[ds.status] + '30' }}>
-              <div className="card-body" style={{ textAlign: 'center' }}>
-                <div style={{ fontSize: 28, fontWeight: 800, color: colors[ds.status] }}>{ds.count}</div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>{ds.status}</div>
+      {/* Routes Table */}
+      <div className="card">
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 className="card-title">🛣️ Configured Routes ({filteredRoutes.length})</h3>
+          <span className="badge badge-blue">{filteredRoutes.length} Routes Listed</span>
+        </div>
+        <div className="card-body" style={{ padding: 0 }}>
+          <div className="table-wrapper">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>S.NO</th>
+                  <th>ROUTE NAME</th>
+                  <th>BRANCH / ZONE</th>
+                  <th>CUSTOMERS</th>
+                  <th>STATUS</th>
+                  <th>SOURCE</th>
+                  <th style={{ textAlign: 'right' }}>ACTIONS</th>
+                </tr>
+              </thead>
+              <tbody>
+                {loading ? (
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 36 }}>Loading routes data...</td></tr>
+                ) : filteredRoutes.length === 0 ? (
+                  <tr><td colSpan={7} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>No routes found.</td></tr>
+                ) : (
+                  filteredRoutes.map((r, idx) => (
+                    <tr key={r.id || idx}>
+                      <td style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>{idx + 1}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--text-primary)', fontSize: 14 }}>{r.route_name}</td>
+                      <td style={{ fontSize: 13 }}>{r.branch_name || '—'}</td>
+                      <td>
+                        <span style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 800 }}>
+                          {r.customer_count || 0}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${(r.status || 'Active') === 'Active' ? 'badge-success' : 'badge-danger'}`}>
+                          {r.status || 'Active'}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="badge badge-gray" style={{ fontSize: 10, fontFamily: 'monospace' }}>
+                          {r.source || 'DB1'}
+                        </span>
+                      </td>
+                      <td style={{ textAlign: 'right' }}>
+                        <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '4px 8px', fontSize: 12 }}
+                            onClick={() => openEditModal(r)}
+                            title="Edit Route"
+                          >
+                            <MdEdit style={{ color: 'var(--primary)' }} /> Edit
+                          </button>
+                          <button
+                            className="btn btn-secondary btn-sm"
+                            style={{ padding: '4px 8px', fontSize: 12, color: '#ef4444' }}
+                            onClick={() => setShowDeleteModal(r)}
+                            title="Delete Route"
+                          >
+                            <MdDelete /> Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      {/* Add Route Modal */}
+      <AnimatePresence>
+        {showAddModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowAddModal(false)}>
+            <motion.div className="modal" style={{ maxWidth: 440 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdAdd style={{ color: 'var(--primary)' }} /> Add New Route
+                </h2>
+                <button className="icon-btn" onClick={() => setShowAddModal(false)}><MdClose /></button>
               </div>
-            </div>
-          );
-        })}
-        <div className="card" style={{ flex: 1, minWidth: 120 }}>
-          <div className="card-body" style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--primary)' }}>{totalToday}</div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Deliveries Today</div>
+              <form onSubmit={handleCreateRoute}>
+                <div className="modal-body">
+                  <div className="form-group" style={{ marginBottom: 14 }}>
+                    <label className="form-label">Route Name *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="e.g. West Mambalam 3"
+                      value={routeForm.route_name}
+                      onChange={e => setRouteForm({ ...routeForm, route_name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 14 }}>
+                    <label className="form-label">Branch / Zone</label>
+                    <select
+                      className="form-input"
+                      value={routeForm.branch_id}
+                      onChange={e => setRouteForm({ ...routeForm, branch_id: e.target.value })}
+                    >
+                      <option value="">— Select Branch —</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.branch_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <select
+                      className="form-input"
+                      value={routeForm.status}
+                      onChange={e => setRouteForm({ ...routeForm, status: e.target.value })}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowAddModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={submitting}>
+                    {submitting ? 'Saving...' : 'Create Route'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
           </div>
-        </div>
-        <div className="card" style={{ flex: 1, minWidth: 120 }}>
-          <div className="card-body" style={{ textAlign: 'center' }}>
-            <div style={{ fontSize: 28, fontWeight: 800, color: '#8b5cf6' }}>{deliveryPersons.length}</div>
-            <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Active DPs (DB2)</div>
-          </div>
-        </div>
-      </div>
+        )}
+      </AnimatePresence>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, alignItems: 'start', marginBottom: 24 }}>
-        {/* Delivery Persons (DPs) from DB2 */}
-        <div className="card">
-          <div className="card-header"><h3 className="card-title">🛵 Delivery Persons ({deliveryPersons.length} DPs) — Live DB2 Data</h3></div>
-          <div className="card-body" style={{ padding: 0 }}>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead><tr><th>DP Code</th><th>Name</th><th>Mobile</th><th>Vehicle No</th><th>Petrol Bal.</th></tr></thead>
-                <tbody>
-                  {loading ? <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24 }}>Loading...</td></tr> :
-                    deliveryPersons.length === 0 ? <tr><td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No DPs registered in DB2.</td></tr> :
-                    deliveryPersons.map(dp => (
-                      <tr key={dp.id}>
-                        <td><span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>{dp.dpCode || 'DP-001'}</span></td>
-                        <td style={{ fontWeight: 600 }}>{dp.name}</td>
-                        <td style={{ fontSize: 12 }}>{dp.mobileNumber || '—'}</td>
-                        <td style={{ fontSize: 12, fontFamily: 'monospace' }}>{dp.vehicleNumber || '—'}</td>
-                        <td style={{ fontWeight: 700, color: 'var(--success)' }}>₹{dp.petrolBalance || 0}</td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+      {/* Edit Route Modal */}
+      <AnimatePresence>
+        {showEditModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowEditModal(null)}>
+            <motion.div className="modal" style={{ maxWidth: 440 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdEdit style={{ color: 'var(--primary)' }} /> Edit Route — {showEditModal.route_name}
+                </h2>
+                <button className="icon-btn" onClick={() => setShowEditModal(null)}><MdClose /></button>
+              </div>
+              <form onSubmit={handleUpdateRoute}>
+                <div className="modal-body">
+                  <div className="form-group" style={{ marginBottom: 14 }}>
+                    <label className="form-label">Route Name *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={routeForm.route_name}
+                      onChange={e => setRouteForm({ ...routeForm, route_name: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group" style={{ marginBottom: 14 }}>
+                    <label className="form-label">Branch / Zone</label>
+                    <select
+                      className="form-input"
+                      value={routeForm.branch_id}
+                      onChange={e => setRouteForm({ ...routeForm, branch_id: e.target.value })}
+                    >
+                      <option value="">— Select Branch —</option>
+                      {branches.map(b => (
+                        <option key={b.id} value={b.id}>{b.branch_name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Status</label>
+                    <select
+                      className="form-input"
+                      value={routeForm.status}
+                      onChange={e => setRouteForm({ ...routeForm, status: e.target.value })}
+                    >
+                      <option value="Active">Active</option>
+                      <option value="Inactive">Inactive</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowEditModal(null)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={submitting}>
+                    {submitting ? 'Saving...' : 'Update Route'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
           </div>
-        </div>
+        )}
+      </AnimatePresence>
 
-        {/* Routes */}
-        <div className="card">
-          <div className="card-header"><h3 className="card-title">🛣️ Configured Routes ({data?.routes?.length || 0})</h3></div>
-          <div className="card-body" style={{ padding: 0 }}>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead><tr><th>Route</th><th>Branch</th><th>Customers</th><th>Status</th></tr></thead>
-                <tbody>
-                  {loading ? <tr><td colSpan={4} style={{ textAlign: 'center', padding: 24 }}>Loading...</td></tr> :
-                    (data?.routes || []).map(r => (
-                      <tr key={r.id}>
-                        <td style={{ fontWeight: 600 }}>{r.route_name}</td>
-                        <td style={{ fontSize: 12 }}>{r.branch_name || '—'}</td>
-                        <td><span style={{ background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '2px 8px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>{r.customer_count}</span></td>
-                        <td><span className={`badge ${r.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{r.status}</span></td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
+      {/* Delete Confirmation Modal */}
+      <AnimatePresence>
+        {showDeleteModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowDeleteModal(null)}>
+            <motion.div className="modal" style={{ maxWidth: 420 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ color: '#ef4444', display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdDelete /> Confirm Delete Route
+                </h2>
+                <button className="icon-btn" onClick={() => setShowDeleteModal(null)}><MdClose /></button>
+              </div>
+              <div className="modal-body">
+                <p style={{ fontSize: 14, color: 'var(--text-primary)', margin: 0 }}>
+                  Are you sure you want to delete route <strong>{showDeleteModal.route_name}</strong>?
+                </p>
+                <p style={{ fontSize: 12.5, color: 'var(--text-muted)', marginTop: 8 }}>
+                  This action cannot be undone. Customers linked to this route will need to be re-assigned.
+                </p>
+              </div>
+              <div className="modal-footer">
+                <button className="btn btn-secondary" onClick={() => setShowDeleteModal(null)} disabled={submitting}>Cancel</button>
+                <button className="btn btn-primary" style={{ background: '#ef4444', borderColor: '#ef4444' }} onClick={handleDeleteRoute} disabled={submitting}>
+                  {submitting ? 'Deleting...' : 'Yes, Delete Route'}
+                </button>
+              </div>
+            </motion.div>
           </div>
-        </div>
-      </div>
-    </div>
+        )}
+      </AnimatePresence>
+    </motion.div>
   );
 }

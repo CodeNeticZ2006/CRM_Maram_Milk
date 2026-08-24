@@ -8,7 +8,7 @@ import {
   MdSms, MdAdminPanelSettings, MdLogout, MdSettings,
   MdMap, MdSatellite, MdHexagon, MdRule, MdHistory, MdInsights,
   MdTune, MdExpandMore, MdExpandLess, MdInventory, MdWineBar,
-  MdLocalDrink, MdWorkspacePremium, MdClose,
+  MdLocalDrink, MdWorkspacePremium, MdClose, MdCalendarToday, MdDirectionsBike,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
@@ -20,6 +20,8 @@ const ROUTE_PERMISSION_MAP = {
   '/inventory': 'INVENTORY',
   '/subscriptions': 'SUBSCRIPTIONS',
   '/pause': 'PAUSE_MANAGEMENT',
+  '/delivery-person-audit': 'LOGISTICS',
+  '/route': 'LOGISTICS',
   '/logistics': 'LOGISTICS',
   '/ecom-orders': 'ECOM_ORDERS',
   '/empty-bottles': 'EMPTY_BOTTLES',
@@ -62,7 +64,8 @@ const NAV_SECTIONS = [
     label: 'Operations',
     items: [
       { to: '/inventory', icon: <MdInventory />, label: 'Inventory' },
-      { to: '/logistics', icon: <MdLocalShipping />, label: 'Logistics' },
+      { to: '/delivery-person-audit', icon: <MdCalendarToday />, label: 'Delivery Person Audit' },
+      { to: '/route', icon: <MdDirectionsBike />, label: 'Route' },
       { to: '/ecom-orders', icon: <MdShoppingCart />, label: 'Ecom Orders' },
       { to: '/empty-bottles', icon: <MdWineBar />, label: 'Empty Bottles' },
     ]

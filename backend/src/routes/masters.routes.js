@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { authenticate } = require('../middleware/auth');
-const { getProducts, createProduct, updateProduct, deleteProduct, getBranches, createBranch, updateBranch, getRoutes, createRoute, updateRoute, getDpsByRoute } = require('../controllers/masters.controller');
+const { getProducts, createProduct, updateProduct, deleteProduct, getBranches, createBranch, updateBranch, getRoutes, createRoute, updateRoute, deleteRoute, getDpsByRoute } = require('../controllers/masters.controller');
 
 router.use(authenticate);
 
@@ -20,6 +20,7 @@ router.put('/branches/:id',   updateBranch);
 router.get('/routes',         getRoutes);
 router.post('/routes',        createRoute);
 router.put('/routes/:id',     updateRoute);
+router.delete('/routes/:id',  deleteRoute);
 
 // DPs by Route
 router.get('/dps-by-route',   getDpsByRoute);
