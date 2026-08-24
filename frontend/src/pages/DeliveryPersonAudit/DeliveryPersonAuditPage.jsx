@@ -670,7 +670,7 @@ function DeliveryPersonAuditContent() {
                 <MdAssignment style={{ color: 'var(--primary)', fontSize: 22 }} />
                 <div>
                   <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)' }}>Operational Daily Audit</span>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Audit DP activity, milk dispatches, check-in/out, and returns for a specific date</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Audit DP activity, milk dispatches, check-in/out, petrol allowances, and extra/short payments for a specific date</div>
                 </div>
               </div>
 
@@ -690,11 +690,43 @@ function DeliveryPersonAuditContent() {
             </div>
           </div>
 
+          {/* Petrol Audit Summary Cards */}
+          {dailyData?.petrolSummary && (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 14, marginBottom: 20 }}>
+              <div className="card" style={{ background: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.25)' }}>
+                <div className="card-body" style={{ padding: '14px 16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Petrol Paid</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: '#10b981', marginTop: 4 }}>
+                    {dailyData.petrolSummary.hasAnyTransaction ? `₹${dailyData.petrolSummary.totalPaid}` : 'N/A'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="card" style={{ background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.25)' }}>
+                <div className="card-body" style={{ padding: '14px 16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Extra Paid</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: '#d97706', marginTop: 4 }}>
+                    {dailyData.petrolSummary.hasAnyTransaction ? `₹${dailyData.petrolSummary.totalExtraPaid}` : 'N/A'}
+                  </div>
+                </div>
+              </div>
+
+              <div className="card" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }}>
+                <div className="card-body" style={{ padding: '14px 16px', textAlign: 'center' }}>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Short Paid</div>
+                  <div style={{ fontSize: 24, fontWeight: 800, color: '#ef4444', marginTop: 4 }}>
+                    {dailyData.petrolSummary.hasAnyTransaction ? `₹${dailyData.petrolSummary.totalShortPaid}` : 'N/A'}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* Operational Activity Table for Selected Date */}
           <div className="card">
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <h3 className="card-title">📋 DP Operational Audit Log ({dailyDate})</h3>
-              <span className="badge badge-blue">{safeDeliveryPersons.length} DPs Tracked</span>
+              <span className="badge badge-blue">{dailyData?.items?.length || safeDeliveryPersons.length} DPs Tracked</span>
             </div>
             <div className="card-body" style={{ padding: 0 }}>
               <div className="table-wrapper">
@@ -709,36 +741,44 @@ function DeliveryPersonAuditContent() {
                       <th>UNDELIVERED</th>
                       <th style={{ color: '#10b981' }}>PAID</th>
                       <th style={{ color: '#d97706' }}>EXTRA PAID</th>
+                      <th style={{ color: '#ef4444' }}>SHORT PAID</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dailyLoading ? (
-                      <tr><td colSpan={8} style={{ textAlign: 'center', padding: 48 }}>Loading operational audit data for {dailyDate}...</td></tr>
-                    ) : safeDeliveryPersons.length === 0 ? (
-                      <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No DP operational records found for this date.</td></tr>
+                      <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>Loading operational audit data for {dailyDate}...</td></tr>
+                    ) : (dailyData?.items?.length || safeDeliveryPersons.length) === 0 ? (
+                      <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No DP operational records found for this date.</td></tr>
                     ) : (
-                      safeDeliveryPersons.map(dp => {
-                        const dpInv = dailyData?.items?.find(i => i.dpCode === dp.dpCode || i.dpId === dp.id);
-                        const paidAmount = dpInv?.paid !== undefined ? dpInv.paid : (dp.paid !== undefined ? dp.paid : 0);
-                        const extraPaidAmount = dpInv?.extraPaid !== undefined ? dpInv.extraPaid : (dp.extraPaid !== undefined ? dp.extraPaid : (dp.petrolBalance || dp.defaultPetrolAllowance || 0));
+                      (dailyData?.items || safeDeliveryPersons).map(dp => {
+                        const paidVal = dp.paid !== undefined ? dp.paid : null;
+                        const extraPaidVal = dp.extraPaid !== undefined ? dp.extraPaid : null;
+                        const shortPaidVal = dp.shortPaid !== undefined ? dp.shortPaid : null;
 
                         return (
-                          <tr key={dp.id || dp.dpCode}>
+                          <tr key={dp.dpId || dp.id || dp.dpCode}>
                             <td style={{ fontWeight: 700 }}>
                               <div>{dp.name}</div>
                               <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--primary)' }}>{dp.dpCode || 'DP-001'}</span>
                             </td>
-                            <td><span className="badge badge-gray">{dp.assignedRoute || dp.zone || 'Not available'}</span></td>
+                            <td><span className="badge badge-gray">{dp.assignedRoute || dp.zone || 'Unassigned'}</span></td>
                             <td>
-                              <span className={`badge ${dp.isActive !== false ? 'badge-success' : 'badge-danger'}`}>
-                                {dp.isActive !== false ? 'Active' : 'Inactive'}
+                              <span className={`badge ${dp.status === 'Active' || dp.isActive !== false ? 'badge-success' : 'badge-danger'}`}>
+                                {dp.status || (dp.isActive !== false ? 'Active' : 'Inactive')}
                               </span>
                             </td>
-                            <td style={{ fontWeight: 600 }}>{dpInv?.quantityTaken !== undefined ? `${dpInv.quantityTaken} L` : 'Not available'}</td>
-                            <td style={{ fontWeight: 600, color: 'var(--success)' }}>{dpInv?.quantityDelivered !== undefined ? `${dpInv.quantityDelivered} L` : 'Not available'}</td>
-                            <td>{dpInv?.undeliveredQuantity !== undefined ? `${dpInv.undeliveredQuantity} L` : 'Not available'}</td>
-                            <td style={{ fontWeight: 700, color: '#10b981' }}>₹{paidAmount}</td>
-                            <td style={{ fontWeight: 700, color: '#d97706' }}>₹{extraPaidAmount}</td>
+                            <td style={{ fontWeight: 600 }}>{dp.quantityTaken !== null && dp.quantityTaken !== undefined ? `${dp.quantityTaken} L` : 'N/A'}</td>
+                            <td style={{ fontWeight: 600, color: 'var(--success)' }}>{dp.quantityDelivered !== null && dp.quantityDelivered !== undefined ? `${dp.quantityDelivered} L` : 'N/A'}</td>
+                            <td>{dp.undeliveredQuantity !== null && dp.undeliveredQuantity !== undefined ? `${dp.undeliveredQuantity} L` : 'N/A'}</td>
+                            <td style={{ fontWeight: 700, color: paidVal !== null ? '#10b981' : 'var(--text-muted)' }}>
+                              {paidVal !== null ? `₹${paidVal}` : 'N/A'}
+                            </td>
+                            <td style={{ fontWeight: 700, color: extraPaidVal !== null ? '#d97706' : 'var(--text-muted)' }}>
+                              {extraPaidVal !== null ? `₹${extraPaidVal}` : 'N/A'}
+                            </td>
+                            <td style={{ fontWeight: 700, color: shortPaidVal !== null ? '#ef4444' : 'var(--text-muted)' }}>
+                              {shortPaidVal !== null ? `₹${shortPaidVal}` : 'N/A'}
+                            </td>
                           </tr>
                         );
                       })
