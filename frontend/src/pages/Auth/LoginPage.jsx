@@ -40,8 +40,8 @@ export default function LoginPage() {
       {/* Left Panel */}
       <div className="auth-left">
         <div className="auth-brand">
-          <div className="auth-brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <MdLocalDrink style={{ fontSize: 24, color: '#fff' }} />
+          <div className="auth-brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#fff' }}>
+            <img src="/Logo_Maram_Milk.png" alt="Maram Milk Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
           </div>
           <div className="auth-brand-name">Maram Milk</div>
           <div className="auth-brand-sub">Super Admin Control Center</div>

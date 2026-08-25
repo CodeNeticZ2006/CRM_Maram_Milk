@@ -621,7 +621,12 @@ const getDpAttendanceAudit = async (req, res, next) => {
 
     // Process attendance per DP
     const attendanceAudit = dpRows.map((dp, idx) => {
-      const assignedRoute = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+      const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+      const dpAllocRouteIds  = allocRows.filter(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode))).map(a => a.routeId);
+      const dpLogRouteIds    = logRows.filter(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode))).map(l => l.routeId);
+      const allDpRouteIds    = Array.from(new Set([...(assignedRouteObj ? [assignedRouteObj.id] : []), ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
+      const assignedRouteNames = allDpRouteIds.map(rid => routeRows.find(r => String(r.id) === String(rid))?.name).filter(Boolean);
+      const dpAssignedRouteStr = assignedRouteNames.length > 0 ? assignedRouteNames.join(', ') : (assignedRouteObj ? assignedRouteObj.name : 'Standby / Unassigned');
 
       let presentDays = 0;
       let absentDays = 0;
@@ -655,7 +660,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
             status = 'ABSENT';
           } else {
             // Manager marked PRESENT in AttendanceRecord — check if DP was assigned to a route
-            const isAssignedToRoute = Boolean(dbAlloc?.routeId || dbLog?.routeId || (assignedRoute && dbAlloc?.status !== 'UNASSIGNED'));
+            const isAssignedToRoute = Boolean(dbAlloc?.routeId || dbLog?.routeId || (assignedRouteObj && dbAlloc?.status !== 'UNASSIGNED'));
             if (isAssignedToRoute) {
               status = 'PRESENT';
             } else {
@@ -700,7 +705,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
           status,
           isFuture,
           isBeforeDb2,
-          route: routeRows.find(r => String(r.id) === String(dbAlloc?.routeId || dbLog?.routeId))?.name || assignedRoute?.name || null,
+          route: routeRows.find(r => String(r.id) === String(dbAlloc?.routeId || dbLog?.routeId))?.name || dpAssignedRouteStr,
           notes: dbLog?.notes || null,
           hasIssue: Boolean(dbLog?.flagIssue),
         };
@@ -715,7 +720,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
         dpCode: dp.dpCode,
         mobileNumber: dp.mobileNumber,
         vehicleNumber: dp.vehicleNumber || '—',
-        assignedRoute: assignedRoute ? assignedRoute.name : 'Unassigned',
+        assignedRoute: dpAssignedRouteStr,
         totalDays,
         presentDays,
         absentDays,

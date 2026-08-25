@@ -337,7 +337,11 @@ export default function EmptyBottlesPage() {
                             </div>
                           </td>
                           <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{dp.vehicleNumber}</td>
-                          <td><span className="badge badge-gray">{dp.routeName}</span></td>
+                          <td>
+                            <span className={`badge ${dp.routeName?.includes('Standby') ? 'badge-warning' : 'badge-blue'}`} style={{ fontWeight: 600 }}>
+                              {dp.routeName || 'Unassigned'}
+                            </span>
+                          </td>
                           <td>
                             <span style={{ fontWeight: 600 }}>{dp.issued1L}</span> 1L / <span style={{ fontWeight: 600 }}>{dp.issuedHalfL}</span> ½L
                           </td>

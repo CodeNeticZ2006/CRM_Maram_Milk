@@ -83,7 +83,12 @@ const getEmptyBottleLogs = async (req, res, next) => {
 
     // Process empty bottle collection logs DP-wise across selected time filter dates
     const dpLogs = dpRows.map((dp, i) => {
-      const assignedRoute = routeRows.find(r => String(r.assignedDpId) === String(dp.id) || r.zone === dp.zone);
+      const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+      const dpAllocRouteIds  = allocRows.filter(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode))).map(a => a.routeId);
+      const dpLogRouteIds    = logRows.filter(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode))).map(l => l.routeId);
+      const allDpRouteIds    = Array.from(new Set([...(assignedRouteObj ? [assignedRouteObj.id] : []), ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
+      const assignedRouteNames = allDpRouteIds.map(rid => routeRows.find(r => String(r.id) === String(rid))?.name).filter(Boolean);
+      const dpAssignedRouteStr = assignedRouteNames.length > 0 ? assignedRouteNames.join(', ') : (assignedRouteObj ? assignedRouteObj.name : 'Standby / Unassigned');
 
       let totalIssued1L = 0;
       let totalReturned1L = 0;
@@ -153,7 +158,7 @@ const getEmptyBottleLogs = async (req, res, next) => {
           returnRate: dayReturnRate,
           hasFlag,
           notes: log?.notes || (hasFlag ? `${missing1L + missingHalfL} empty bottles broken / unreturned` : null),
-          routeName: routeRows.find(r => String(r.id) === String(alloc?.routeId || log?.routeId))?.name || assignedRoute?.name || 'Assigned Route',
+          routeName: routeRows.find(r => String(r.id) === String(alloc?.routeId || log?.routeId))?.name || dpAssignedRouteStr,
         };
       });
 
@@ -166,7 +171,7 @@ const getEmptyBottleLogs = async (req, res, next) => {
         dpName: dp.name,
         dpCode: dp.dpCode,
         vehicleNumber: dp.vehicleNumber || 'TN 39 AB 1000',
-        routeName: assignedRoute ? assignedRoute.name : `Route ${i + 1}`,
+        routeName: dpAssignedRouteStr,
         zone: dp.zone || 'Zone A',
         issued1L: totalIssued1L,
         issuedHalfL: totalIssuedHalfL,

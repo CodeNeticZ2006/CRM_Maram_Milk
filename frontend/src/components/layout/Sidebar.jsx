@@ -146,8 +146,8 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
       {/* Logo & Mobile Close Header */}
       <div className="sidebar-logo" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <div className="brand">
-          <div className="brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-            <MdLocalDrink style={{ fontSize: 22, color: '#fff' }} />
+          <div className="brand-icon" style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden', background: '#fff' }}>
+            <img src="/Logo_Maram_Milk.png" alt="Maram Milk Logo" style={{ width: '100%', height: '100%', objectFit: 'cover', borderRadius: 'inherit' }} />
           </div>
           <div>
             <div className="brand-name">Maram Milk</div>
