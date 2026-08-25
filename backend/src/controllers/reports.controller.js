@@ -228,7 +228,84 @@ const getLogisticsOverview = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─────────────────────────────────────────────
+// GET /api/reports/archived — Get stored/archived generated reports
+// ─────────────────────────────────────────────
+const getArchivedReports = async (req, res, next) => {
+  try {
+    const { category, report_type, format, search, startDate, endDate } = req.query;
+    let whereClauses = [];
+    let params = [];
+
+    const targetType = category || report_type;
+    if (targetType) {
+      params.push(targetType);
+      whereClauses.push(`report_type = $${params.length}`);
+    }
+
+    if (format) {
+      params.push(format);
+      whereClauses.push(`format = $${params.length}`);
+    }
+
+    if (startDate && endDate) {
+      params.push(startDate);
+      whereClauses.push(`date_from >= $${params.length}`);
+      params.push(endDate);
+      whereClauses.push(`date_to <= $${params.length}`);
+    }
+
+    if (search) {
+      params.push(`%${search}%`);
+      whereClauses.push(`(report_name ILIKE $${params.length} OR report_type ILIKE $${params.length} OR generated_by ILIKE $${params.length})`);
+    }
+
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const result = await readFromCRM(
+      `SELECT id, report_name, report_type, date_from, date_to, format, file_url, status, generated_by, generated_at
+       FROM reports
+       ${whereStr}
+       ORDER BY generated_at DESC`,
+      params
+    );
+
+    res.json({ success: true, data: result.rows });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// GET /api/reports/download/:id — Download an archived report by ID
+// ─────────────────────────────────────────────
+const downloadArchivedReport = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const result = await readFromCRM(
+      `SELECT id, report_name, report_type, format, report_data FROM reports WHERE id = $1`,
+      [id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Report not found' });
+    }
+
+    const rep = result.rows[0];
+    if (!rep.report_data) {
+      return res.status(404).json({ success: false, message: 'Report file data not available' });
+    }
+
+    const fileBuffer = Buffer.from(rep.report_data, 'base64');
+    const fileName = rep.report_name || `Maram_Milk_${rep.report_type.replace(/\s+/g, '_')}.xlsx`;
+
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${fileName}"`);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition');
+    return res.send(fileBuffer);
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getDailySummary, getMonthlyReport, getRevenueTrend,
   getCustomerAnalysis, getFeedback, getSmsLog, getLogisticsOverview,
+  getArchivedReports, downloadArchivedReport,
 };

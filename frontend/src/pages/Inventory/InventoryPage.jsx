@@ -7,7 +7,8 @@ import {
   MdClose, MdLocalShipping, MdQrCode, MdStickyNote2,
   MdCalendarToday, MdCancel, MdPerson,
   MdVerified, MdWarning, MdSave, MdBusiness,
-  MdInventory2, MdFlashOn, MdStorefront, MdDateRange
+  MdInventory2, MdFlashOn, MdStorefront, MdDateRange,
+  MdDownload, MdFileDownload, MdFactCheck
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -43,6 +44,14 @@ export default function InventoryPage() {
   const [miEndDate, setMiEndDate]                 = useState('');
   const [miRangeMode, setMiRangeMode]             = useState(false);
 
+  // Download Report Modal State
+  const [showReportModal, setShowReportModal]     = useState(false);
+  const [reportMode, setReportMode]               = useState('today'); // 'today' | 'custom'
+  const [reportDate, setReportDate]               = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+  const [reportStartDate, setReportStartDate]     = useState('');
+  const [reportEndDate, setReportEndDate]         = useState('');
+  const [downloadingReport, setDownloadingReport] = useState(false);
+
   // Stock Add/Update Modals
   const [showAddModal, setShowAddModal]       = useState(false);
   const [showCorrectModal, setShowCorrectModal] = useState(false);
@@ -68,6 +77,54 @@ export default function InventoryPage() {
   });
 
   const [submitting, setSubmitting] = useState(false);
+
+  // Download Official Inventory Excel Report Handler
+  const handleDownloadReport = async (e) => {
+    if (e) e.preventDefault();
+    if (reportMode === 'custom' && (!reportStartDate || !reportEndDate)) {
+      return toast.error('Please select both Start Date and End Date for custom date range');
+    }
+    setDownloadingReport(true);
+    try {
+      const params = reportMode === 'custom'
+        ? { mode: 'custom', startDate: reportStartDate, endDate: reportEndDate, generatedBy: admin?.name || 'Super Admin' }
+        : { mode: 'today', date: reportDate, generatedBy: admin?.name || 'Super Admin' };
+
+      const res = await api.get('/inventory/download-report', {
+        params,
+        responseType: 'blob',
+      });
+
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+
+      let fileName = reportMode === 'custom'
+        ? `Maram_Milk_Inventory_Report_${reportStartDate}_to_${reportEndDate}.xlsx`
+        : `Maram_Milk_Inventory_Report_${reportDate}.xlsx`;
+
+      const contentDisposition = res.headers['content-disposition'];
+      if (contentDisposition) {
+        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+        if (match && match[1]) fileName = match[1];
+      }
+
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+
+      toast.success('Inventory Excel report generated and downloaded successfully!');
+      setShowReportModal(false);
+    } catch (err) {
+      console.error('Report download error:', err);
+      toast.error('Failed to generate Inventory Excel report.');
+    } finally {
+      setDownloadingReport(false);
+    }
+  };
 
   // Custom Product Sorting Helper (1L Bottle, 500ml Bottle / Half Litre Bottle, 500ml Packet)
   const getItemPriority = (item) => {
@@ -291,6 +348,14 @@ export default function InventoryPage() {
         </div>
 
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <button
+            className="btn btn-success"
+            id="inventory-download-report-btn"
+            onClick={() => setShowReportModal(true)}
+            style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+          >
+            <MdDownload style={{ fontSize: 18 }} /> Download Report
+          </button>
           <button className="btn btn-secondary btn-sm" onClick={fetchInventory} disabled={loading}>
             <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
           </button>
@@ -1086,6 +1151,115 @@ export default function InventoryPage() {
           )}
         </div>
       )}
+
+      {/* Report Download Modal */}
+      <AnimatePresence>
+        {showReportModal && (
+          <div className="modal-overlay" style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+            <motion.div className="card" style={{ width: '100%', maxWidth: 480, padding: 0, overflow: 'hidden', borderRadius: 14, boxShadow: '0 20px 25px -5px rgba(0,0,0,0.3)' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0, scale: 0.95 }}>
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #1e40af, #1e3a8a)', color: '#fff', padding: '16px 20px' }}>
+                <div>
+                  <div className="card-title" style={{ color: '#fff', fontSize: 16, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
+                    <MdDownload style={{ fontSize: 20 }} /> Download Inventory Excel Report
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#93c5fd', marginTop: 3 }}>
+                    Official 3-sheet workbook (Current Inventory, Shop Sale & Manager Inventory)
+                  </div>
+                </div>
+                <button className="icon-btn" onClick={() => setShowReportModal(false)} style={{ color: '#fff', border: 'none', background: 'transparent', cursor: 'pointer' }}><MdClose style={{ fontSize: 20 }} /></button>
+              </div>
+
+              <form onSubmit={handleDownloadReport} style={{ padding: 20 }}>
+                {/* Exclusion Callout */}
+                <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 18, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
+                  <span style={{ fontWeight: 700, color: '#ef4444' }}>📌 Excludes Stock Ledger Audit:</span> Workbook strictly contains 3 sheets: <strong>Current Inventory & DB2 Stock</strong>, <strong>Shop Sale</strong>, and <strong>Manager Inventory Log</strong>.
+                </div>
+
+                {/* Filter Selector */}
+                <div className="form-group" style={{ marginBottom: 16 }}>
+                  <label className="form-label" style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>Select Report Date Filter:</label>
+                  <div style={{ display: 'flex', gap: 16, marginTop: 8 }}>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <input
+                        type="radio"
+                        name="reportMode"
+                        value="today"
+                        checked={reportMode === 'today'}
+                        onChange={() => setReportMode('today')}
+                        style={{ accentColor: 'var(--primary)', width: 16, height: 16 }}
+                      />
+                      Today's Report (Single Day)
+                    </label>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer', fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <input
+                        type="radio"
+                        name="reportMode"
+                        value="custom"
+                        checked={reportMode === 'custom'}
+                        onChange={() => {
+                          setReportMode('custom');
+                          if (!reportStartDate || !reportEndDate) {
+                            const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                            setReportStartDate(today);
+                            setReportEndDate(today);
+                          }
+                        }}
+                        style={{ accentColor: 'var(--primary)', width: 16, height: 16 }}
+                      />
+                      Custom Date Range
+                    </label>
+                  </div>
+                </div>
+
+                {reportMode === 'today' ? (
+                  <div className="form-group" style={{ marginBottom: 20 }}>
+                    <label className="form-label" style={{ fontWeight: 600, fontSize: 12 }}>Report Date</label>
+                    <input
+                      type="date"
+                      className="form-input"
+                      value={reportDate}
+                      onChange={e => setReportDate(e.target.value)}
+                      required
+                    />
+                  </div>
+                ) : (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 20 }}>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 12 }}>Start Date *</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={reportStartDate}
+                        onChange={e => setReportStartDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 12 }}>End Date *</label>
+                      <input
+                        type="date"
+                        className="form-input"
+                        value={reportEndDate}
+                        onChange={e => setReportEndDate(e.target.value)}
+                        required
+                      />
+                    </div>
+                  </div>
+                )}
+
+                <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowReportModal(false)} disabled={downloadingReport}>
+                    Cancel
+                  </button>
+                  <button type="submit" className="btn btn-primary" disabled={downloadingReport} style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontWeight: 700, display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <MdDownload /> {downloadingReport ? 'Generating Excel...' : 'Generate & Download Excel'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }

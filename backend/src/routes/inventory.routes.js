@@ -10,6 +10,7 @@ const {
   getDpAttendanceAudit,
   updateInventory,
   getManagerInventory,
+  generateInventoryReport,
 } = require('../controllers/inventory.controller');
 
 router.use(authenticate);
@@ -19,6 +20,10 @@ router.get('/history',            getStockHistory);
 router.get('/low-stock',          getLowStockItems);
 router.get('/dp-attendance',      getDpAttendanceAudit);
 router.get('/manager-inventory',  getManagerInventory);
+
+// Report Download endpoints
+router.get('/download-report',    generateInventoryReport);
+router.post('/download-report',   generateInventoryReport);
 
 // Write / Stock Addition endpoints (Super Admin / Write permission required)
 router.post('/add-stock',     requirePermission('INVENTORY', true), addStock);

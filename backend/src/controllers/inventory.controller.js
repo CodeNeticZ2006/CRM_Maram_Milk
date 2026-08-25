@@ -1,5 +1,6 @@
 const { readFromApp, writeToApp, readFromCRM, writeToCRM } = require('../config/database');
 const { randomUUID } = require('crypto');
+const ExcelJS = require('exceljs');
 
 // Get today's date string in IST (Asia/Kolkata) — matches what mobile app stores (YYYY-MM-DD)
 const getISTDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
@@ -1053,6 +1054,426 @@ const getManagerInventory = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─────────────────────────────────────────────
+// GET / POST /api/inventory/download-report — Generate official 3-sheet Inventory Excel Report
+// ─────────────────────────────────────────────
+const generateInventoryReport = async (req, res, next) => {
+  try {
+    const queryOrBody = req.method === 'POST' ? req.body : req.query;
+    const mode = queryOrBody.mode || 'today';
+    const date = queryOrBody.date;
+    const startDate = queryOrBody.startDate;
+    const endDate = queryOrBody.endDate;
+    const generatedBy = queryOrBody.generatedBy || req.user?.name || 'Super Admin';
+
+    const istToday = getISTDate();
+    const isRange = mode === 'custom' && startDate && endDate;
+    let periodStr = '';
+    let fileDateStr = '';
+    let targetDate = date || istToday;
+
+    let shopSaleWhere = '';
+    let shopSaleParams = [];
+    let milWhere = '';
+    let milParams = [];
+
+    if (isRange) {
+      periodStr = `${startDate} to ${endDate}`;
+      fileDateStr = `${startDate}_to_${endDate}`;
+      shopSaleWhere = 'WHERE date >= $1 AND date <= $2';
+      shopSaleParams = [startDate, endDate];
+      milWhere = 'WHERE mil.date >= $1 AND mil.date <= $2';
+      milParams = [startDate, endDate];
+      targetDate = endDate;
+    } else {
+      periodStr = targetDate;
+      fileDateStr = targetDate;
+      shopSaleWhere = 'WHERE date = $1';
+      shopSaleParams = [targetDate];
+      milWhere = 'WHERE mil.date = $1';
+      milParams = [targetDate];
+    }
+
+    const reportName = `Maram_Milk_Inventory_Report_${fileDateStr}.xlsx`;
+
+    // ── 1. SHEET 1 DATA: Current Inventory & DB2 Stock ────────────────────────
+    let items = [];
+    try {
+      const itemsRes = await readFromApp(
+        'SELECT id, name, unit, material FROM "InventoryItem" ORDER BY name ASC, unit ASC'
+      );
+      items = itemsRes.rows;
+    } catch (e) {
+      console.warn('⚠️ DB2 InventoryItem query warning:', e.message);
+    }
+    if (items.length === 0) {
+      items = [
+        { id: 'inv-item-1', name: 'Cow Milk (1 Litre)', unit: 'Litres', material: 'Milk' },
+        { id: 'inv-item-2', name: 'Cow Milk (500 ml)', unit: 'Packets', material: 'Milk' },
+        { id: 'inv-item-3', name: 'Buffalo Milk (1 Litre)', unit: 'Litres', material: 'Milk' },
+      ];
+    }
+
+    let dailyRecords = [];
+    try {
+      const recordsRes = await readFromApp(
+        `SELECT id, date, "inventoryItemId", "currentStock", "carriedOverStock",
+                "newStockAdded", "expectedStock", "updatedAt"
+         FROM "InventoryDailyRecord"
+         WHERE date = $1`,
+        [targetDate]
+      );
+      dailyRecords = recordsRes.rows;
+    } catch (e) { /* silent */ }
+
+    let prevRecords = [];
+    try {
+      const prevRes = await readFromApp(
+        `SELECT DISTINCT ON ("inventoryItemId")
+                id, date, "inventoryItemId", "currentStock", "expectedStock", "updatedAt"
+         FROM "InventoryDailyRecord"
+         WHERE date < $1
+         ORDER BY "inventoryItemId", date DESC`,
+        [targetDate]
+      );
+      prevRecords = prevRes.rows;
+    } catch (e) { /* silent */ }
+
+    const getItemPriority = (item) => {
+      const name = (item?.name || '').toLowerCase();
+      const material = (item?.material || '').toLowerCase();
+      const unit = (item?.unit || '').toLowerCase();
+      if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) return 1;
+      if (name.includes('half litre bottle') || name.includes('500ml bottle') || name.includes('500 ml bottle') || (material.includes('bottle') && (name.includes('500') || name.includes('half')))) return 2;
+      if (name.includes('500ml packet') || name.includes('500 ml packet') || (material.includes('packet') && (name.includes('500') || name.includes('half')))) return 3;
+      return 4;
+    };
+
+    const sheet1Data = items.map(item => {
+      const rec = dailyRecords.find(r => r.inventoryItemId === item.id);
+      const prevRec = prevRecords.find(r => r.inventoryItemId === item.id);
+
+      let carriedOver = 0;
+      if (rec && parseFloat(rec.carriedOverStock || 0) > 0) {
+        carriedOver = parseFloat(rec.carriedOverStock);
+      } else if (prevRec) {
+        carriedOver = parseFloat(prevRec.currentStock || 0);
+      }
+      const addedToday = rec ? parseFloat(rec.newStockAdded || 0) : 0;
+      let currStock = rec ? parseFloat(rec.currentStock || 0) : (prevRec ? parseFloat(prevRec.currentStock || 0) : 0);
+      let expStock  = rec ? parseFloat(rec.expectedStock || currStock) : currStock;
+      const status = currStock <= 0 ? 'Out of Stock' : (currStock <= 20 ? 'Low Stock' : 'In Stock');
+
+      return {
+        name: item.name,
+        category: `${item.material || 'Milk'} (${item.unit})`,
+        unit: item.unit,
+        carriedOver,
+        newStockAdded: addedToday,
+        currentStock: currStock,
+        expectedStock: expStock,
+        threshold: 20,
+        status,
+        priority: getItemPriority(item),
+      };
+    }).sort((a, b) => a.priority - b.priority);
+
+    // ── 2. SHEET 2 DATA: Shop Sale — Daily Stock Sold ─────────────────────────
+    let shopSaleRows = [];
+    try {
+      const ssRes = await readFromApp(
+        `SELECT id, date, "qty1LBottle", "qtyHalfLBottle", "qtyHalfLPacket", "createdAt"
+         FROM "ShopSale"
+         ${shopSaleWhere}
+         ORDER BY date DESC, "createdAt" DESC`,
+        shopSaleParams
+      );
+      shopSaleRows = ssRes.rows;
+    } catch (e) {
+      console.warn('⚠️ DB2 ShopSale query warning:', e.message);
+    }
+
+    // ── 3. SHEET 3 DATA: Manager Inventory Log — Per Product ─────────────────
+    let managerInventoryRows = [];
+    try {
+      const milRes = await readFromApp(
+        `SELECT mil.id, mil.date, mil.product, mil.quantity, mil."managerId", mil."createdAt",
+                m.name AS "managerName",
+                COALESCE(ii.name, mil.product) AS "productName",
+                COALESCE(ii.unit, CASE
+                  WHEN mil.product ILIKE '%1l%' THEN '1L'
+                  WHEN mil.product ILIKE '%500%' THEN '500ml'
+                  ELSE 'Units'
+                END) AS "productUnit"
+         FROM "ManagerInventoryLog" mil
+         LEFT JOIN "Manager" m ON m.id = mil."managerId"
+         LEFT JOIN "InventoryItem" ii ON (ii.id = mil.product OR ii.name = mil.product)
+         ${milWhere}
+         ORDER BY mil.date DESC, mil."createdAt" DESC`,
+        milParams
+      );
+      managerInventoryRows = milRes.rows;
+    } catch (e) {
+      console.warn('⚠️ DB2 ManagerInventoryLog query warning:', e.message);
+    }
+
+    // ── CREATE EXCEL WORKBOOK ──────────────────────────────────────────────────
+    const workbook = new ExcelJS.Workbook();
+    workbook.creator = 'Maram Milk CRM & ERP';
+    workbook.created = new Date();
+
+    const applyHeaderBlock = (sheet, titleName) => {
+      sheet.addRow(['Maram Milk']);
+      sheet.addRow([`Inventory Report — ${titleName}`]);
+      sheet.addRow([`Report Period: ${periodStr}${isRange ? ' (Current Snapshot)' : ''}`]);
+      sheet.addRow([`Generated By: ${generatedBy}`]);
+      sheet.addRow([`Generated On: ${new Date().toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })}`]);
+      sheet.addRow([]);
+
+      sheet.getCell('A1').font = { name: 'Calibri', size: 14, bold: true, color: { argb: 'FF1E3A8A' } };
+      sheet.getCell('A2').font = { name: 'Calibri', size: 12, bold: true, color: { argb: 'FF1F2937' } };
+      sheet.getCell('A3').font = { name: 'Calibri', size: 10, italic: true, color: { argb: 'FF4B5563' } };
+      sheet.getCell('A4').font = { name: 'Calibri', size: 10, color: { argb: 'FF4B5563' } };
+      sheet.getCell('A5').font = { name: 'Calibri', size: 10, color: { argb: 'FF4B5563' } };
+    };
+
+    const styleTableHeader = (row) => {
+      row.eachCell((cell) => {
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFFFFFFF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF1E40AF' } };
+        cell.alignment = { vertical: 'middle', horizontal: 'center' };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FF93C5FD' } },
+          bottom: { style: 'medium', color: { argb: 'FF1E3A8A' } },
+          left: { style: 'thin', color: { argb: 'FF93C5FD' } },
+          right: { style: 'thin', color: { argb: 'FF93C5FD' } },
+        };
+      });
+      row.height = 24;
+    };
+
+    // ── SHEET 1: Current Inventory & DB2 Stock ─────────────────────────────────
+    const ws1 = workbook.addWorksheet('Current Inventory & DB2 Stock');
+    applyHeaderBlock(ws1, 'Current Inventory & DB2 Stock');
+
+    const hRow1 = ws1.addRow([
+      'Product Name', 'Category / Unit', 'Unit',
+      'Carried Over Stock', 'New Stock Added', 'Current Available Stock',
+      'Expected Stock', 'Threshold', 'Stock Status'
+    ]);
+    styleTableHeader(hRow1);
+
+    sheet1Data.forEach(item => {
+      const dataRow = ws1.addRow([
+        item.name,
+        item.category,
+        item.unit,
+        item.carriedOver,
+        item.newStockAdded,
+        item.currentStock,
+        item.expectedStock,
+        item.threshold,
+        item.status
+      ]);
+      dataRow.eachCell((cell, colIndex) => {
+        cell.font = { name: 'Calibri', size: 10.5 };
+        cell.border = {
+          top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+        };
+        if (colIndex >= 4 && colIndex <= 8) {
+          cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          cell.numFmt = '#,##0';
+        } else if (colIndex === 9) {
+          cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          cell.font = { name: 'Calibri', size: 10.5, bold: true };
+          if (item.status === 'In Stock') cell.font.color = { argb: 'FF10B981' };
+          else if (item.status === 'Low Stock') cell.font.color = { argb: 'FFF59E0B' };
+          else cell.font.color = { argb: 'FFEF4444' };
+        } else {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+        }
+      });
+      dataRow.height = 20;
+    });
+
+    ws1.columns.forEach(col => { col.width = 22; });
+
+    // ── SHEET 2: Shop Sale — Daily Stock Sold ─────────────────────────────────
+    const ws2 = workbook.addWorksheet('Shop Sale — Daily Stock Sold');
+    applyHeaderBlock(ws2, 'Shop Sale — Daily Stock Sold');
+
+    const hRow2 = ws2.addRow([
+      '#', 'Sale Date', '1L Bottle Qty Sold',
+      'Half-L Bottle Qty Sold', 'Half-L Packet Qty Sold',
+      'Total Units Sold', 'Log Date & Time'
+    ]);
+    styleTableHeader(hRow2);
+
+    let tot1L = 0, totHalfB = 0, totHalfP = 0, totUnits = 0;
+
+    if (shopSaleRows.length === 0) {
+      const emptyRow = ws2.addRow(['No ShopSale records found for the selected period.']);
+      ws2.mergeCells('A8:G8');
+      emptyRow.getCell(1).alignment = { horizontal: 'center' };
+      emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF9CA3AF' } };
+    } else {
+      shopSaleRows.forEach((row, idx) => {
+        const q1 = parseInt(row.qty1LBottle || 0);
+        const q2 = parseInt(row.qtyHalfLBottle || 0);
+        const q3 = parseInt(row.qtyHalfLPacket || 0);
+        const rowTotal = q1 + q2 + q3;
+
+        tot1L += q1;
+        totHalfB += q2;
+        totHalfP += q3;
+        totUnits += rowTotal;
+
+        const dataRow = ws2.addRow([
+          idx + 1,
+          row.date,
+          q1,
+          q2,
+          q3,
+          rowTotal,
+          new Date(row.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+        ]);
+
+        dataRow.eachCell((cell, colIndex) => {
+          cell.font = { name: 'Calibri', size: 10.5 };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          if (colIndex >= 3 && colIndex <= 6) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            cell.numFmt = '#,##0';
+          } else if (colIndex === 1 || colIndex === 2) {
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          }
+        });
+        dataRow.height = 20;
+      });
+
+      const totRow = ws2.addRow([
+        'TOTAL', '', tot1L, totHalfB, totHalfP, totUnits, ''
+      ]);
+      ws2.mergeCells(`A${totRow.number}:B${totRow.number}`);
+      totRow.eachCell((cell, colIndex) => {
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1E40AF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF1E40AF' } },
+          bottom: { style: 'double', color: { argb: 'FF1E40AF' } },
+        };
+        if (colIndex >= 3 && colIndex <= 6) cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      });
+      totRow.height = 22;
+    }
+
+    ws2.columns.forEach(col => { col.width = 22; });
+
+    // ── SHEET 3: Manager Inventory Log — Per Product ────────────────────────
+    const ws3 = workbook.addWorksheet('Manager Inventory Log');
+    applyHeaderBlock(ws3, 'Manager Inventory Log — Per Product');
+
+    const hRow3 = ws3.addRow([
+      '#', 'Log Date', 'Product Name', 'Quantity', 'Unit', 'Manager Name', 'Created At'
+    ]);
+    styleTableHeader(hRow3);
+
+    let totMilQty = 0;
+
+    if (managerInventoryRows.length === 0) {
+      const emptyRow = ws3.addRow(['No Manager Inventory Log records found for the selected period.']);
+      ws3.mergeCells('A8:G8');
+      emptyRow.getCell(1).alignment = { horizontal: 'center' };
+      emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF9CA3AF' } };
+    } else {
+      managerInventoryRows.forEach((row, idx) => {
+        const q = parseInt(row.quantity || 0);
+        totMilQty += q;
+
+        const dataRow = ws3.addRow([
+          idx + 1,
+          row.date,
+          row.productName || row.product || 'Milk Product',
+          q,
+          row.productUnit || 'Units',
+          row.managerName || 'Manager',
+          new Date(row.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' })
+        ]);
+
+        dataRow.eachCell((cell, colIndex) => {
+          cell.font = { name: 'Calibri', size: 10.5 };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          if (colIndex === 4) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            cell.numFmt = '#,##0';
+          } else if (colIndex <= 2) {
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          }
+        });
+        dataRow.height = 20;
+      });
+
+      const totRow = ws3.addRow([
+        'TOTAL', '', '', totMilQty, 'Units', '', ''
+      ]);
+      ws3.mergeCells(`A${totRow.number}:C${totRow.number}`);
+      totRow.eachCell((cell, colIndex) => {
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1E40AF' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF1E40AF' } },
+          bottom: { style: 'double', color: { argb: 'FF1E40AF' } },
+        };
+        if (colIndex === 4) cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      });
+      totRow.height = 22;
+    }
+
+    ws3.columns.forEach(col => { col.width = 24; });
+
+    // Generate Excel Buffer
+    const buffer = await workbook.xlsx.writeBuffer();
+    const base64Data = buffer.toString('base64');
+
+    // ── STORE REPORT METADATA IN CRM DATABASE `reports` TABLE ────────────────
+    let reportId = randomUUID();
+    try {
+      const insRes = await writeToCRM(
+        `INSERT INTO reports (id, report_name, report_type, date_from, date_to, format, generated_by, status, report_data)
+         VALUES ($1, $2, 'Inventory Report', $3, $4, 'Excel', $5, 'Ready', $6)
+         RETURNING id`,
+        [reportId, reportName, startDate || targetDate, endDate || targetDate, generatedBy, base64Data]
+      );
+      if (insRes.rows?.[0]?.id) reportId = insRes.rows[0].id;
+    } catch (err) {
+      console.warn('⚠️ Warning saving report metadata to CRM DB:', err.message);
+    }
+
+    // Set Response Headers for Excel Download
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename="${reportName}"`);
+    res.setHeader('X-Report-Id', reportId);
+    res.setHeader('Access-Control-Expose-Headers', 'Content-Disposition, X-Report-Id');
+
+    return res.send(Buffer.from(buffer));
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   getInventory,
   updateInventory,
@@ -1062,4 +1483,5 @@ module.exports = {
   getLowStockItems,
   getDpAttendanceAudit,
   getManagerInventory,
+  generateInventoryReport,
 };

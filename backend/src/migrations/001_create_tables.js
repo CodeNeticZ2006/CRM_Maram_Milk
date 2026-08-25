@@ -423,11 +423,14 @@ const runMigrations = async () => {
 
     `CREATE TABLE IF NOT EXISTS reports (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      report_name VARCHAR(200),
       report_type VARCHAR(50) NOT NULL,
       date_from DATE,
       date_to DATE,
       format VARCHAR(10) CHECK (format IN ('PDF','Excel')),
       file_url TEXT,
+      report_data TEXT,
+      status VARCHAR(30) DEFAULT 'Ready',
       generated_by VARCHAR(100),
       generated_at TIMESTAMPTZ DEFAULT NOW()
     )`,
