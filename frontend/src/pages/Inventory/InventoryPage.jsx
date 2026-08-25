@@ -13,6 +13,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useAuthStore from '../../store/authStore';
+import useOperationalDay from '../../hooks/useOperationalDay';
 import '../../pages/RouteIntelligence/components/RouteIntelligence.css';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
@@ -22,13 +23,17 @@ export default function InventoryPage() {
   const isSuperAdmin = (admin?.email || '').toLowerCase() === 'admin@marammilk.com' ||
                        admin?.role === 'SuperAdmin' || admin?.role === 'Super Admin';
 
+  // Get active operational day from backend (7:00 PM IST boundary — source of truth)
+  const { operationalDate, displayDate: opDisplayDate, loading: opDayLoading } = useOperationalDay();
+
   const [activeTab, setActiveTab]         = useState('inventory'); // 'inventory' | 'history' | 'attendance'
   const [items, setItems]                 = useState([]);
   const [summary, setSummary]             = useState({ totalStock: 0, todayAddedStock: 0, lowStockCount: 0, outOfStockCount: 0, totalProducts: 0 });
   const [lowStockAlerts, setLowAlerts]   = useState([]);
   const [history, setHistory]             = useState([]);
   const [historyTotal, setHistoryTotal]   = useState(0);
-  const [selectedDate, setSelectedDate]   = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+  // selectedDate starts empty; seeded from operationalDate once loaded
+  const [selectedDate, setSelectedDate]   = useState('');
   const [availableDates, setAvailableDates] = useState([]);
   const [loading, setLoading]             = useState(true);
   const [historyLoading, setHistoryLoad] = useState(false);
@@ -39,7 +44,7 @@ export default function InventoryPage() {
   // Manager Inventory State
   const [managerInvData, setManagerInvData]       = useState(null);
   const [managerInvLoading, setManagerInvLoading] = useState(false);
-  const [miDate, setMiDate]                       = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+  const [miDate, setMiDate]                       = useState('');
   const [miStartDate, setMiStartDate]             = useState('');
   const [miEndDate, setMiEndDate]                 = useState('');
   const [miRangeMode, setMiRangeMode]             = useState(false);
@@ -47,10 +52,19 @@ export default function InventoryPage() {
   // Download Report Modal State
   const [showReportModal, setShowReportModal]     = useState(false);
   const [reportMode, setReportMode]               = useState('today'); // 'today' | 'custom'
-  const [reportDate, setReportDate]               = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+  const [reportDate, setReportDate]               = useState('');
   const [reportStartDate, setReportStartDate]     = useState('');
   const [reportEndDate, setReportEndDate]         = useState('');
   const [downloadingReport, setDownloadingReport] = useState(false);
+
+  // Seed all default date states from backend operational day once loaded
+  useEffect(() => {
+    if (!opDayLoading && operationalDate) {
+      setSelectedDate(prev => prev || operationalDate);
+      setMiDate(prev => prev || operationalDate);
+      setReportDate(prev => prev || operationalDate);
+    }
+  }, [operationalDate, opDayLoading]);
 
   // Stock Add/Update Modals
   const [showAddModal, setShowAddModal]       = useState(false);

@@ -1,11 +1,17 @@
 const { readFromCRM, readFromApp } = require('../config/database');
+const { getExpectedOperationalDate, getISTDateStr } = require('../services/operationalDay.service');
 
 // ─────────────────────────────────────────────
 // GET /api/dashboard/stats
 // ─────────────────────────────────────────────
 const getDashboardStats = async (req, res, next) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    // Operational day (7:00 PM IST boundary) — used for daily operational KPIs
+    const opDay = getExpectedOperationalDate();
+
+    // Actual IST calendar date — used for "registered today" (event-based, not operational)
+    const istCalendarDate = getISTDateStr();
+
     const currentMonth = new Date().getMonth() + 1;
     const currentYear = new Date().getFullYear();
 
@@ -28,7 +34,8 @@ const getDashboardStats = async (req, res, next) => {
       readFromCRM('SELECT COUNT(*) FROM customers'),
       readFromCRM("SELECT COUNT(*) FROM customers WHERE status = 'Active'"),
       readFromCRM('SELECT COUNT(*) FROM customers WHERE EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2', [currentMonth, currentYear]),
-      readFromCRM('SELECT COUNT(*) FROM customers WHERE DATE(created_at) = $1', [today]),
+      // registeredToday: uses actual IST calendar date (real event time, not operational day)
+      readFromCRM('SELECT COUNT(*) FROM customers WHERE DATE(created_at AT TIME ZONE \'Asia/Kolkata\') = $1', [istCalendarDate]),
       readFromCRM("SELECT COUNT(*) FROM subscriptions WHERE status = 'Active'"),
       readFromCRM('SELECT COUNT(*) FROM customer_enquiries WHERE EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2', [currentMonth, currentYear]),
       readFromCRM("SELECT COUNT(*) FROM hold_requests WHERE status = 'Pending'"),
@@ -38,20 +45,24 @@ const getDashboardStats = async (req, res, next) => {
         COALESCE(SUM(CASE WHEN balance < 0 THEN balance ELSE 0 END),0) as negative_wallet,
         COALESCE(SUM(total_recharged),0) as total_recharged
         FROM wallet`),
+      // walletToday: uses operational day (7 PM IST boundary)
       readFromCRM(`SELECT 
         COALESCE(SUM(CASE WHEN method='Cash' THEN amount ELSE 0 END),0) as cash_recharge,
         COALESCE(SUM(CASE WHEN method!='Cash' THEN amount ELSE 0 END),0) as online_recharge,
         COALESCE(SUM(amount),0) as total_recharge
-        FROM wallet_transactions WHERE DATE(created_at)=$1 AND type='Recharge'`, [today]),
-      readFromCRM("SELECT COUNT(*) FROM deliveries WHERE DATE(created_at) = $1 AND status = 'Delivered'", [today]),
-      readFromCRM("SELECT COALESCE(SUM(amount),0) as revenue FROM payments WHERE payment_date = $1 AND status = 'Verified'", [today]),
+        FROM wallet_transactions WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata')=$1 AND type='Recharge'`, [opDay]),
+      // deliveriesToday: uses operational day
+      readFromCRM("SELECT COUNT(*) FROM deliveries WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = $1 AND status = 'Delivered'", [opDay]),
+      // revenueToday: uses operational day
+      readFromCRM("SELECT COALESCE(SUM(amount),0) as revenue FROM payments WHERE payment_date = $1 AND status = 'Verified'", [opDay]),
       readFromCRM("SELECT COUNT(*) FROM invoices WHERE payment_status = 'Pending'"),
-      readFromCRM('SELECT * FROM milk_inventory WHERE date = $1', [today]),
+      // milkInventory: uses operational day
+      readFromCRM('SELECT * FROM milk_inventory WHERE date = $1', [opDay]),
     ]);
 
     // Get monthly wallet stats
     const monthStart = `${currentYear}-${String(currentMonth).padStart(2,'0')}-01`;
-    const monthEnd = today;
+    const monthEnd = opDay;
     const monthlyWalletStats = await readFromCRM(
       `SELECT 
         COALESCE(SUM(amount),0) as total_amount,
@@ -59,12 +70,13 @@ const getDashboardStats = async (req, res, next) => {
         COALESCE(SUM(CASE WHEN method='Cash' AND type='Recharge' THEN amount ELSE 0 END),0) as cash_recharge,
         COALESCE(SUM(CASE WHEN method!='Cash' AND type='Recharge' THEN amount ELSE 0 END),0) as online_recharge
       FROM wallet_transactions
-      WHERE DATE(created_at) BETWEEN $1 AND $2`,
+      WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') BETWEEN $1 AND $2`,
       [monthStart, monthEnd]
     );
 
     res.json({
       success: true,
+      operationalDate: opDay,
       data: {
         statistics: {
           total_customers: parseInt(totalCustomers.rows[0].count),

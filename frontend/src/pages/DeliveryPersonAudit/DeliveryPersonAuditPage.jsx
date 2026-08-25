@@ -8,6 +8,7 @@ import {
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
+import useOperationalDay from '../../hooks/useOperationalDay';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
@@ -48,6 +49,9 @@ function DeliveryPersonAuditContent() {
   // Main Tab State: 'attendance-route' | 'daily-audit' | 'monthly-audit' | 'dp-overview'
   const [activeTab, setActiveTab] = useState('attendance-route');
 
+  // Active operational day (7:00 PM IST boundary — backend is source of truth)
+  const { operationalDate, loading: opDayLoading } = useOperationalDay();
+
   // DP Profiles State (Live DB2 Data)
   const [deliveryPersons, setDeliveryPersons] = useState([]);
   const [dpLoading, setDpLoading] = useState(true);
@@ -74,9 +78,17 @@ function DeliveryPersonAuditContent() {
   const [attStatusFilter, setAttStatusFilter] = useState('all'); // 'all' | 'present' | 'absent' | 'standby'
 
   // Tab 3 (Daily Audit) State
-  const [dailyDate, setDailyDate] = useState(() => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+  // dailyDate starts empty; seeded from operationalDate once loaded (7:00 PM IST boundary)
+  const [dailyDate, setDailyDate] = useState('');
   const [dailyData, setDailyData] = useState(null);
   const [dailyLoading, setDailyLoading] = useState(false);
+
+  // Seed dailyDate from backend operational day once loaded
+  useEffect(() => {
+    if (!opDayLoading && operationalDate) {
+      setDailyDate(prev => prev || operationalDate);
+    }
+  }, [operationalDate, opDayLoading]);
 
   // Calendar starts in current IST month for Tab 4 (Monthly Audit)
   const [currentCalendarDate, setCurrentCalendarDate] = useState(() => {
@@ -501,7 +513,8 @@ function DeliveryPersonAuditContent() {
                       const val = e.target.value;
                       setTimeFilter(val);
                       if (val === 'custom' && (!startDate || !endDate)) {
-                        const today = new Date().toISOString().split('T')[0];
+                        // Use operational day as default for custom range start
+                        const today = operationalDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
                         setStartDate(today);
                         setEndDate(today);
                       }
@@ -905,7 +918,7 @@ function DeliveryPersonAuditContent() {
                       const monthStr = String(currentCalendarDate.getMonth() + 1).padStart(2, '0');
                       const dayStr = String(dayNum).padStart(2, '0');
                       const fullDateStr = `${year}-${monthStr}-${dayStr}`;
-                      const todayIST = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                      const todayIST = operationalDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
                       const isFutureDate = fullDateStr > todayIST;
 
                       const DB2_START_DATE = '2026-07-15';

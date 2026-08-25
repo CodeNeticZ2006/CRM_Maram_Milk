@@ -1,5 +1,6 @@
 const { readFromCRM, writeToCRM } = require('../config/database');
 const { sendWhatsAppMessage } = require('../services/sms.service');
+const { getExpectedOperationalDate } = require('../services/operationalDay.service');
 
 // ─────────────────────────────────────────────
 // GET /api/payments — paginated list
@@ -69,7 +70,7 @@ const createPayment = async (req, res, next) => {
     const result = await writeToCRM(
       `INSERT INTO payments (customer_id, invoice_id, amount, method, transaction_ref, status, payment_date)
        VALUES ($1,$2,$3,$4,$5,'Pending Verification',$6) RETURNING *`,
-      [customer_id, invoice_id || null, amount, method, transaction_ref || '', payment_date || new Date().toISOString().split('T')[0]]
+      [customer_id, invoice_id || null, amount, method, transaction_ref || '', payment_date || getExpectedOperationalDate()]
     );
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
@@ -231,11 +232,12 @@ Thank you for subscribing to Maram Milk! 🥛`;
 // ─────────────────────────────────────────────
 const getPaymentStats = async (req, res, next) => {
   try {
-    const today = new Date().toISOString().split('T')[0];
+    // Use operational day (7:00 PM IST boundary) for today's revenue
+    const opDay = getExpectedOperationalDate();
     const [pending, verified, todayTotal, pendingInvoices] = await Promise.all([
       readFromCRM("SELECT COUNT(*), COALESCE(SUM(amount),0) as total FROM payments WHERE status='Pending Verification'"),
       readFromCRM("SELECT COUNT(*), COALESCE(SUM(amount),0) as total FROM payments WHERE status='Verified'"),
-      readFromCRM("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE payment_date=$1 AND status='Verified'", [today]),
+      readFromCRM("SELECT COALESCE(SUM(amount),0) as total FROM payments WHERE payment_date=$1 AND status='Verified'", [opDay]),
       readFromCRM("SELECT COUNT(*) FROM invoices WHERE payment_status='Pending'"),
     ]);
     res.json({

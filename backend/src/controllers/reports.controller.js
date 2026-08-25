@@ -1,4 +1,5 @@
 const { readFromCRM, writeToCRM } = require('../config/database');
+const { getExpectedOperationalDate, getISTDateStr } = require('../services/operationalDay.service');
 
 // ─────────────────────────────────────────────
 // GET /api/reports/daily-summary
@@ -6,7 +7,8 @@ const { readFromCRM, writeToCRM } = require('../config/database');
 const getDailySummary = async (req, res, next) => {
   try {
     const { date } = req.query;
-    const d = date || new Date().toISOString().split('T')[0];
+    // Default to active operational day (7:00 PM IST boundary) if no date provided
+    const d = date || getExpectedOperationalDate();
 
     const [deliveries, payments, walletRecharge, newCustomers, milk] = await Promise.all([
       readFromCRM(`SELECT COUNT(*) as total,
@@ -209,12 +211,14 @@ const getLogisticsOverview = async (req, res, next) => {
       readFromCRM(
         `SELECT dd.*, r.route_name FROM daily_dispatch dd
          LEFT JOIN routes r ON r.id = dd.route_id
-         WHERE dd.date >= CURRENT_DATE - 7
-         ORDER BY dd.date DESC, dd.created_at DESC`
+         WHERE dd.date >= $1
+         ORDER BY dd.date DESC, dd.created_at DESC`,
+        [(() => { const d = new Date(`${getExpectedOperationalDate()}T12:00:00+05:30`); d.setDate(d.getDate() - 7); return getISTDateStr(d); })()]
       ),
       readFromCRM(
         `SELECT status, COUNT(*) as count FROM deliveries
-         WHERE DATE(created_at) = CURRENT_DATE GROUP BY status`
+         WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = $1 GROUP BY status`,
+        [getExpectedOperationalDate()]
       ),
     ]);
     res.json({

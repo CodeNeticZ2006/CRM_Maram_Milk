@@ -1,9 +1,10 @@
 const { readFromApp, writeToApp, readFromCRM, writeToCRM } = require('../config/database');
 const { randomUUID } = require('crypto');
 const ExcelJS = require('exceljs');
+const { getExpectedOperationalDate } = require('../services/operationalDay.service');
 
-// Get today's date string in IST (Asia/Kolkata) — matches what mobile app stores (YYYY-MM-DD)
-const getISTDate = () => new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+// Get active operational date string in IST (7:00 PM IST boundary)
+const getISTDate = () => getExpectedOperationalDate();
 
 // Low stock threshold default (e.g. 20 units)
 const LOW_STOCK_THRESHOLD = 20;
@@ -582,10 +583,12 @@ const getDpAttendanceAudit = async (req, res, next) => {
       console.warn('⚠️ DB2 attendance query warning:', e.message);
     }
 
-    // Baseline dates: IST Today and DB2 System Inception Date (Mid-July 2026: 2026-07-15)
+    // Baseline dates:
+    // todayStr  = active operational day (7:00 PM IST boundary — same as Manager App)
+    // DB2_START_DATE = DB2 system inception date (Mid-July 2026)
     const DB2_START_DATE = '2026-07-15';
     const todayObj = new Date();
-    const todayStr = todayObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); // e.g. '2026-08-09'
+    const todayStr = getISTDate(); // 7:00 PM IST operational boundary (via getExpectedOperationalDate)
 
     let datesList = [];
     let currentYear = todayObj.getFullYear();
@@ -1305,6 +1308,60 @@ const generateInventoryReport = async (req, res, next) => {
     const ws2 = workbook.addWorksheet('Shop Sale — Daily Stock Sold');
     applyHeaderBlock(ws2, 'Shop Sale — Daily Stock Sold');
 
+    // Pre-calculate ShopSale KPI totals
+    let tot1L = 0, totHalfB = 0, totHalfP = 0, totUnits = 0;
+    shopSaleRows.forEach((row) => {
+      tot1L += parseInt(row.qty1LBottle || 0);
+      totHalfB += parseInt(row.qtyHalfLBottle || 0);
+      totHalfP += parseInt(row.qtyHalfLPacket || 0);
+    });
+    totUnits = tot1L + totHalfB + totHalfP;
+
+    // Add ShopSale KPI Summary Cards Block at the top of Sheet 2
+    const s2TitleRow = ws2.addRow(['SHOP SALE — DAILY STOCK SOLD SUMMARY']);
+    s2TitleRow.getCell(1).font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF5B21B6' } };
+    ws2.mergeCells(`A${s2TitleRow.number}:D${s2TitleRow.number}`);
+
+    const s2KpiHeader = ws2.addRow([
+      '1L BOTTLE SOLD',
+      'HALF-L BOTTLE SOLD',
+      'HALF-L PACKET SOLD',
+      'TOTAL UNITS SOLD'
+    ]);
+    s2KpiHeader.eachCell(cell => {
+      cell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF4B5563' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+    s2KpiHeader.height = 20;
+
+    const s2KpiValue = ws2.addRow([tot1L, totHalfB, totHalfP, totUnits]);
+    s2KpiValue.eachCell((cell, colIdx) => {
+      cell.font = { name: 'Calibri', size: 14, bold: true };
+      if (colIdx === 1) cell.font.color = { argb: 'FF7C3AED' };
+      else if (colIdx === 2) cell.font.color = { argb: 'FF0EA5E9' };
+      else if (colIdx === 3) cell.font.color = { argb: 'FF10B981' };
+      else cell.font.color = { argb: 'FFF59E0B' };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.numFmt = '#,##0';
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'medium', color: { argb: 'FF9CA3AF' } },
+        left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+    s2KpiValue.height = 26;
+
+    ws2.addRow([]); // Blank line before detailed table
+
     const hRow2 = ws2.addRow([
       '#', 'Sale Date', '1L Bottle Qty Sold',
       'Half-L Bottle Qty Sold', 'Half-L Packet Qty Sold',
@@ -1312,11 +1369,9 @@ const generateInventoryReport = async (req, res, next) => {
     ]);
     styleTableHeader(hRow2);
 
-    let tot1L = 0, totHalfB = 0, totHalfP = 0, totUnits = 0;
-
     if (shopSaleRows.length === 0) {
       const emptyRow = ws2.addRow(['No ShopSale records found for the selected period.']);
-      ws2.mergeCells('A8:G8');
+      ws2.mergeCells(`A${emptyRow.number}:G${emptyRow.number}`);
       emptyRow.getCell(1).alignment = { horizontal: 'center' };
       emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF9CA3AF' } };
     } else {
@@ -1325,11 +1380,6 @@ const generateInventoryReport = async (req, res, next) => {
         const q2 = parseInt(row.qtyHalfLBottle || 0);
         const q3 = parseInt(row.qtyHalfLPacket || 0);
         const rowTotal = q1 + q2 + q3;
-
-        tot1L += q1;
-        totHalfB += q2;
-        totHalfP += q3;
-        totUnits += rowTotal;
 
         const dataRow = ws2.addRow([
           idx + 1,
@@ -1381,22 +1431,81 @@ const generateInventoryReport = async (req, res, next) => {
     const ws3 = workbook.addWorksheet('Manager Inventory Log');
     applyHeaderBlock(ws3, 'Manager Inventory Log — Per Product');
 
+    // Pre-calculate Manager Inventory Log KPI totals by product category
+    let mil1LBottle = 0, milHalfLBottle = 0, milHalfLPacket = 0, milTotalUnits = 0;
+    managerInventoryRows.forEach((row) => {
+      const q = parseInt(row.quantity || 0);
+      milTotalUnits += q;
+      const n = (row.productName || row.product || '').toLowerCase();
+      if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
+        mil1LBottle += q;
+      } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
+        milHalfLPacket += q;
+      } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
+        milHalfLBottle += q;
+      } else {
+        milHalfLBottle += q;
+      }
+    });
+
+    // Add Manager Inventory Log KPI Summary Cards Block at the top of Sheet 3
+    const s3TitleRow = ws3.addRow(['MANAGER INVENTORY LOG — PER PRODUCT SUMMARY']);
+    s3TitleRow.getCell(1).font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1E40AF' } };
+    ws3.mergeCells(`A${s3TitleRow.number}:D${s3TitleRow.number}`);
+
+    const s3KpiHeader = ws3.addRow([
+      '1L (B) BOTTLE LOGGED',
+      '500ML (B) BOTTLE LOGGED',
+      '500ML (P) PACKET LOGGED',
+      'TOTAL UNITS LOGGED'
+    ]);
+    s3KpiHeader.eachCell(cell => {
+      cell.font = { name: 'Calibri', size: 9.5, bold: true, color: { argb: 'FF4B5563' } };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF3F4F6' } };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+    s3KpiHeader.height = 20;
+
+    const s3KpiValue = ws3.addRow([mil1LBottle, milHalfLBottle, milHalfLPacket, milTotalUnits]);
+    s3KpiValue.eachCell((cell, colIdx) => {
+      cell.font = { name: 'Calibri', size: 14, bold: true };
+      if (colIdx === 1) cell.font.color = { argb: 'FF7C3AED' };
+      else if (colIdx === 2) cell.font.color = { argb: 'FF0EA5E9' };
+      else if (colIdx === 3) cell.font.color = { argb: 'FF10B981' };
+      else cell.font.color = { argb: 'FFF59E0B' };
+      cell.alignment = { horizontal: 'center', vertical: 'middle' };
+      cell.numFmt = '#,##0';
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFFFFF' } };
+      cell.border = {
+        top: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        bottom: { style: 'medium', color: { argb: 'FF9CA3AF' } },
+        left: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+        right: { style: 'thin', color: { argb: 'FFD1D5DB' } },
+      };
+    });
+    s3KpiValue.height = 26;
+
+    ws3.addRow([]); // Blank line before detailed table
+
     const hRow3 = ws3.addRow([
       '#', 'Log Date', 'Product Name', 'Quantity', 'Unit', 'Manager Name', 'Created At'
     ]);
     styleTableHeader(hRow3);
 
-    let totMilQty = 0;
-
     if (managerInventoryRows.length === 0) {
       const emptyRow = ws3.addRow(['No Manager Inventory Log records found for the selected period.']);
-      ws3.mergeCells('A8:G8');
+      ws3.mergeCells(`A${emptyRow.number}:G${emptyRow.number}`);
       emptyRow.getCell(1).alignment = { horizontal: 'center' };
       emptyRow.getCell(1).font = { italic: true, color: { argb: 'FF9CA3AF' } };
     } else {
       managerInventoryRows.forEach((row, idx) => {
         const q = parseInt(row.quantity || 0);
-        totMilQty += q;
 
         const dataRow = ws3.addRow([
           idx + 1,
@@ -1427,17 +1536,21 @@ const generateInventoryReport = async (req, res, next) => {
       });
 
       const totRow = ws3.addRow([
-        'TOTAL', '', '', totMilQty, 'Units', '', ''
+        'TOTAL LOGGED UNITS', '', '', milTotalUnits, 'Units', `1L(B): ${mil1LBottle} | 500ml(B): ${milHalfLBottle} | 500ml(P): ${milHalfLPacket}`, ''
       ]);
       ws3.mergeCells(`A${totRow.number}:C${totRow.number}`);
       totRow.eachCell((cell, colIndex) => {
-        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF1E40AF' } };
+        cell.font = { name: 'Calibri', size: 10.5, bold: true, color: { argb: 'FF1E40AF' } };
         cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFF6FF' } };
         cell.border = {
           top: { style: 'medium', color: { argb: 'FF1E40AF' } },
           bottom: { style: 'double', color: { argb: 'FF1E40AF' } },
         };
         if (colIndex === 4) cell.alignment = { horizontal: 'right', vertical: 'middle' };
+        if (colIndex === 6) {
+          cell.alignment = { horizontal: 'left', vertical: 'middle' };
+          cell.font = { name: 'Calibri', size: 10, italic: true, bold: true, color: { argb: 'FF4B5563' } };
+        }
       });
       totRow.height = 22;
     }

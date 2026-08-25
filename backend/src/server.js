@@ -7,8 +7,10 @@ const { testConnections } = require('./config/database');
 const { runMigrations } = require('./migrations/001_create_tables');
 const { runMigration002 } = require('./migrations/002_add_maps_url');
 const { runMigration003 } = require('./migrations/003_alter_assigned_route_id');
+const { runMigration004 } = require('./migrations/004_create_operational_days');
 const { seedSuperAdmin } = require('./utils/seed');
 const { errorHandler } = require('./middleware/errorHandler');
+const { checkAndTriggerRollover } = require('./services/operationalDay.service');
 
 // ── Routes ──────────────────────────────────────────────────────────────────
 const authRoutes          = require('./routes/auth.routes');
@@ -25,6 +27,7 @@ const accessControlRoutes = require('./routes/accessControl.routes');
 const inventoryRoutes     = require('./routes/inventory.routes');
 const routeIntelligenceRoutes = require('./routes/routeIntelligence.routes');
 const emptyBottlesRoutes  = require('./routes/emptyBottles.routes');
+const operationalDayRoutes = require('./routes/operationalDay.routes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -56,13 +59,17 @@ const authLimiter = rateLimit({
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
-// Express HTTP Request Logger Middleware
+// Express HTTP Request Logger Middleware + Operational Day Check
 app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
     console.log(`📡 [${req.method}] ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
   });
+
+  // Lazy check for 7:00 PM IST operational rollover (non-blocking)
+  checkAndTriggerRollover().catch(err => console.warn('⚠️ Rollover check error:', err.message));
+
   next();
 });
 
@@ -86,6 +93,7 @@ app.use('/api/access-control', accessControlRoutes);
 app.use('/api/inventory',      inventoryRoutes);
 app.use('/api/route-intelligence', routeIntelligenceRoutes);
 app.use('/api/empty-bottles',  emptyBottlesRoutes);
+app.use('/api/operational-day', operationalDayRoutes);
 
 // 404 handler
 app.use((req, res) => {
@@ -106,16 +114,25 @@ const start = async () => {
       await runMigrations();
       await runMigration002();
       await runMigration003();
+      await runMigration004();
       await seedSuperAdmin();
+      // Initialize/verify active operational day on boot
+      await checkAndTriggerRollover();
     } catch (dbErr) {
       console.warn('⚠️  DB setup skipped (DB unreachable):', dbErr.message);
     }
+
+    // Schedule background 60s check for 7:00 PM IST rollover
+    setInterval(() => {
+      checkAndTriggerRollover().catch(err => console.warn('⚠️ Background rollover check warning:', err.message));
+    }, 60000);
 
     app.listen(PORT, () => {
       console.log(`\n✅ Server running on http://localhost:${PORT}`);
       console.log(`📡 API Base: http://localhost:${PORT}/api`);
       console.log(`🔐 Auth:     http://localhost:${PORT}/api/auth`);
       console.log(`📊 Dashboard:http://localhost:${PORT}/api/dashboard`);
+      console.log(`📅 Op Day:   http://localhost:${PORT}/api/operational-day/current`);
       console.log('\n');
     });
   } catch (err) {

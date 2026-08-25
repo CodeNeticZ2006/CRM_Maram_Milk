@@ -3,19 +3,33 @@ import { motion } from 'framer-motion';
 import {
   MdRefresh, MdCalendarToday, MdDownload, MdFileDownload,
   MdInventory2, MdAnalytics, MdFilterList, MdSearch,
-  MdCheckCircle, MdDateRange, MdGridOn
+  MdCheckCircle, MdDateRange, MdGridOn, MdStorefront, MdBusiness,
+  MdOutlineAssignmentReturn, MdFlashOn
 } from 'react-icons/md';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
+import useOperationalDay from '../../hooks/useOperationalDay';
 
 export default function ReportsPage() {
   const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' | 'inventory-reports'
   const [daily, setDaily] = useState(null);
   const [monthly, setMonthly] = useState(null);
   const [customerAnalysis, setCustomerAnalysis] = useState(null);
+  const [managerInvData, setManagerInvData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
+
+  // Active operational day — backend is source of truth (7:00 PM IST boundary)
+  const { operationalDate, loading: opDayLoading } = useOperationalDay();
+  // date for daily summary: seeded from operationalDate, can be manually overridden to view history
+  const [date, setDate] = useState('');
+
+  // Seed date from operational day once loaded
+  useEffect(() => {
+    if (!opDayLoading && operationalDate) {
+      setDate(prev => prev || operationalDate);
+    }
+  }, [operationalDate, opDayLoading]);
 
   // Inventory Reports Archive State
   const [archivedReports, setArchivedReports]   = useState([]);
@@ -29,14 +43,43 @@ export default function ReportsPage() {
   const fetchAll = async () => {
     setLoading(true);
     try {
-      const [d, m, ca] = await Promise.all([
+      const [d, m, ca, mi] = await Promise.all([
         api.get('/reports/daily-summary', { params: { date } }),
         api.get('/reports/monthly'),
         api.get('/reports/customer-analysis'),
+        api.get('/inventory/manager-inventory', { params: { date } }).catch(() => ({ data: null })),
       ]);
-      setDaily(d.data); setMonthly(m.data); setCustomerAnalysis(ca.data.data);
+      setDaily(d.data);
+      setMonthly(m.data);
+      setCustomerAnalysis(ca.data?.data || ca.data);
+      setManagerInvData(mi.data);
     } catch { toast.error('Failed to load reports.'); }
     finally { setLoading(false); }
+  };
+
+  const handleGenerateReportDirect = async () => {
+    try {
+      toast.loading('Generating Inventory Report...', { id: 'gen-report' });
+      const res = await api.get('/inventory/download-report', {
+        params: { mode: 'today', date, generatedBy: 'Super Admin' },
+        responseType: 'blob',
+      });
+      const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      const fileName = `Maram_Milk_Inventory_Report_${date}.xlsx`;
+      link.setAttribute('download', fileName);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Inventory Report generated and downloaded!', { id: 'gen-report' });
+      if (activeTab === 'inventory-reports') fetchArchivedReports();
+    } catch (err) {
+      console.error('Report generation error:', err);
+      toast.error('Failed to generate report.', { id: 'gen-report' });
+    }
   };
 
   const fetchArchivedReports = async () => {
@@ -157,6 +200,69 @@ export default function ReportsPage() {
               </motion.div>
             ))}
           </div>
+
+          {/* Shop Sale — Daily Stock Sold Summary Cards */}
+          {(() => {
+            const ss = managerInvData?.shopSale?.summary || { total1LBottle: 0, totalHalfLBottle: 0, totalHalfLPacket: 0 };
+            const ssTot = (ss.total1LBottle || 0) + (ss.totalHalfLBottle || 0) + (ss.totalHalfLPacket || 0);
+            return (
+              <div style={{ marginBottom: 24 }}>
+                <p className="section-title" style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <MdStorefront style={{ color: '#7c3aed', fontSize: 18 }} /> Shop Sale — Daily Stock Sold ({date})
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+                  {[
+                    { label: "1L BOTTLE SOLD", value: (ss.total1LBottle || 0).toLocaleString(), sub: "Total qty1LBottle", color: "#7c3aed", icon: "1L" },
+                    { label: "HALF-L BOTTLE SOLD", value: (ss.totalHalfLBottle || 0).toLocaleString(), sub: "Total qtyHalfLBottle", color: "#0ea5e9", icon: <MdInventory2 /> },
+                    { label: "HALF-L PACKET SOLD", value: (ss.totalHalfLPacket || 0).toLocaleString(), sub: "Total qtyHalfLPacket", color: "#10b981", icon: <MdOutlineAssignmentReturn /> },
+                    { label: "TOTAL UNITS SOLD", value: ssTot.toLocaleString(), sub: "All product types combined", color: "#f59e0b", icon: <MdFlashOn /> },
+                  ].map(card => (
+                    <div key={card.label} className="card">
+                      <div className="card-body">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ fontSize: 24, fontWeight: 800, color: card.color }}>{card.value}</div>
+                          <div style={{ padding: '4px 8px', borderRadius: 6, background: `${card.color}15`, color: card.color, fontSize: 15, fontWeight: 800 }}>{card.icon}</div>
+                        </div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 6, color: 'var(--text-primary)' }}>{card.label}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{card.sub}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* Manager Inventory Log — Per Product Summary Cards */}
+          {(() => {
+            const mil = managerInvData?.managerInventory?.summary || { total1LBottle: 0, totalHalfLBottle: 0, totalHalfLPacket: 0, totalUnits: 0 };
+            return (
+              <div style={{ marginBottom: 24 }}>
+                <p className="section-title" style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <MdBusiness style={{ color: '#0ea5e9', fontSize: 18 }} /> Manager Inventory Log — Per Product ({date})
+                </p>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
+                  {[
+                    { label: "1L (B) BOTTLE LOGGED", value: (mil.total1LBottle || 0).toLocaleString(), sub: "Total 1L (B) Qty", color: "#7c3aed", icon: "1L" },
+                    { label: "500ML (B) BOTTLE LOGGED", value: (mil.totalHalfLBottle || 0).toLocaleString(), sub: "Total 500ml (B) Qty", color: "#0ea5e9", icon: <MdInventory2 /> },
+                    { label: "500ML (P) PACKET LOGGED", value: (mil.totalHalfLPacket || 0).toLocaleString(), sub: "Total 500ml (P) Qty", color: "#10b981", icon: <MdOutlineAssignmentReturn /> },
+                    { label: "TOTAL UNITS LOGGED", value: (mil.totalUnits || 0).toLocaleString(), sub: "All product types combined", color: "#f59e0b", icon: <MdFlashOn /> },
+                  ].map(card => (
+                    <div key={card.label} className="card">
+                      <div className="card-body">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                          <div style={{ fontSize: 24, fontWeight: 800, color: card.color }}>{card.value}</div>
+                          <div style={{ padding: '4px 8px', borderRadius: 6, background: `${card.color}15`, color: card.color, fontSize: 15, fontWeight: 800 }}>{card.icon}</div>
+                        </div>
+                        <div style={{ fontSize: 11.5, fontWeight: 700, marginTop: 6, color: 'var(--text-primary)' }}>{card.label}</div>
+                        <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{card.sub}</div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Monthly Summary */}
           <p className="section-title" style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase' }}>MONTHLY SUMMARY</p>
@@ -287,6 +393,14 @@ export default function ReportsPage() {
 
               <button className="btn btn-primary btn-sm" onClick={fetchArchivedReports}>
                 <MdFilterList /> Filter
+              </button>
+
+              <button
+                className="btn btn-sm btn-success"
+                onClick={handleGenerateReportDirect}
+                style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <MdFileDownload style={{ fontSize: 16 }} /> Generate & Download Report
               </button>
             </div>
           </div>

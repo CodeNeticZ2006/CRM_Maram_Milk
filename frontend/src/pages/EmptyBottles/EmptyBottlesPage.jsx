@@ -1,249 +1,343 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  MdWineBar, MdRefresh, MdWarning, MdCheckCircle, MdCancel,
+  MdWineBar, MdRefresh, MdWarning, MdCheckCircle,
   MdReportProblem, MdPerson, MdSearch, MdClose, MdLocalShipping,
-  MdInventory2, MdFactCheck, MdAssignmentTurnedIn, MdFilterList,
-  MdCalendarToday, MdExpandMore, MdExpandLess, MdHistory, MdDirectionsBike
+  MdFactCheck, MdAssignmentTurnedIn, MdFilterList,
+  MdCalendarToday, MdExpandMore, MdExpandLess, MdHistory, MdDirectionsBike,
+  MdDateRange, MdInfoOutline
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
+import useOperationalDay from '../../hooks/useOperationalDay';
 
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+
+function fmtDisplay(dateStr) {
+  if (!dateStr) return '';
+  const [y, m, d] = dateStr.split('-');
+  return `${parseInt(d)}-${MONTHS[parseInt(m)-1]}-${y}`;
+}
+
+function getWeekEnd(startStr) {
+  const d = new Date(`${startStr}T12:00:00+05:30`);
+  d.setDate(d.getDate() + 6);
+  return d.toISOString().slice(0, 10);
+}
+
+// ─── Page ─────────────────────────────────────────────────────────────────────
 export default function EmptyBottlesPage() {
-  const [logs, setLogs] = useState([]);
-  const [allDps, setAllDps] = useState([]);
-  const [incidents, setIncidents] = useState([]);
-  const [stats, setStats] = useState({ totalIssued: 0, totalReturned: 0, returnRate: 100, pendingIncidents: 0 });
-  const [loading, setLoading] = useState(true);
-  const [search, setSearch] = useState('');
+  // ── Operational day (source of truth) ────────────────────────────────────
+  const { operationalDate, displayDate: opDisplayDate, loading: opDayLoading } = useOperationalDay();
 
-  // Time & DP Filter States (matching Attendance Audit)
-  const [timeFilter, setTimeFilter] = useState('this_month');
-  const [selectedMonth, setSelectedMonth] = useState('2026-08');
-  const [startDate, setStartDate] = useState('2026-08-01');
-  const [endDate, setEndDate] = useState('2026-08-09');
+  // ── Filter state ──────────────────────────────────────────────────────────
+  const [filterMode, setFilterMode]     = useState('daily');   // 'daily'|'weekly'|'monthly'|'custom'
+  const [selectedDate, setSelectedDate] = useState('');        // daily mode
+  const [weekStart, setWeekStart]       = useState('');        // weekly mode
+  const [selectedMonth, setSelectedMonth] = useState('');      // monthly mode (YYYY-MM)
+  const [startDate, setStartDate]       = useState('');        // custom mode
+  const [endDate, setEndDate]           = useState('');        // custom mode
+
+  // ── Data state ────────────────────────────────────────────────────────────
+  const [logs, setLogs]         = useState([]);
+  const [allDps, setAllDps]     = useState([]);
+  const [incidents, setIncidents] = useState([]);
+  const [stats, setStats]       = useState({ totalIssued: 0, totalReturned: 0, returnRate: 0, pendingIncidents: 0 });
+  const [isActiveDay, setIsActiveDay] = useState(false);
+  const [loading, setLoading]   = useState(false);
+  const [search, setSearch]     = useState('');
   const [selectedDpId, setSelectedDpId] = useState('');
   const [expandedDpId, setExpandedDpId] = useState(null);
 
-  // Review Modal State
-  const [reviewModal, setReviewModal] = useState(null);
-  const [resolving, setResolving] = useState(false);
+  // ── Review modal state ────────────────────────────────────────────────────
+  const [reviewModal, setReviewModal]       = useState(null);
+  const [resolving, setResolving]           = useState(false);
   const [resolutionNotes, setResolutionNotes] = useState('');
 
-  const fetchData = async () => {
+  // ── Seed dates from operational day on load ───────────────────────────────
+  useEffect(() => {
+    if (!opDayLoading && operationalDate) {
+      setSelectedDate(prev => prev || operationalDate);
+      setSelectedMonth(prev => prev || operationalDate.slice(0, 7));
+      // weekStart = 6 days before operational day
+      const d = new Date(`${operationalDate}T12:00:00+05:30`);
+      d.setDate(d.getDate() - 6);
+      const ws = d.toISOString().slice(0, 10);
+      setWeekStart(prev => prev || ws);
+      setStartDate(prev => prev || `${operationalDate.slice(0, 7)}-01`);
+      setEndDate(prev => prev || operationalDate);
+    }
+  }, [operationalDate, opDayLoading]);
+
+  // ── Fetch data ────────────────────────────────────────────────────────────
+  const fetchData = useCallback(async () => {
+    // Guard: wait until dates are seeded from operational day
+    if (!operationalDate) return;
+    if (filterMode === 'daily'   && !selectedDate)  return;
+    if (filterMode === 'weekly'  && !weekStart)      return;
+    if (filterMode === 'monthly' && !selectedMonth)  return;
+    if (filterMode === 'custom'  && (!startDate || !endDate)) return;
+
     setLoading(true);
     try {
       const params = {
-        timeFilter,
-        month: selectedMonth,
-        startDate: timeFilter === 'custom' ? startDate : undefined,
-        endDate: timeFilter === 'custom' ? endDate : undefined,
-        dpId: selectedDpId || undefined,
+        mode:       filterMode,
+        dpId:       selectedDpId || undefined,
+        date:       filterMode === 'daily'   ? selectedDate   : undefined,
+        weekStart:  filterMode === 'weekly'  ? weekStart       : undefined,
+        month:      filterMode === 'monthly' ? selectedMonth   : undefined,
+        startDate:  filterMode === 'custom'  ? startDate       : undefined,
+        endDate:    filterMode === 'custom'  ? endDate         : undefined,
       };
       const res = await api.get('/empty-bottles', { params });
-      setLogs(res.data.data || []);
-      setAllDps(res.data.allDps || []);
-      setStats(res.data.stats || { totalIssued: 0, totalReturned: 0, returnRate: 100, pendingIncidents: 0 });
+      setLogs(res.data.data       || []);
+      setAllDps(res.data.allDps   || []);
+      setStats(res.data.stats     || { totalIssued: 0, totalReturned: 0, returnRate: 0, pendingIncidents: 0 });
       setIncidents(res.data.incidents || []);
+      setIsActiveDay(Boolean(res.data.isActiveDay));
     } catch {
       toast.error('Failed to load DB2 empty bottle logs.');
     } finally {
       setLoading(false);
     }
-  };
+  }, [filterMode, selectedDate, weekStart, selectedMonth, startDate, endDate, selectedDpId, operationalDate]);
 
-  useEffect(() => {
-    fetchData();
-  }, [timeFilter, selectedMonth, startDate, endDate, selectedDpId]);
+  useEffect(() => { fetchData(); }, [fetchData]);
 
+  // ── Resolve incident ──────────────────────────────────────────────────────
   const handleResolveIncident = async (statusChoice) => {
     if (!reviewModal) return;
     setResolving(true);
     try {
-      await api.put(`/empty-bottles/incidents/${reviewModal.id}/review`, {
-        status: statusChoice,
-        resolutionNotes,
-      });
+      await api.put(`/empty-bottles/incidents/${reviewModal.id}/review`, { status: statusChoice, resolutionNotes });
       toast.success(`Incident updated: ${statusChoice}`);
-      setReviewModal(null);
-      setResolutionNotes('');
+      setReviewModal(null); setResolutionNotes('');
       fetchData();
     } catch {
       toast.error('Failed to update incident.');
-    } finally {
-      setResolving(false);
-    }
+    } finally { setResolving(false); }
   };
 
+  // ── Derived ───────────────────────────────────────────────────────────────
   const filteredLogs = logs.filter(l =>
     (l?.dpName || '').toLowerCase().includes((search || '').toLowerCase()) ||
     (l?.routeName || '').toLowerCase().includes((search || '').toLowerCase()) ||
     (l?.vehicleNumber || '').toLowerCase().includes((search || '').toLowerCase())
   );
 
-  const selectedDpRecord = logs.find(l => l.id === selectedDpId) || logs[0];
+  // Label for the "Showing data for" indicator
+  const periodLabel = (() => {
+    if (filterMode === 'daily')   return selectedDate ? fmtDisplay(selectedDate) : '—';
+    if (filterMode === 'weekly')  return weekStart ? `${fmtDisplay(weekStart)} → ${fmtDisplay(getWeekEnd(weekStart))}` : '—';
+    if (filterMode === 'monthly') return selectedMonth ? (() => { const [y,m]=selectedMonth.split('-'); return `${MONTHS[parseInt(m)-1]} ${y}`; })() : '—';
+    if (filterMode === 'custom')  return startDate && endDate ? `${fmtDisplay(startDate)} → ${fmtDisplay(endDate)}` : '—';
+    return '—';
+  })();
 
   return (
     <div>
-      {/* Page Header */}
+      {/* ── Page Header ──────────────────────────────────────────────────────── */}
       <div className="page-header">
         <div>
           <h1 className="page-title">Empty Bottle Collection Management</h1>
-          <p className="page-subtitle">Super Admin audit for daily 1L & 0.5L glass bottle returns retrieved DP-wise from DB2</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', marginTop: 4 }}>
+            <p className="page-subtitle" style={{ margin: 0 }}>
+              Super Admin audit for daily 1L &amp; 0.5L glass bottle returns — DB2 Manager App data
+            </p>
+            {opDisplayDate && (
+              <span style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5,
+                background: 'linear-gradient(135deg, rgba(139,92,246,0.18), rgba(59,130,246,0.12))',
+                border: '1px solid rgba(139,92,246,0.35)',
+                borderRadius: 20, padding: '2px 12px', fontSize: 12, fontWeight: 700,
+                color: 'var(--primary)', letterSpacing: 0.2
+              }}>
+                <MdCalendarToday style={{ fontSize: 12 }} />
+                Op Day: {opDisplayDate} &nbsp;
+                <span style={{ background: '#10b981', color: '#fff', borderRadius: 10, padding: '1px 7px', fontSize: 10, fontWeight: 800 }}>ACTIVE</span>
+              </span>
+            )}
+          </div>
         </div>
         <button className="btn btn-secondary btn-sm" onClick={fetchData} disabled={loading}>
           <MdRefresh /> {loading ? 'Loading...' : 'Refresh DB2 Audit'}
         </button>
       </div>
 
-      {/* KPI Metric Cards */}
+      {/* ── KPI Cards ────────────────────────────────────────────────────────── */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 20 }}>
-        <div className="card card-body">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 10, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
-              <MdLocalShipping />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Total Bottles Dispatched</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--text-main)' }}>{stats.totalIssued} <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Bottles</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="card card-body">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 10, background: 'rgba(16,185,129,0.1)', color: '#10b981', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
-              <MdCheckCircle />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Empty Bottles Collected</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#10b981' }}>{stats.totalReturned} <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Bottles</span></div>
-            </div>
-          </div>
-        </div>
-
-        <div className="card card-body">
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 10, background: 'rgba(139,92,246,0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
-              <MdFactCheck />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Overall Collection Rate</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: 'var(--primary)' }}>{stats.returnRate}%</div>
+        {[
+          { label: 'Total Bottles Dispatched', value: stats.totalIssued,      suffix: 'Bottles',  icon: <MdLocalShipping />, color: 'rgba(59,130,246,0.1)',  iconColor: 'var(--primary)' },
+          { label: 'Empty Bottles Collected',  value: stats.totalReturned,    suffix: 'Bottles',  icon: <MdCheckCircle />,   color: 'rgba(16,185,129,0.1)', iconColor: '#10b981'        },
+          { label: 'Overall Collection Rate',  value: `${stats.returnRate}%`, suffix: null,       icon: <MdFactCheck />,     color: 'rgba(139,92,246,0.1)', iconColor: 'var(--primary)' },
+          { label: 'Manager Incident Flags',   value: stats.pendingIncidents, suffix: 'Pending',  icon: <MdWarning />,       color: 'rgba(239,68,68,0.1)',  iconColor: '#ef4444',
+            borderColor: stats.pendingIncidents > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border)' },
+        ].map(({ label, value, suffix, icon, color, iconColor, borderColor }) => (
+          <div key={label} className="card card-body" style={{ borderColor: borderColor || 'var(--border)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ width: 42, height: 42, borderRadius: 10, background: color, color: iconColor, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
+                {icon}
+              </div>
+              <div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{label}</div>
+                <div style={{ fontSize: 22, fontWeight: 800, color: iconColor }}>
+                  {value} {suffix && <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{suffix}</span>}
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>
+                  {periodLabel}
+                </div>
+              </div>
             </div>
           </div>
-        </div>
-
-        <div className="card card-body" style={{ borderColor: stats.pendingIncidents > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border)' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-            <div style={{ width: 42, height: 42, borderRadius: 10, background: 'rgba(239,68,68,0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 22 }}>
-              <MdWarning />
-            </div>
-            <div>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>Manager Incident Flags</div>
-              <div style={{ fontSize: 22, fontWeight: 800, color: '#ef4444' }}>{stats.pendingIncidents} <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Pending</span></div>
-            </div>
-          </div>
-        </div>
+        ))}
       </div>
 
-      {/* ── FILTER CONTROLS BAR (MATCHING ATTENDANCE AUDIT FORMAT) ───────────────────────── */}
+      {/* ── Unified Filter Bar ────────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-body" style={{ padding: 16 }}>
-          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MdFilterList style={{ color: 'var(--primary)', fontSize: 20 }} />
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Time Filter:</span>
+        <div className="card-body" style={{ padding: '16px 20px' }}>
+          <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end', justifyContent: 'space-between' }}>
+
+            {/* Left: mode + date controls */}
+            <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+              {/* Mode selector */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                  <MdFilterList style={{ fontSize: 13, verticalAlign: 'middle' }} /> Period
+                </div>
                 <select
                   className="form-input"
-                  style={{ width: 140 }}
-                  value={timeFilter}
-                  onChange={e => setTimeFilter(e.target.value)}
+                  style={{ width: 150, fontWeight: 600 }}
+                  value={filterMode}
+                  onChange={e => setFilterMode(e.target.value)}
                 >
-                  <option value="today">Today</option>
-                  <option value="this_week">This Week</option>
-                  <option value="this_month">This Month</option>
-                  <option value="custom">Custom Date</option>
+                  <option value="daily">Daily</option>
+                  <option value="weekly">Weekly</option>
+                  <option value="monthly">Monthly</option>
+                  <option value="custom">Custom Range</option>
                 </select>
               </div>
 
-              {timeFilter === 'this_month' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <MdCalendarToday style={{ color: 'var(--text-muted)', fontSize: 18 }} />
+              {/* Daily: single date */}
+              {filterMode === 'daily' && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <MdCalendarToday style={{ fontSize: 13, verticalAlign: 'middle' }} /> Date
+                  </div>
+                  <input
+                    type="date"
+                    className="form-input"
+                    style={{ width: 170, fontWeight: 600 }}
+                    value={selectedDate}
+                    max={operationalDate || undefined}
+                    onChange={e => setSelectedDate(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Weekly: week start */}
+              {filterMode === 'weekly' && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <MdDateRange style={{ fontSize: 13, verticalAlign: 'middle' }} /> Week Start
+                  </div>
+                  <input
+                    type="date"
+                    className="form-input"
+                    style={{ width: 170, fontWeight: 600 }}
+                    value={weekStart}
+                    max={operationalDate || undefined}
+                    onChange={e => setWeekStart(e.target.value)}
+                  />
+                </div>
+              )}
+
+              {/* Monthly: YYYY-MM */}
+              {filterMode === 'monthly' && (
+                <div>
+                  <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+                    <MdCalendarToday style={{ fontSize: 13, verticalAlign: 'middle' }} /> Month
+                  </div>
                   <input
                     type="month"
                     className="form-input"
-                    style={{ width: 160 }}
+                    style={{ width: 170, fontWeight: 600 }}
                     value={selectedMonth}
+                    max={operationalDate ? operationalDate.slice(0, 7) : undefined}
                     onChange={e => setSelectedMonth(e.target.value)}
                   />
                 </div>
               )}
 
-              {timeFilter === 'custom' && (
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>Start Date:</span>
-                    <input
-                      type="date"
-                      className="form-input"
-                      style={{ width: 145 }}
-                      value={startDate}
-                      onChange={e => setStartDate(e.target.value)}
-                    />
+              {/* Custom: start + end */}
+              {filterMode === 'custom' && (
+                <>
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>From</div>
+                    <input type="date" className="form-input" style={{ width: 155 }} value={startDate}
+                      max={endDate || operationalDate || undefined} onChange={e => setStartDate(e.target.value)} />
                   </div>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                    <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>End Date:</span>
-                    <input
-                      type="date"
-                      className="form-input"
-                      style={{ width: 145 }}
-                      value={endDate}
-                      onChange={e => setEndDate(e.target.value)}
-                    />
+                  <div>
+                    <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>To</div>
+                    <input type="date" className="form-input" style={{ width: 155 }} value={endDate}
+                      min={startDate || undefined} max={operationalDate || undefined} onChange={e => setEndDate(e.target.value)} />
                   </div>
-                </div>
+                </>
               )}
 
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 13, fontWeight: 700 }}>Filter by Delivery Person:</span>
-                <select
-                  className="form-input"
-                  style={{ width: 220 }}
-                  value={selectedDpId}
-                  onChange={e => setSelectedDpId(e.target.value)}
-                >
-                  <option value="">— All Delivery Persons —</option>
-                  {allDps.map(dp => (
-                    <option key={dp.id} value={dp.id}>{dp.name} ({dp.dpCode})</option>
-                  ))}
+              {/* DP filter */}
+              <div>
+                <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', marginBottom: 4, textTransform: 'uppercase', letterSpacing: 0.5 }}>Delivery Person</div>
+                <select className="form-input" style={{ width: 200 }} value={selectedDpId} onChange={e => setSelectedDpId(e.target.value)}>
+                  <option value="">— All DPs —</option>
+                  {allDps.map(dp => <option key={dp.id} value={dp.id}>{dp.name} ({dp.dpCode})</option>)}
                 </select>
               </div>
             </div>
 
+            {/* Right: search */}
             <div style={{ position: 'relative' }}>
               <MdSearch style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)', fontSize: 18 }} />
-              <input
-                type="text"
-                className="form-input"
-                style={{ paddingLeft: 34, width: 200 }}
-                placeholder="Search DP or route..."
-                value={search}
-                onChange={e => setSearch(e.target.value)}
-              />
+              <input type="text" className="form-input" style={{ paddingLeft: 34, width: 200 }}
+                placeholder="Search DP or route..." value={search} onChange={e => setSearch(e.target.value)} />
             </div>
+          </div>
+
+          {/* ── Data period indicator ─────────────────────────────────────────── */}
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+              <MdInfoOutline style={{ verticalAlign: 'middle', marginRight: 3 }} />Showing data for:
+            </span>
+            <span style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5,
+              background: 'linear-gradient(135deg, rgba(139,92,246,0.12), rgba(59,130,246,0.08))',
+              border: '1px solid rgba(139,92,246,0.28)',
+              borderRadius: 16, padding: '3px 14px', fontSize: 12.5, fontWeight: 700, color: 'var(--primary)'
+            }}>
+              <MdCalendarToday style={{ fontSize: 13 }} />
+              {periodLabel}
+            </span>
+            {isActiveDay && (
+              <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', borderRadius: 16, padding: '3px 12px', fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
+                ✓ ACTIVE OPERATIONAL DAY
+              </span>
+            )}
+            {filterMode === 'daily' && selectedDate && !isActiveDay && selectedDate < (operationalDate || '') && (
+              <span style={{ background: 'rgba(100,116,139,0.1)', border: '1px solid rgba(100,116,139,0.25)', borderRadius: 16, padding: '3px 12px', fontSize: 11.5, fontWeight: 700, color: 'var(--text-muted)' }}>
+                Historical
+              </span>
+            )}
           </div>
         </div>
       </div>
 
-      {/* Flagged Incidents Alert Banner */}
+      {/* ── Flagged Incidents Alert ───────────────────────────────────────────── */}
       {incidents.length > 0 && (
         <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 12, padding: 16, marginBottom: 20 }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
             <MdReportProblem style={{ color: '#ef4444', fontSize: 22 }} />
             <span style={{ fontWeight: 700, fontSize: 14, color: '#ef4444' }}>
-              Manager Bottle Breakage & Unreturned Bottle Flags ({incidents.length})
+              Manager Bottle Breakage &amp; Unreturned Bottle Flags ({incidents.length})
             </span>
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 12 }}>
@@ -251,9 +345,7 @@ export default function EmptyBottlesPage() {
               <div key={inc.id} style={{ background: 'var(--bg-main)', border: '1px solid var(--border)', borderRadius: 8, padding: 12 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                   <div style={{ fontWeight: 700, fontSize: 13 }}>{inc.dp_name}</div>
-                  <span className={`badge ${inc.status === 'Pending Review' ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: 10 }}>
-                    {inc.status}
-                  </span>
+                  <span className={`badge ${inc.status === 'Pending Review' ? 'badge-danger' : 'badge-success'}`} style={{ fontSize: 10 }}>{inc.status}</span>
                 </div>
                 <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
                   Route: <strong>{inc.route_name}</strong> | Type: <strong>{inc.bottle_type}</strong>
@@ -262,16 +354,10 @@ export default function EmptyBottlesPage() {
                   Broken: {inc.broken_count} | Unreturned: {inc.missing_count}
                 </div>
                 {inc.manager_notes && (
-                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6, fontStyle: 'italic' }}>
-                    "{inc.manager_notes}"
-                  </div>
+                  <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 6, fontStyle: 'italic' }}>"{inc.manager_notes}"</div>
                 )}
                 {inc.status === 'Pending Review' && (
-                  <button
-                    className="btn btn-primary btn-sm"
-                    style={{ marginTop: 10, width: '100%', fontSize: 12 }}
-                    onClick={() => setReviewModal(inc)}
-                  >
+                  <button className="btn btn-primary btn-sm" style={{ marginTop: 10, fontSize: 12 }} onClick={() => setReviewModal(inc)}>
                     <MdAssignmentTurnedIn /> Review Incident
                   </button>
                 )}
@@ -281,13 +367,20 @@ export default function EmptyBottlesPage() {
         </div>
       )}
 
-      {/* Main DP Collection Table Card */}
+      {/* ── DP Audit Table ────────────────────────────────────────────────────── */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div style={{ padding: '16px 20px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
           <div style={{ fontWeight: 700, fontSize: 15, display: 'flex', alignItems: 'center', gap: 8 }}>
             <MdDirectionsBike style={{ color: 'var(--primary)' }} /> Delivery Person Empty Bottle Audit Table
           </div>
-          <span className="badge badge-blue">{filteredLogs.length} Delivery Persons</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            {isActiveDay && opDisplayDate && (
+              <span style={{ background: 'linear-gradient(135deg, rgba(139,92,246,0.15), rgba(59,130,246,0.1))', border: '1px solid rgba(139,92,246,0.3)', borderRadius: 16, padding: '3px 12px', fontSize: 11.5, fontWeight: 700, color: 'var(--primary)' }}>
+                Op Day: {opDisplayDate}
+              </span>
+            )}
+            <span className="badge badge-blue">{filteredLogs.length} Delivery Persons</span>
+          </div>
         </div>
 
         <div className="card-body" style={{ padding: 0 }}>
@@ -310,7 +403,13 @@ export default function EmptyBottlesPage() {
                 {loading ? (
                   <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 bottle collection records...</td></tr>
                 ) : filteredLogs.length === 0 ? (
-                  <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>No bottle return records found.</td></tr>
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
+                      <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
+                      <div style={{ fontWeight: 700, marginBottom: 4 }}>No empty bottle records found</div>
+                      <div style={{ fontSize: 13 }}>for {periodLabel}{isActiveDay ? ' — no data recorded yet for this operational day.' : '.'}</div>
+                    </td>
+                  </tr>
                 ) : (
                   filteredLogs.map(dp => {
                     const isExpanded = expandedDpId === dp.id;
@@ -320,10 +419,7 @@ export default function EmptyBottlesPage() {
                         <tr
                           key={dp.id}
                           style={{ cursor: 'pointer', background: selectedDpId === dp.id ? 'rgba(59,130,246,0.05)' : 'transparent' }}
-                          onClick={() => {
-                            setSelectedDpId(dp.id);
-                            setExpandedDpId(isExpanded ? null : dp.id);
-                          }}
+                          onClick={() => { setSelectedDpId(dp.id); setExpandedDpId(isExpanded ? null : dp.id); }}
                         >
                           <td style={{ fontWeight: 700 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -370,25 +466,20 @@ export default function EmptyBottlesPage() {
                             )}
                           </td>
                           <td>
-                            <button
-                              className="btn btn-secondary btn-sm"
-                              style={{ fontSize: 12, padding: '4px 10px' }}
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpandedDpId(isExpanded ? null : dp.id);
-                              }}
-                            >
-                              <MdHistory /> {isExpanded ? 'Hide Audit' : 'Date Audit'} {isExpanded ? <MdExpandLess /> : <MdExpandMore />}
+                            <button className="btn btn-secondary btn-sm" style={{ fontSize: 12, padding: '4px 10px' }}
+                              onClick={(e) => { e.stopPropagation(); setExpandedDpId(isExpanded ? null : dp.id); }}>
+                              <MdHistory /> {isExpanded ? 'Hide' : 'Date Audit'} {isExpanded ? <MdExpandLess /> : <MdExpandMore />}
                             </button>
                           </td>
                         </tr>
 
-                        {/* EXPANDABLE DATE-WISE AUDIT TIMELINE SUB-TABLE */}
+                        {/* Expandable Date-Wise Sub-Table */}
                         {isExpanded && dp.dateLogs && (
                           <tr key={`sub-${dp.id}`}>
-                            <td colSpan={9} style={{ background: 'rgba(15,23,42,0.02)', padding: '16px 24px' }}>
+                            <td colSpan={9} style={{ background: 'rgba(15,23,42,0.025)', padding: '16px 24px' }}>
                               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
-                                <MdCalendarToday /> Date-Wise Bottle Return Audit Ledger: <strong>{dp.dpName}</strong> ({dp.dateLogs.length} Days Audited)
+                                <MdCalendarToday /> Date-Wise Bottle Return Audit: <strong>{dp.dpName}</strong>
+                                <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>({dp.dateLogs.length} day{dp.dateLogs.length !== 1 ? 's' : ''} audited)</span>
                               </div>
                               <div className="table-wrapper">
                                 <table className="table" style={{ background: '#fff', borderRadius: 8 }}>
@@ -402,30 +493,40 @@ export default function EmptyBottlesPage() {
                                       <th>½L RETURNED</th>
                                       <th>MISSING / BROKEN</th>
                                       <th>COLLECTION %</th>
-                                      <th>MANAGER AUDIT NOTES</th>
+                                      <th>AUDIT NOTES</th>
                                     </tr>
                                   </thead>
                                   <tbody>
                                     {dp.dateLogs.map((dLog, idx) => {
                                       const dayMissing = dLog.missing1L + dLog.missingHalfL;
+                                      const isOpDay = dLog.date === operationalDate;
                                       return (
-                                        <tr key={idx} style={{ background: dLog.hasFlag ? 'rgba(239,68,68,0.04)' : 'transparent' }}>
-                                          <td style={{ fontWeight: 700, fontSize: 12.5 }}>{dLog.date}</td>
+                                        <tr key={idx} style={{ background: dLog.hasFlag ? 'rgba(239,68,68,0.04)' : isOpDay ? 'rgba(139,92,246,0.04)' : 'transparent' }}>
+                                          <td style={{ fontWeight: 700, fontSize: 12.5 }}>
+                                            {fmtDisplay(dLog.date)}
+                                            {isOpDay && <span style={{ marginLeft: 6, fontSize: 10, background: 'rgba(139,92,246,0.15)', color: 'var(--primary)', borderRadius: 8, padding: '1px 6px', fontWeight: 700 }}>Op Day</span>}
+                                          </td>
                                           <td><span className="badge badge-gray" style={{ fontSize: 11 }}>{dLog.routeName}</span></td>
                                           <td>{dLog.issued1L}</td>
                                           <td style={{ color: '#10b981', fontWeight: 700 }}>{dLog.returned1L}</td>
                                           <td>{dLog.issuedHalfL}</td>
                                           <td style={{ color: '#10b981', fontWeight: 700 }}>{dLog.returnedHalfL}</td>
                                           <td style={{ color: dayMissing > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: 800 }}>
-                                            {dayMissing > 0 ? `${dLog.missing1L} (1L) / ${dLog.missingHalfL} (½L)` : '0'}
+                                            {dLog.isFuture || dLog.isBeforeDb2 ? '—' : dayMissing > 0 ? `${dLog.missing1L} (1L) / ${dLog.missingHalfL} (½L)` : '0'}
                                           </td>
                                           <td>
-                                            <span className={`badge ${dLog.returnRate >= 95 ? 'badge-success' : dLog.returnRate >= 85 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: 11 }}>
-                                              {dLog.returnRate}%
-                                            </span>
+                                            {dLog.isFuture || dLog.isBeforeDb2 ? (
+                                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{dLog.isFuture ? 'Upcoming' : 'Pre-DB2'}</span>
+                                            ) : !dLog.hasRecords ? (
+                                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No record</span>
+                                            ) : (
+                                              <span className={`badge ${dLog.returnRate >= 95 ? 'badge-success' : dLog.returnRate >= 85 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: 11 }}>
+                                                {dLog.returnRate}%
+                                              </span>
+                                            )}
                                           </td>
                                           <td style={{ fontSize: 12, color: dLog.hasFlag ? '#ef4444' : 'var(--text-muted)', fontStyle: 'italic' }}>
-                                            {dLog.notes || 'Normal empty bottle return'}
+                                            {dLog.isFuture ? '—' : dLog.notes || (!dLog.hasRecords ? 'No record yet' : 'Normal return')}
                                           </td>
                                         </tr>
                                       );
@@ -446,7 +547,7 @@ export default function EmptyBottlesPage() {
         </div>
       </div>
 
-      {/* Super Admin Incident Review Modal */}
+      {/* ── Incident Review Modal ─────────────────────────────────────────────── */}
       <AnimatePresence>
         {reviewModal && (
           <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setReviewModal(null)}>
@@ -457,7 +558,6 @@ export default function EmptyBottlesPage() {
                 </h2>
                 <button className="icon-btn" onClick={() => setReviewModal(null)}><MdClose /></button>
               </div>
-
               <div className="modal-body">
                 <div style={{ background: 'rgba(239,68,68,0.06)', borderRadius: 8, padding: 12, marginBottom: 16 }}>
                   <div style={{ fontWeight: 700, fontSize: 14 }}>{reviewModal.dp_name} ({reviewModal.route_name})</div>
@@ -465,37 +565,26 @@ export default function EmptyBottlesPage() {
                     Bottle Type: <strong>{reviewModal.bottle_type}</strong> | Broken: <strong style={{ color: '#ef4444' }}>{reviewModal.broken_count}</strong> | Unreturned: <strong style={{ color: '#ef4444' }}>{reviewModal.missing_count}</strong>
                   </div>
                   {reviewModal.manager_notes && (
-                    <div style={{ fontSize: 12, marginTop: 8, fontStyle: 'italic', color: 'var(--text-muted)' }}>
-                      Manager Note: "{reviewModal.manager_notes}"
-                    </div>
+                    <div style={{ fontSize: 12, marginTop: 8, fontStyle: 'italic', color: 'var(--text-muted)' }}>Manager Note: "{reviewModal.manager_notes}"</div>
                   )}
                 </div>
-
                 <div className="form-group" style={{ marginBottom: 16 }}>
                   <label className="form-label">Super Admin Resolution Notes</label>
-                  <textarea
-                    className="form-input"
-                    rows={3}
-                    placeholder="Enter audit notes or resolution details..."
-                    value={resolutionNotes}
-                    onChange={e => setResolutionNotes(e.target.value)}
-                  />
+                  <textarea className="form-input" rows={3} placeholder="Enter audit notes or resolution details..."
+                    value={resolutionNotes} onChange={e => setResolutionNotes(e.target.value)} />
                 </div>
               </div>
-
               <div className="modal-footer" style={{ flexWrap: 'wrap', gap: 8 }}>
                 <button className="btn btn-secondary btn-sm" onClick={() => setReviewModal(null)}>Cancel</button>
-                <button className="btn btn-danger btn-sm" disabled={resolving} onClick={() => handleResolveIncident('Resolved - Charged DP')}>
-                  Charge DP
-                </button>
-                <button className="btn btn-success btn-sm" disabled={resolving} onClick={() => handleResolveIncident('Resolved - Reimbursed')}>
-                  Reimburse & Resolve
-                </button>
+                <button className="btn btn-danger btn-sm" disabled={resolving} onClick={() => handleResolveIncident('Resolved - Charged DP')}>Charge DP</button>
+                <button className="btn btn-success btn-sm" disabled={resolving} onClick={() => handleResolveIncident('Resolved - Reimbursed')}>Reimburse &amp; Resolve</button>
               </div>
             </motion.div>
           </div>
         )}
       </AnimatePresence>
+
+      {/* Close tag for outer div */}
     </div>
   );
 }

@@ -1,5 +1,8 @@
-const { Pool } = require('pg');
+const { Pool, types } = require('pg');
 require('dotenv').config();
+
+// Override PG OID 1082 (DATE) parser to return plain 'YYYY-MM-DD' string instead of JS Date object
+types.setTypeParser(1082, (val) => val);
 
 // ================================================
 // DB1 — Super Admin CRM (Singapore) — READ + WRITE
