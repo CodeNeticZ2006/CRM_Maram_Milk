@@ -40,6 +40,61 @@ export default function ReportsPage() {
   const [reportStartDate, setReportStartDate] = useState('');
   const [reportEndDate, setReportEndDate]     = useState('');
 
+  // AdHoc Product Reports State
+  const [adhocReportData, setAdhocReportData] = useState(null);
+  const [adhocReportMode, setAdhocReportMode] = useState('daily');
+  const [adhocReportStartDate, setAdhocReportStartDate] = useState('');
+  const [adhocReportEndDate, setAdhocReportEndDate]     = useState('');
+  const [adhocLoading, setAdhocLoading]             = useState(false);
+
+  // Stock Correctness Reports State
+  const [scReportData, setScReportData]         = useState(null);
+  const [scReportMode, setScReportMode]         = useState('daily'); // 'daily' | 'monthly' | 'custom'
+  const [scReportStartDate, setScReportStartDate] = useState('');
+  const [scReportEndDate, setScReportEndDate]     = useState('');
+  const [scReportLoading, setScReportLoading]   = useState(false);
+
+  const fetchAdhocReports = async () => {
+    setAdhocLoading(true);
+    try {
+      const params = {
+        mode: adhocReportMode,
+        date,
+        startDate: adhocReportStartDate,
+        endDate: adhocReportEndDate,
+      };
+      const res = await api.get('/reports/adhoc', { params });
+      if (res.data?.success) {
+        setAdhocReportData(res.data.data);
+      }
+    } catch (err) {
+      console.error('Failed to load AdHoc report:', err);
+      toast.error('Failed to load AdHoc report.');
+    } finally {
+      setAdhocLoading(false);
+    }
+  };
+
+  const fetchStockCorrectnessReports = async () => {
+    setScReportLoading(true);
+    try {
+      const params = {
+        type: scReportMode,
+        date: date || operationalDate,
+        startDate: scReportStartDate,
+        endDate: scReportEndDate,
+      };
+      const res = await api.get('/reports/stock-correctness', { params });
+      if (res.data?.success) {
+        setScReportData(res.data);
+      }
+    } catch {
+      toast.error('Failed to load Stock Correctness Report.');
+    } finally {
+      setScReportLoading(false);
+    }
+  };
+
   const fetchAll = async () => {
     setLoading(true);
     try {
@@ -107,8 +162,12 @@ export default function ReportsPage() {
       fetchAll();
     } else if (activeTab === 'inventory-reports') {
       fetchArchivedReports();
+    } else if (activeTab === 'adhoc-reports') {
+      fetchAdhocReports();
+    } else if (activeTab === 'stock-correctness-reports') {
+      fetchStockCorrectnessReports();
     }
-  }, [date, activeTab]);
+  }, [date, activeTab, adhocReportMode, adhocReportStartDate, adhocReportEndDate, scReportMode, scReportStartDate, scReportEndDate]);
 
   const handleDownloadArchived = async (report) => {
     try {
@@ -147,7 +206,7 @@ export default function ReportsPage() {
       <div className="page-header" style={{ marginBottom: 16 }}>
         <div>
           <h1 className="page-title">Reports & Analytics</h1>
-          <p className="page-subtitle">Daily, monthly, customer performance & archived inventory reports</p>
+          <p className="page-subtitle">Daily, monthly, customer performance, AdHoc product sales, stock correctness & archived inventory reports</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           {activeTab === 'analytics' && (
@@ -156,20 +215,36 @@ export default function ReportsPage() {
               <input id="reports-date" type="date" className="form-input" style={{ paddingLeft: 36 }} value={date} onChange={e => setDate(e.target.value)} />
             </div>
           )}
-          <button className="btn btn-secondary btn-sm" onClick={activeTab === 'analytics' ? fetchAll : fetchArchivedReports}>
-            <MdRefresh className={loading || archivedLoading ? 'spin' : ''} /> Refresh
+          <button className="btn btn-secondary btn-sm" onClick={activeTab === 'analytics' ? fetchAll : activeTab === 'adhoc-reports' ? fetchAdhocReports : activeTab === 'stock-correctness-reports' ? fetchStockCorrectnessReports : fetchArchivedReports}>
+            <MdRefresh className={loading || archivedLoading || adhocLoading || scReportLoading ? 'spin' : ''} /> Refresh
           </button>
         </div>
       </div>
 
       {/* Navigation Tabs */}
       <div className="card" style={{ marginBottom: 20 }}>
-        <div className="card-body" style={{ padding: '10px 16px', display: 'flex', gap: 10 }}>
+        <div className="card-body" style={{ padding: '10px 16px', display: 'flex', gap: 10, flexWrap: 'wrap' }}>
           <button
             className={`btn btn-sm ${activeTab === 'analytics' ? 'btn-primary' : 'btn-secondary'}`}
             onClick={() => setActiveTab('analytics')}
           >
             <MdAnalytics /> Analytics & Metrics
+          </button>
+          <button
+            className={`btn btn-sm ${activeTab === 'stock-correctness-reports' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setActiveTab('stock-correctness-reports')}
+            id="reports-tab-stock-correctness"
+            style={{ background: activeTab === 'stock-correctness-reports' ? 'linear-gradient(135deg, #10b981, #059669)' : '', borderColor: activeTab === 'stock-correctness-reports' ? '#10b981' : '' }}
+          >
+            <MdCheckCircle /> Stock Correctness Reports
+          </button>
+          <button
+            className={`btn btn-sm ${activeTab === 'adhoc-reports' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setActiveTab('adhoc-reports')}
+            id="reports-tab-adhoc"
+            style={{ background: activeTab === 'adhoc-reports' ? 'linear-gradient(135deg, #d97706, #b45309)' : '', borderColor: activeTab === 'adhoc-reports' ? '#d97706' : '' }}
+          >
+            <MdInventory2 /> AdHoc Product Reports
           </button>
           <button
             className={`btn btn-sm ${activeTab === 'inventory-reports' ? 'btn-primary' : 'btn-secondary'}`}
@@ -344,6 +419,153 @@ export default function ReportsPage() {
             </div>
           )}
         </>
+      ) : activeTab === 'adhoc-reports' ? (
+        /* AdHoc Product Reports Tab */
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
+          {/* Controls Bar */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-body" style={{ padding: '14px 20px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label style={{ fontSize: 13, fontWeight: 700 }}>Report Mode:</label>
+                  <select
+                    className="form-input"
+                    style={{ width: 140 }}
+                    value={adhocReportMode}
+                    onChange={e => setAdhocReportMode(e.target.value)}
+                  >
+                    <option value="daily">Daily Report</option>
+                    <option value="monthly">Monthly Report</option>
+                    <option value="custom">Custom Date Range</option>
+                  </select>
+                </div>
+
+                {adhocReportMode === 'daily' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Target Date:</label>
+                    <input type="date" className="form-input" style={{ width: 150 }} value={date} onChange={e => setDate(e.target.value)} />
+                  </div>
+                )}
+
+                {adhocReportMode === 'custom' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <input type="date" className="form-input" value={adhocReportStartDate} onChange={e => setAdhocReportStartDate(e.target.value)} />
+                    <span style={{ color: 'var(--text-muted)' }}>to</span>
+                    <input type="date" className="form-input" value={adhocReportEndDate} onChange={e => setAdhocReportEndDate(e.target.value)} />
+                  </div>
+                )}
+              </div>
+
+              <button className="btn btn-primary" style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', border: 'none' }} onClick={handleGenerateReportDirect}>
+                <MdFileDownload /> Download AdHoc Excel Report
+              </button>
+            </div>
+          </div>
+
+          {/* AdHoc Summary KPI Grid */}
+          {adhocReportData?.totals && (
+            <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
+              <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
+                <div className="stat-value" style={{ color: 'var(--primary)' }}>{adhocReportData.totals.totalTaken || 0}</div>
+                <div className="stat-label">Total DP Stock Issued</div>
+              </div>
+              <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
+                <div className="stat-value" style={{ color: 'var(--success)' }}>{adhocReportData.totals.totalSold || 0}</div>
+                <div className="stat-label">Total AdHoc Units Sold</div>
+              </div>
+              <div className="stat-card" style={{ '--card-accent': 'var(--warning)' }}>
+                <div className="stat-value" style={{ color: 'var(--warning)' }}>{adhocReportData.totals.totalReturned || 0}</div>
+                <div className="stat-label">Total Units Returned</div>
+              </div>
+              <div className="stat-card" style={{ '--card-accent': '#d97706' }}>
+                <div className="stat-value" style={{ color: '#d97706' }}>₹{(adhocReportData.totals.totalRevenue || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                <div className="stat-label">Total AdHoc Revenue</div>
+              </div>
+            </div>
+          )}
+
+          {/* Central AdHoc Inventory Table */}
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-header" style={{ background: 'linear-gradient(135deg, rgba(217,119,6,0.06), rgba(245,158,11,0.02))' }}>
+              <span className="card-title" style={{ color: '#d97706' }}>Central AdHoc Inventory Summary</span>
+            </div>
+            <div className="table-wrapper">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Product Name</th>
+                    <th>SKU</th>
+                    <th>Opening</th>
+                    <th>Added</th>
+                    <th>DP Issued</th>
+                    <th>Remaining</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(adhocReportData?.centralSummary || []).length === 0 ? (
+                    <tr><td colSpan={7} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No central AdHoc inventory data.</td></tr>
+                  ) : (
+                    adhocReportData.centralSummary.map(row => (
+                      <tr key={row.id}>
+                        <td style={{ fontWeight: 700 }}>{row.name}</td>
+                        <td><code>{row.sku}</code></td>
+                        <td>{row.openingStock} {row.unit}</td>
+                        <td style={{ color: 'var(--success)', fontWeight: 700 }}>+{row.addedStock}</td>
+                        <td style={{ color: 'var(--primary)', fontWeight: 700 }}>{row.dpIssuedStock}</td>
+                        <td style={{ fontWeight: 800 }}>{row.remainingStock} {row.unit}</td>
+                        <td><span className="badge badge-warning">{row.status}</span></td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* DP AdHoc Sales Audit Breakdown Table */}
+          <div className="card">
+            <div className="card-header" style={{ background: 'linear-gradient(135deg, rgba(217,119,6,0.06), rgba(245,158,11,0.02))' }}>
+              <span className="card-title" style={{ color: '#d97706' }}>Delivery Person (DP) AdHoc Sales Breakdown</span>
+            </div>
+            <div className="table-wrapper">
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th>DP Name</th>
+                    <th>Route</th>
+                    <th>Product</th>
+                    <th>Taken</th>
+                    <th>Sold</th>
+                    <th>Returned</th>
+                    <th>Remaining</th>
+                    <th>Sales Amount (₹)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(adhocReportData?.dpSalesAudit || []).length === 0 ? (
+                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>No DP AdHoc sales records for this period.</td></tr>
+                  ) : (
+                    adhocReportData.dpSalesAudit.map(row => (
+                      <tr key={row.id}>
+                        <td>{row.date}</td>
+                        <td style={{ fontWeight: 700 }}>{row.dp_name}</td>
+                        <td><span className="badge badge-gray">{row.route_name}</span></td>
+                        <td style={{ fontWeight: 600 }}>{row.product_name}</td>
+                        <td>{row.quantity_taken}</td>
+                        <td style={{ color: 'var(--success)', fontWeight: 800 }}>{row.quantity_sold}</td>
+                        <td style={{ color: 'var(--warning)' }}>{row.quantity_returned}</td>
+                        <td>{row.quantity_remaining}</td>
+                        <td style={{ fontWeight: 800, color: '#d97706' }}>₹{parseFloat(row.total_sales_amount || 0).toFixed(2)}</td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </motion.div>
       ) : (
         /* Inventory Reports Archive Tab */
         <div className="card">
@@ -482,6 +704,109 @@ export default function ReportsPage() {
                   </tbody>
                 </table>
               </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── TAB: STOCK CORRECTNESS REPORTS ── */}
+      {activeTab === 'stock-correctness-reports' && (
+        <div className="card">
+          <div className="card-header" style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.06), rgba(5,150,105,0.02))', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
+            <div>
+              <span className="card-title" style={{ color: '#10b981', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MdCheckCircle style={{ fontSize: 22 }} /> STOCK CORRECTNESS REPORT SYSTEM
+              </span>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                Daily, monthly & custom date range stock reconciliation reports for Milk products
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.05)', padding: 3, borderRadius: 8 }}>
+                <button
+                  className={`btn btn-sm ${scReportMode === 'daily' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 12, padding: '4px 12px', background: scReportMode === 'daily' ? '#10b981' : 'transparent', border: 'none', color: scReportMode === 'daily' ? '#fff' : 'var(--text-secondary)' }}
+                  onClick={() => setScReportMode('daily')}
+                >
+                  Daily Report
+                </button>
+                <button
+                  className={`btn btn-sm ${scReportMode === 'monthly' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 12, padding: '4px 12px', background: scReportMode === 'monthly' ? '#10b981' : 'transparent', border: 'none', color: scReportMode === 'monthly' ? '#fff' : 'var(--text-secondary)' }}
+                  onClick={() => setScReportMode('monthly')}
+                >
+                  Monthly Report
+                </button>
+                <button
+                  className={`btn btn-sm ${scReportMode === 'custom' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 12, padding: '4px 12px', background: scReportMode === 'custom' ? '#10b981' : 'transparent', border: 'none', color: scReportMode === 'custom' ? '#fff' : 'var(--text-secondary)' }}
+                  onClick={() => setScReportMode('custom')}
+                >
+                  Custom Date Range
+                </button>
+              </div>
+
+              {scReportMode === 'custom' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <input type="date" className="form-input" style={{ fontSize: 12, padding: '4px 8px' }} value={scReportStartDate} onChange={e => setScReportStartDate(e.target.value)} />
+                  <span style={{ fontSize: 12 }}>to</span>
+                  <input type="date" className="form-input" style={{ fontSize: 12, padding: '4px 8px' }} value={scReportEndDate} onChange={e => setScReportEndDate(e.target.value)} />
+                </div>
+              )}
+
+              <button className="btn btn-secondary btn-sm" onClick={fetchStockCorrectnessReports} disabled={scReportLoading}>
+                <MdRefresh className={scReportLoading ? 'spin' : ''} /> {scReportLoading ? 'Loading...' : 'Generate'}
+              </button>
+            </div>
+          </div>
+
+          <div className="table-wrapper" style={{ padding: '16px 20px' }}>
+            {scReportLoading ? (
+              <div style={{ textAlign: 'center', padding: '40px 0' }}>Generating Stock Correctness Report...</div>
+            ) : !scReportData || scReportData.totalRecords === 0 ? (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--text-muted)' }}>No stock correctness report records found for the selected period.</div>
+            ) : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Operational Day</th>
+                    <th>Product Name</th>
+                    <th>Expected Stock</th>
+                    <th>Manager Logged Stock</th>
+                    <th>Difference</th>
+                    <th>Status</th>
+                    <th>Review Status</th>
+                    <th>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scReportData.data.map((row, idx) => (
+                    <tr key={row.id || idx}>
+                      <td style={{ fontWeight: 800 }}>{row.operationalDay}</td>
+                      <td style={{ fontWeight: 700 }}>{row.productName}</td>
+                      <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{row.expectedStock}</td>
+                      <td style={{ fontWeight: 700 }}>{row.managerLoggedStock !== null ? row.managerLoggedStock : <span style={{ color: '#d97706', fontStyle: 'italic' }}>Not Logged</span>}</td>
+                      <td style={{ fontWeight: 800, color: row.difference < 0 ? '#ef4444' : row.difference > 0 ? '#10b981' : 'var(--text-muted)' }}>
+                        {row.difference > 0 ? `+${row.difference}` : row.difference}
+                      </td>
+                      <td>
+                        <span className={`badge ${row.status === 'Correct' ? 'badge-success' : row.status === 'Mismatch' ? 'badge-danger' : 'badge-warning'}`}>
+                          {row.status}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${row.reviewStatus === 'Resolved' ? 'badge-success' : row.reviewStatus === 'Reviewed' ? 'badge-warning' : 'badge-danger'}`}>
+                          {row.reviewStatus || 'Pending Review'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                        {row.remarks || '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             )}
           </div>
         </div>

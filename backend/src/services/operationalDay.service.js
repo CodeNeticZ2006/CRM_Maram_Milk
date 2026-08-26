@@ -251,6 +251,64 @@ const executeDailyRollover = async (currentOpDateInput, targetNextDateInput) => 
         [randomUUID(), nextDateStr, prevClosing]
       );
 
+      // 4e. AdHoc Central Inventory Rollover
+      try {
+        const adhocProdsRes = await readFromCRM(`SELECT id FROM products WHERE category = 'AdHoc' AND status = 'Active'`);
+        const adhocProds = adhocProdsRes.rows || [];
+
+        for (const p of adhocProds) {
+          const currAdhocRes = await readFromCRM(
+            `SELECT remaining_stock FROM adhoc_central_inventory WHERE product_id = $1 AND date = $2`,
+            [p.id, currentOpDate]
+          );
+          let prevRemaining = 0;
+          if (currAdhocRes.rows.length > 0) {
+            prevRemaining = parseFloat(currAdhocRes.rows[0].remaining_stock || 0);
+          }
+
+          await writeToCRM(
+            `INSERT INTO adhoc_central_inventory (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_at)
+             VALUES ($1, $2, $3, $4, 0, 0, $4, NOW())
+             ON CONFLICT (product_id, date) DO UPDATE SET
+               opening_stock = $4,
+               remaining_stock = $4,
+               added_stock = 0,
+               dp_issued_stock = 0,
+               updated_at = NOW()`,
+            [randomUUID(), p.id, nextDateStr, prevRemaining]
+          );
+        }
+      } catch (adhocErr) {
+        console.warn('⚠️ AdHoc central rollover sub-step warning:', adhocErr.message);
+      }
+
+      // 4f. AdHoc DP Stock Rollover (carry forward remaining physical stock per DP)
+      try {
+        const currDpStockRes = await readFromCRM(
+          `SELECT * FROM adhoc_dp_stock WHERE date = $1 AND quantity_remaining > 0`,
+          [currentOpDate]
+        );
+        for (const dpStock of (currDpStockRes.rows || [])) {
+          const remainingToCarry = parseFloat(dpStock.quantity_remaining || 0);
+          if (remainingToCarry > 0) {
+            await writeToCRM(
+              `INSERT INTO adhoc_dp_stock (id, date, dp_ref_id, dp_name, route_id, route_name, product_id, product_name, quantity_taken, quantity_sold, quantity_returned, quantity_remaining, selling_price, total_sales_amount, updated_at)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 0, 0, $9, $10, 0, NOW())
+               ON CONFLICT (date, dp_ref_id, route_id, product_id) DO UPDATE SET
+                 quantity_taken = EXCLUDED.quantity_taken,
+                 quantity_remaining = EXCLUDED.quantity_remaining,
+                 quantity_sold = 0,
+                 quantity_returned = 0,
+                 total_sales_amount = 0,
+                 updated_at = NOW()`,
+              [randomUUID(), nextDateStr, dpStock.dp_ref_id, dpStock.dp_name, dpStock.route_id, dpStock.route_name, dpStock.product_id, dpStock.product_name, remainingToCarry, dpStock.selling_price]
+            );
+          }
+        }
+      } catch (adhocDpErr) {
+        console.warn('⚠️ AdHoc DP stock rollover sub-step warning:', adhocDpErr.message);
+      }
+
       console.log(`✅ [INVENTORY ROLLOVER] Inventory stock carried forward from ${currentOpDate} to ${nextDateStr}.`);
     } catch (invErr) {
       console.warn('⚠️ Inventory rollover sub-step warning:', invErr.message);

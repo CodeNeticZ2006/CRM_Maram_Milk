@@ -45,6 +45,10 @@ export default function Topbar({ onToggleMobileSidebar }) {
   const [showOpModal, setShowOpModal] = useState(false);
   const [loadingRollover, setLoadingRollover] = useState(false);
 
+  const [notifications, setNotifications] = useState([]);
+  const [unreadCount, setUnreadCount] = useState(0);
+  const [showNotifDropdown, setShowNotifDropdown] = useState(false);
+
   const fetchOpDay = async () => {
     try {
       const res = await api.get('/operational-day/current');
@@ -56,11 +60,32 @@ export default function Topbar({ onToggleMobileSidebar }) {
     }
   };
 
+  const fetchNotifications = async () => {
+    try {
+      const res = await api.get('/notifications');
+      if (res.data?.success) {
+        setNotifications(res.data.data || []);
+        setUnreadCount(res.data.unreadCount || 0);
+      }
+    } catch { /* silent */ }
+  };
+
   useEffect(() => {
     fetchOpDay();
-    const interval = setInterval(fetchOpDay, 60000); // refresh every minute
+    fetchNotifications();
+    const interval = setInterval(() => {
+      fetchOpDay();
+      fetchNotifications();
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
+
+  const handleMarkRead = async (notifId = null, markAll = false) => {
+    try {
+      await api.post('/notifications/mark-read', { notificationId: notifId, markAll });
+      fetchNotifications();
+    } catch { /* silent */ }
+  };
 
   const handleManualRolloverCheck = async () => {
     setLoadingRollover(true);
@@ -96,7 +121,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
         </div>
       </div>
 
-      <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+      <div className="topbar-actions" style={{ display: 'flex', alignItems: 'center', gap: 12, position: 'relative' }}>
         {/* Operational Day Indicator Badge */}
         {opDayData && (
           <button
@@ -136,9 +161,120 @@ export default function Topbar({ onToggleMobileSidebar }) {
           </button>
         )}
 
-        <button className="icon-btn" id="notifications-btn" title="Notifications">
-          <MdNotifications />
-        </button>
+        {/* Bell Notifications Button */}
+        <div style={{ position: 'relative' }}>
+          <button
+            className="icon-btn"
+            id="notifications-btn"
+            title="Notifications"
+            onClick={() => setShowNotifDropdown(!showNotifDropdown)}
+            style={{ position: 'relative' }}
+          >
+            <MdNotifications style={{ fontSize: 22 }} />
+            {unreadCount > 0 && (
+              <span
+                style={{
+                  position: 'absolute',
+                  top: 2,
+                  right: 2,
+                  background: '#ef4444',
+                  color: '#fff',
+                  fontSize: 10,
+                  fontWeight: 900,
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  border: '2px solid #fff',
+                }}
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </span>
+            )}
+          </button>
+
+          {/* Notifications Overlay Dropdown */}
+          <AnimatePresence>
+            {showNotifDropdown && (
+              <motion.div
+                initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                style={{
+                  position: 'absolute',
+                  right: 0,
+                  top: 48,
+                  width: 360,
+                  maxHeight: 440,
+                  background: '#fff',
+                  border: '1px solid var(--border)',
+                  borderRadius: 12,
+                  boxShadow: '0 10px 25px -5px rgba(0,0,0,0.2)',
+                  zIndex: 1000,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  overflow: 'hidden',
+                }}
+              >
+                <div style={{ padding: '12px 16px', background: '#f8fafc', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div style={{ fontWeight: 800, fontSize: 14, color: 'var(--text-primary)' }}>
+                    Notifications ({unreadCount} new)
+                  </div>
+                  {unreadCount > 0 && (
+                    <button
+                      className="btn btn-ghost btn-sm"
+                      style={{ fontSize: 11, color: 'var(--primary)', padding: '2px 6px' }}
+                      onClick={() => handleMarkRead(null, true)}
+                    >
+                      Mark all as read
+                    </button>
+                  )}
+                </div>
+
+                <div style={{ overflowY: 'auto', flex: 1, padding: '8px 0' }}>
+                  {notifications.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '30px 16px', color: 'var(--text-muted)', fontSize: 13 }}>
+                      No notifications yet.
+                    </div>
+                  ) : (
+                    notifications.map(n => (
+                      <div
+                        key={n.id}
+                        style={{
+                          padding: '10px 16px',
+                          borderBottom: '1px solid #f1f5f9',
+                          background: n.isRead ? 'transparent' : 'rgba(239,68,68,0.03)',
+                          cursor: 'pointer',
+                          display: 'flex',
+                          gap: 10,
+                          alignItems: 'flex-start',
+                        }}
+                        onClick={() => {
+                          handleMarkRead(n.id);
+                          setShowNotifDropdown(false);
+                          window.location.href = `${n.linkUrl || '/inventory'}?tab=stock-correctness`;
+                        }}
+                      >
+                        <div style={{ fontSize: 18, marginTop: 2 }}>
+                          {n.type === 'Mismatch' ? '🔴' : n.type === 'Missing Log' ? '⚠️' : 'ℹ️'}
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{n.title}</div>
+                          <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2, lineHeight: 1.35 }}>{n.message}</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 4 }}>
+                            {new Date(n.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}
+                          </div>
+                        </div>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
 
       {/* Operational Day Modal */}

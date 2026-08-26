@@ -308,8 +308,69 @@ const downloadArchivedReport = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─────────────────────────────────────────────
+// GET /api/reports/stock-correctness — Stock Correctness Report
+// ─────────────────────────────────────────────
+const getStockCorrectnessReport = async (req, res, next) => {
+  try {
+    const { type = 'daily', date, startDate, endDate, month, year } = req.query;
+    const istToday = getExpectedOperationalDate();
+
+    let whereClauses = [];
+    let params = [];
+
+    if (type === 'daily') {
+      const targetDate = date || istToday;
+      params.push(targetDate);
+      whereClauses.push(`operational_day = $${params.length}`);
+    } else if (type === 'monthly') {
+      const m = month ? String(month).padStart(2, '0') : String(new Date().getMonth() + 1).padStart(2, '0');
+      const y = year || new Date().getFullYear();
+      const monthPrefix = `${y}-${m}`;
+      params.push(`${monthPrefix}%`);
+      whereClauses.push(`operational_day::TEXT LIKE $${params.length}`);
+    } else if (type === 'custom' && startDate && endDate) {
+      params.push(startDate);
+      whereClauses.push(`operational_day >= $${params.length}`);
+      params.push(endDate);
+      whereClauses.push(`operational_day <= $${params.length}`);
+    }
+
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const result = await readFromCRM(
+      `SELECT id, operational_day::TEXT AS "operationalDay",
+              product_id AS "productId", product_name AS "productName",
+              expected_quantity AS "expectedStock",
+              manager_logged_quantity AS "managerLoggedStock",
+              difference, status, review_status AS "reviewStatus",
+              remarks, reviewed_by AS "reviewedBy", detected_at AS "detectedAt"
+       FROM stock_correctness_logs
+       ${whereStr}
+       ORDER BY operational_day DESC, product_name ASC`,
+      params
+    );
+
+    const rows = result.rows.map(r => ({
+      ...r,
+      expectedStock: parseFloat(r.expectedStock || 0),
+      managerLoggedStock: r.managerLoggedStock !== null ? parseFloat(r.managerLoggedStock) : null,
+      difference: parseFloat(r.difference || 0),
+    }));
+
+    return res.json({
+      success: true,
+      reportType: 'Stock Correctness',
+      filterType: type,
+      totalRecords: rows.length,
+      data: rows,
+    });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getDailySummary, getMonthlyReport, getRevenueTrend,
   getCustomerAnalysis, getFeedback, getSmsLog, getLogisticsOverview,
-  getArchivedReports, downloadArchivedReport,
+  getArchivedReports, downloadArchivedReport, getStockCorrectnessReport,
 };
+

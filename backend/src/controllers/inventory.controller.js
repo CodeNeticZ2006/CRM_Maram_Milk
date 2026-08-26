@@ -1557,6 +1557,196 @@ const generateInventoryReport = async (req, res, next) => {
 
     ws3.columns.forEach(col => { col.width = 24; });
 
+    // ── SHEET 4: ADHOC INVENTORY & DP SALES ─────────────────────────────────────
+    const ws4 = workbook.addWorksheet('AdHoc Inventory & DP Sales');
+    applyHeaderBlock(ws4, 'AdHoc Inventory & DP Sales');
+
+    try {
+      let adhocWhere = `c.date = $1`;
+      let adhocParams = [targetDate];
+
+      if (isRange) {
+        adhocWhere = `c.date >= $1 AND c.date <= $2`;
+        adhocParams = [startDate, endDate];
+      }
+
+      // Fetch Central AdHoc Inventory data
+      const adhocCentralRes = await readFromCRM(
+        `SELECT
+           p.name as "productName", p.sku, p.unit, p.price_per_unit,
+           COALESCE(SUM(c.opening_stock), 0) as opening,
+           COALESCE(SUM(c.added_stock), 0) as added,
+           COALESCE(SUM(c.dp_issued_stock), 0) as dp_issued,
+           COALESCE(SUM(c.remaining_stock), 0) as remaining
+         FROM products p
+         LEFT JOIN adhoc_central_inventory c ON c.product_id = p.id AND ${adhocWhere}
+         WHERE p.category = 'AdHoc' AND p.status = 'Active'
+         GROUP BY p.id, p.name, p.sku, p.unit, p.price_per_unit
+         ORDER BY p.name ASC`,
+        adhocParams
+      );
+      const adhocCentralRows = adhocCentralRes.rows || [];
+
+      // Fetch DP AdHoc Sales data
+      let dpWhereStr = `date = $1`;
+      let dpParams = [targetDate];
+
+      if (isRange) {
+        dpWhereStr = `date >= $1 AND date <= $2`;
+        dpParams = [startDate, endDate];
+      }
+
+      const adhocDpRes = await readFromCRM(
+        `SELECT
+           dp_name, route_name, product_name,
+           SUM(quantity_taken) as taken,
+           SUM(quantity_sold) as sold,
+           SUM(quantity_returned) as returned,
+           SUM(quantity_remaining) as remaining,
+           SUM(total_sales_amount) as revenue
+         FROM adhoc_dp_stock
+         WHERE ${dpWhereStr}
+         GROUP BY dp_name, route_name, product_name
+         ORDER BY dp_name ASC, product_name ASC`,
+        dpParams
+      );
+      const adhocDpRows = adhocDpRes.rows || [];
+
+      // Header Block 1: Central AdHoc Inventory
+      const s4TitleRow = ws4.addRow(['ADHOC CENTRAL INVENTORY SUMMARY']);
+      s4TitleRow.getCell(1).font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF047857' } };
+      ws4.mergeCells(`A${s4TitleRow.number}:G${s4TitleRow.number}`);
+
+      const s4Header1 = ws4.addRow([
+        'Product Name', 'SKU', 'Unit', 'Opening Stock', 'Added Stock', 'DP Issued Stock', 'Closing Central Stock'
+      ]);
+      styleTableHeader(s4Header1);
+
+      let totOpening = 0, totAdded = 0, totIssued = 0, totRemaining = 0;
+
+      adhocCentralRows.forEach(row => {
+        const op = parseFloat(row.opening || 0);
+        const ad = parseFloat(row.added || 0);
+        const is = parseFloat(row.dp_issued || 0);
+        const rm = parseFloat(row.remaining || 0);
+
+        totOpening += op;
+        totAdded += ad;
+        totIssued += is;
+        totRemaining += rm;
+
+        const dataRow = ws4.addRow([
+          row.productName, row.sku || '-', row.unit || 'Units', op, ad, is, rm
+        ]);
+
+        dataRow.eachCell((cell, colIndex) => {
+          cell.font = { name: 'Calibri', size: 10.5 };
+          cell.border = {
+            top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+          };
+          if (colIndex >= 4 && colIndex <= 7) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            cell.numFmt = '#,##0';
+          } else if (colIndex <= 3) {
+            cell.alignment = { horizontal: 'center', vertical: 'middle' };
+          }
+        });
+        dataRow.height = 20;
+      });
+
+      const totRow1 = ws4.addRow(['TOTAL ADHOC CENTRAL STOCK', '', '', totOpening, totAdded, totIssued, totRemaining]);
+      ws4.mergeCells(`A${totRow1.number}:C${totRow1.number}`);
+      totRow1.eachCell((cell, colIndex) => {
+        cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FF047857' } };
+        cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFECFDF5' } };
+        cell.border = {
+          top: { style: 'medium', color: { argb: 'FF047857' } },
+          bottom: { style: 'double', color: { argb: 'FF047857' } },
+        };
+        if (colIndex >= 4) cell.alignment = { horizontal: 'right', vertical: 'middle' };
+      });
+
+      ws4.addRow([]); // Blank Row
+
+      // Header Block 2: DP AdHoc Sales Audit
+      const s4TitleRow2 = ws4.addRow(['DP ADHOC SALES & AUDIT BREAKDOWN']);
+      s4TitleRow2.getCell(1).font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFB45309' } };
+      ws4.mergeCells(`A${s4TitleRow2.number}:H${s4TitleRow2.number}`);
+
+      const s4Header2 = ws4.addRow([
+        'DP Name', 'Route Name', 'Product Name', 'Taken', 'Sold', 'Returned', 'Remaining', 'Total Revenue (₹)'
+      ]);
+      styleTableHeader(s4Header2);
+
+      let dpTotTaken = 0, dpTotSold = 0, dpTotRet = 0, dpTotRem = 0, dpTotRev = 0;
+
+      if (adhocDpRows.length === 0) {
+        const emptyDpRow = ws4.addRow(['No DP AdHoc sales recorded for the selected period.']);
+        ws4.mergeCells(`A${emptyDpRow.number}:H${emptyDpRow.number}`);
+        emptyDpRow.getCell(1).alignment = { horizontal: 'center' };
+        emptyDpRow.getCell(1).font = { italic: true, color: { argb: 'FF9CA3AF' } };
+      } else {
+        adhocDpRows.forEach(row => {
+          const tk = parseFloat(row.taken || 0);
+          const sd = parseFloat(row.sold || 0);
+          const rt = parseFloat(row.returned || 0);
+          const rm = parseFloat(row.remaining || 0);
+          const rv = parseFloat(row.revenue || 0);
+
+          dpTotTaken += tk;
+          dpTotSold += sd;
+          dpTotRet += rt;
+          dpTotRem += rm;
+          dpTotRev += rv;
+
+          const dataRow = ws4.addRow([
+            row.dp_name, row.route_name || 'General Route', row.product_name, tk, sd, rt, rm, rv
+          ]);
+
+          dataRow.eachCell((cell, colIndex) => {
+            cell.font = { name: 'Calibri', size: 10.5 };
+            cell.border = {
+              top: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              bottom: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              left: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+              right: { style: 'thin', color: { argb: 'FFE5E7EB' } },
+            };
+            if (colIndex >= 4 && colIndex <= 7) {
+              cell.alignment = { horizontal: 'right', vertical: 'middle' };
+              cell.numFmt = '#,##0';
+            } else if (colIndex === 8) {
+              cell.alignment = { horizontal: 'right', vertical: 'middle' };
+              cell.numFmt = '₹#,##0.00';
+            }
+          });
+          dataRow.height = 20;
+        });
+
+        const totRow2 = ws4.addRow(['TOTAL DP ADHOC SALES', '', '', dpTotTaken, dpTotSold, dpTotRet, dpTotRem, dpTotRev]);
+        ws4.mergeCells(`A${totRow2.number}:C${totRow2.number}`);
+        totRow2.eachCell((cell, colIndex) => {
+          cell.font = { name: 'Calibri', size: 11, bold: true, color: { argb: 'FFB45309' } };
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFEF3C7' } };
+          cell.border = {
+            top: { style: 'medium', color: { argb: 'FFB45309' } },
+            bottom: { style: 'double', color: { argb: 'FFB45309' } },
+          };
+          if (colIndex >= 4 && colIndex <= 7) cell.alignment = { horizontal: 'right', vertical: 'middle' };
+          if (colIndex === 8) {
+            cell.alignment = { horizontal: 'right', vertical: 'middle' };
+            cell.numFmt = '₹#,##0.00';
+          }
+        });
+      }
+    } catch (e) {
+      console.warn('⚠️ AdHoc Sheet generation warning:', e.message);
+    }
+
+    ws4.columns.forEach(col => { col.width = 24; });
+
     // Generate Excel Buffer
     const buffer = await workbook.xlsx.writeBuffer();
     const base64Data = buffer.toString('base64');

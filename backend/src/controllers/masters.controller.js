@@ -11,11 +11,12 @@ const getProducts = async (req, res, next) => {
 
 const createProduct = async (req, res, next) => {
   try {
-    const { name, category, unit, price_per_unit, image_url, status = 'Active' } = req.body;
+    const { name, category, unit, price_per_unit, sku, image_url, status = 'Active' } = req.body;
     if (!name || !unit || !price_per_unit) return res.status(400).json({ success: false, message: 'Name, unit, and price required.' });
+    const generatedSku = sku || `SKU-${Date.now().toString(36).toUpperCase()}`;
     const result = await writeToCRM(
-      'INSERT INTO products (name, category, unit, price_per_unit, image_url, status) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
-      [name, category || 'Milk', unit, price_per_unit, image_url || null, status]
+      'INSERT INTO products (name, category, unit, price_per_unit, sku, image_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
+      [name, category || 'Milk', unit, price_per_unit, generatedSku, image_url || null, status]
     );
     res.status(201).json({ success: true, data: result.rows[0] });
   } catch (err) { next(err); }
@@ -24,10 +25,10 @@ const createProduct = async (req, res, next) => {
 const updateProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, category, unit, price_per_unit, image_url, status } = req.body;
+    const { name, category, unit, price_per_unit, sku, image_url, status } = req.body;
     await writeToCRM(
-      'UPDATE products SET name=$1, category=$2, unit=$3, price_per_unit=$4, image_url=$5, status=$6 WHERE id=$7',
-      [name, category, unit, price_per_unit, image_url, status, id]
+      'UPDATE products SET name=$1, category=$2, unit=$3, price_per_unit=$4, sku=$5, image_url=$6, status=$7 WHERE id=$8',
+      [name, category, unit, price_per_unit, sku, image_url, status, id]
     );
     res.json({ success: true, message: 'Product updated.' });
   } catch (err) { next(err); }

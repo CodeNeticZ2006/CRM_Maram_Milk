@@ -1,5 +1,6 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useEffect, useCallback } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   MdInventory, MdAdd, MdHistory, MdWarningAmber,
   MdCheckCircle, MdErrorOutline, MdRefresh, MdSearch,
@@ -19,6 +20,7 @@ import '../../pages/RouteIntelligence/components/RouteIntelligence.css';
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
 export default function InventoryPage() {
+  const location = useLocation();
   const { admin } = useAuthStore();
   const isSuperAdmin = (admin?.email || '').toLowerCase() === 'admin@marammilk.com' ||
                        admin?.role === 'SuperAdmin' || admin?.role === 'Super Admin';
@@ -26,8 +28,10 @@ export default function InventoryPage() {
   // Get active operational day from backend (7:00 PM IST boundary — source of truth)
   const { operationalDate, displayDate: opDisplayDate, loading: opDayLoading } = useOperationalDay();
 
-  const [activeTab, setActiveTab]         = useState('inventory'); // 'inventory' | 'history' | 'attendance'
+  const [activeTab, setActiveTab]         = useState('inventory'); // 'inventory' | 'history' | 'manager-inventory' | 'stock-correctness'
   const [items, setItems]                 = useState([]);
+  const [adhocItems, setAdhocItems]       = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'milk' | 'adhoc'
   const [summary, setSummary]             = useState({ totalStock: 0, todayAddedStock: 0, lowStockCount: 0, outOfStockCount: 0, totalProducts: 0 });
   const [lowStockAlerts, setLowAlerts]   = useState([]);
   const [history, setHistory]             = useState([]);
@@ -41,8 +45,22 @@ export default function InventoryPage() {
   const [historySearch, setHistSearch]    = useState('');
   const [isDb2Synced, setIsDb2Synced]     = useState(true);
 
+  // Stock Correctness State
+  const [scSubTab, setScSubTab]                     = useState('today'); // 'today' | 'history'
+  const [scData, setScData]                         = useState(null);
+  const [scLoading, setScLoading]                   = useState(false);
+  const [scHistory, setScHistory]                   = useState([]);
+  const [scHistoryLoading, setScHistoryLoading]     = useState(false);
+  const [scSelectedHistory, setScSelectedHistory]   = useState(null);
+  const [scHistoryDetailLoading, setScHistoryDetailLoading] = useState(false);
+  const [showReviewModal, setShowReviewModal]       = useState(false);
+  const [reviewItem, setReviewItem]                 = useState(null);
+  const [reviewForm, setReviewForm]                 = useState({ reviewStatus: 'Reviewed', remarks: '' });
+  const [submittingReview, setSubmittingReview]     = useState(false);
+
   // Manager Inventory State
   const [managerInvData, setManagerInvData]       = useState(null);
+  const [adhocDpSales, setAdhocDpSales]           = useState([]);
   const [managerInvLoading, setManagerInvLoading] = useState(false);
   const [miDate, setMiDate]                       = useState('');
   const [miStartDate, setMiStartDate]             = useState('');
@@ -162,11 +180,15 @@ export default function InventoryPage() {
     return 4;
   };
 
-  // Fetch Inventory (incorporating DB2 Manager App Stock fields)
+  // Fetch Inventory (incorporating DB2 Manager App Stock fields & AdHoc Central Stock)
   const fetchInventory = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/inventory', { params: { date: selectedDate } });
+      const [res, adhocRes] = await Promise.all([
+        api.get('/inventory', { params: { date: selectedDate } }),
+        api.get('/inventory/adhoc/central', { params: { date: selectedDate } }).catch(() => ({ data: { data: [] } }))
+      ]);
+
       if (res.data?.success) {
         const rawData = res.data.data || [];
         const sortedData = [...rawData].sort((a, b) => getItemPriority(a) - getItemPriority(b));
@@ -175,6 +197,10 @@ export default function InventoryPage() {
         if (res.data.lowStockAlerts) setLowAlerts(res.data.lowStockAlerts);
         if (res.data.availableDates) setAvailableDates(res.data.availableDates);
         setIsDb2Synced(true);
+      }
+
+      if (adhocRes.data?.success) {
+        setAdhocItems(adhocRes.data.data || []);
       }
     } catch {
       toast.error('Failed to load inventory stock.');
@@ -200,16 +226,23 @@ export default function InventoryPage() {
     }
   }, [historySearch]);
 
-  // Fetch Manager Inventory (ShopSale + ManagerInventoryLog from DB2)
+  // Fetch Manager Inventory (ShopSale + ManagerInventoryLog from DB2 + DP AdHoc Sales)
   const fetchManagerInventory = useCallback(async () => {
     setManagerInvLoading(true);
     try {
       const params = miRangeMode && miStartDate && miEndDate
         ? { startDate: miStartDate, endDate: miEndDate }
         : { date: miDate };
-      const res = await api.get('/inventory/manager-inventory', { params });
+      const [res, adhocDpRes] = await Promise.all([
+        api.get('/inventory/manager-inventory', { params }),
+        api.get('/inventory/adhoc/dp-stock', { params: { date: miDate } }).catch(() => ({ data: { data: [] } }))
+      ]);
+
       if (res.data?.success) {
         setManagerInvData(res.data);
+      }
+      if (adhocDpRes.data?.success) {
+        setAdhocDpSales(adhocDpRes.data.data || []);
       }
     } catch {
       toast.error('Failed to load Manager Inventory data.');
@@ -218,6 +251,84 @@ export default function InventoryPage() {
     }
   }, [miDate, miStartDate, miEndDate, miRangeMode]);
 
+  // Fetch Stock Correctness (Milk Products Only)
+  const fetchStockCorrectnessToday = useCallback(async () => {
+    setScLoading(true);
+    try {
+      const res = await api.get('/stock-correctness/today', { params: { date: selectedDate } });
+      if (res.data?.success) {
+        setScData(res.data.data);
+      }
+    } catch {
+      toast.error('Failed to load Stock Correctness data.');
+    } finally {
+      setScLoading(false);
+    }
+  }, [selectedDate]);
+
+  const fetchStockCorrectnessHistory = useCallback(async () => {
+    setScHistoryLoading(true);
+    try {
+      const res = await api.get('/stock-correctness/history');
+      if (res.data?.success) {
+        setScHistory(res.data.data || []);
+      }
+    } catch {
+      /* silent */
+    } finally {
+      setScHistoryLoading(false);
+    }
+  }, []);
+
+  const fetchStockCorrectnessDetail = async (histDate) => {
+    setScHistoryDetailLoading(true);
+    try {
+      const res = await api.get(`/stock-correctness/history/${histDate}`);
+      if (res.data?.success) {
+        setScSelectedHistory(res.data.data);
+      }
+    } catch {
+      toast.error('Failed to load history detail.');
+    } finally {
+      setScHistoryDetailLoading(false);
+    }
+  };
+
+  const handleReviewSubmit = async (e) => {
+    e.preventDefault();
+    if (!reviewItem || !reviewForm.reviewStatus) return;
+    setSubmittingReview(true);
+    try {
+      const res = await api.post('/stock-correctness/review', {
+        operationalDay: scData?.operationalDay || selectedDate,
+        productId: reviewItem.productId,
+        reviewStatus: reviewForm.reviewStatus,
+        remarks: reviewForm.remarks,
+        reviewedBy: admin?.name || 'Super Admin',
+      });
+      if (res.data?.success) {
+        toast.success(res.data.message || 'Review status updated!');
+        setShowReviewModal(false);
+        setReviewItem(null);
+        fetchStockCorrectnessToday();
+        if (scSubTab === 'history') fetchStockCorrectnessHistory();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update review status.');
+    } finally {
+      setSubmittingReview(false);
+    }
+  };
+
+  // URL query parameter listener for ?tab=stock-correctness
+  useEffect(() => {
+    const params = new URLSearchParams(location.search);
+    const tabParam = params.get('tab');
+    if (tabParam === 'stock-correctness' || tabParam === 'correctness') {
+      setActiveTab('stock-correctness');
+    }
+  }, [location.search]);
+
   useEffect(() => {
     fetchInventory();
   }, [fetchInventory]);
@@ -225,7 +336,11 @@ export default function InventoryPage() {
   useEffect(() => {
     if (activeTab === 'history') fetchHistory();
     else if (activeTab === 'manager-inventory') fetchManagerInventory();
-  }, [activeTab, fetchHistory, fetchManagerInventory]);
+    else if (activeTab === 'stock-correctness') {
+      if (scSubTab === 'today') fetchStockCorrectnessToday();
+      else if (scSubTab === 'history') fetchStockCorrectnessHistory();
+    }
+  }, [activeTab, scSubTab, fetchHistory, fetchManagerInventory, fetchStockCorrectnessToday, fetchStockCorrectnessHistory]);
 
   // DB2 Direct Stock Override Handler
   const handleDb2Update = async (e) => {
@@ -248,12 +363,17 @@ export default function InventoryPage() {
     }
   };
 
+  const allProductsForModal = [
+    ...items.map(i => ({ ...i, isAdhoc: false })),
+    ...adhocItems.map(a => ({ ...a, isAdhoc: true }))
+  ];
+
   const openAddModal = (item = null) => {
-    const targetItem = item || items[0];
+    const targetItem = item || allProductsForModal[0];
     setAddForm({
       inventoryItemId: targetItem ? targetItem.id : '',
       quantityAdded: '',
-      unit: targetItem ? targetItem.unit : 'Litres',
+      unit: targetItem ? targetItem.unit : 'Units',
       supplier: '',
       batchNumber: '',
       remarks: '',
@@ -276,10 +396,11 @@ export default function InventoryPage() {
     const qty = parseFloat(addForm.quantityAdded);
     if (isNaN(qty) || qty <= 0) return toast.error('Quantity added must be greater than 0.');
 
-    const selectedItem = items.find(i => i.id === addForm.inventoryItemId);
+    const selectedItem = allProductsForModal.find(i => i.id === addForm.inventoryItemId);
     setConfirmDialog({
       type: 'ADD',
       item: selectedItem,
+      isAdhoc: selectedItem?.isAdhoc || selectedItem?.category === 'AdHoc',
       qty,
       unit: addForm.unit,
       payload: { ...addForm, quantityAdded: qty },
@@ -305,9 +426,21 @@ export default function InventoryPage() {
   const executeAddStock = async () => {
     setSubmitting(true);
     try {
-      const res = await api.post('/inventory/add-stock', confirmDialog.payload);
+      let res;
+      if (confirmDialog.isAdhoc) {
+        res = await api.post('/inventory/adhoc/add-stock', {
+          productId: confirmDialog.item.id,
+          quantity: confirmDialog.qty,
+          date: selectedDate,
+          addedBy: admin?.name || 'Super Admin',
+          remarks: addForm.remarks,
+        });
+      } else {
+        res = await api.post('/inventory/add-stock', confirmDialog.payload);
+      }
+
       if (res.data?.success) {
-        toast.success(`Stock updated! +${confirmDialog.qty} ${confirmDialog.unit} added for ${confirmDialog.item?.name}. DB2 Synced.`);
+        toast.success(`Stock updated! +${confirmDialog.qty} ${confirmDialog.unit} added for ${confirmDialog.item?.name}.`);
         setShowAddModal(false);
         setConfirmDialog(null);
         fetchInventory();
@@ -405,6 +538,14 @@ export default function InventoryPage() {
             >
               <MdStorefront /> Manager Inventory
             </button>
+            <button
+              className={`btn btn-sm ${activeTab === 'stock-correctness' ? 'btn-primary' : 'btn-secondary'}`}
+              onClick={() => setActiveTab('stock-correctness')}
+              id="inventory-tab-correctness"
+              style={{ background: activeTab === 'stock-correctness' ? 'linear-gradient(135deg, #10b981, #059669)' : '', borderColor: activeTab === 'stock-correctness' ? '#10b981' : '' }}
+            >
+              <MdFactCheck /> Stock Correctness
+            </button>
           </div>
 
           {(activeTab === 'inventory' || activeTab === 'history') && (
@@ -426,11 +567,27 @@ export default function InventoryPage() {
       {/* ── TAB 1: CURRENT INVENTORY (Incorporating DB2 Manager App Stock fields) ────────────────────────── */}
       {activeTab === 'inventory' && (
         <div>
-          {/* Date Picker Bar */}
+          {/* Date Picker & Category Filter Bar */}
           <div style={{ background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: 10, padding: '10px 16px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-            <div style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 8 }}>
-              <MdSync style={{ color: 'var(--primary)', fontSize: 18 }} />
-              <span><strong>DB2 Manager App Live Stock (maram_milk_db)</strong> — Tracks carried-over stock, new stock added, and expected stock.</span>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                <MdFilterList style={{ color: 'var(--primary)', fontSize: 18 }} />
+                <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Category:</label>
+                <select
+                  id="inventory-category-filter"
+                  className="form-input"
+                  style={{ width: 150, padding: '5px 10px', fontSize: 13, fontWeight: 600 }}
+                  value={categoryFilter}
+                  onChange={e => setCategoryFilter(e.target.value)}
+                >
+                  <option value="all">All Products</option>
+                  <option value="milk">Milk</option>
+                  <option value="adhoc">AdHoc</option>
+                </select>
+              </div>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
+                {categoryFilter === 'adhoc' ? '📦 AdHoc inventory is distributed exclusively via Delivery Persons.' : '🥛 Milk inventory tracks DB2 live dispatches.'}
+              </span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Target Date:</label>
@@ -448,17 +605,25 @@ export default function InventoryPage() {
           <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
             <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div className="stat-value" style={{ color: 'var(--primary)' }}>{summary.totalStock.toLocaleString()}</div>
+                <div className="stat-value" style={{ color: 'var(--primary)' }}>
+                  {categoryFilter === 'adhoc'
+                    ? adhocItems.reduce((a, b) => a + b.remainingStock, 0).toLocaleString()
+                    : summary.totalStock.toLocaleString()}
+                </div>
                 <div style={{ padding: 8, borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', fontSize: 20 }}><MdInventory /></div>
               </div>
               <div className="stat-label">Total Stock Available</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Across {summary.totalProducts} registered products</div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                {categoryFilter === 'adhoc' ? `Across ${adhocItems.length} AdHoc products` : `Across ${summary.totalProducts} registered products`}
+              </div>
             </div>
 
             <div className="stat-card" style={{ '--card-accent': summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div className="stat-value" style={{ color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
-                  {summary.lowStockCount}
+                  {categoryFilter === 'adhoc'
+                    ? adhocItems.filter(i => i.status === 'Low Stock').length
+                    : summary.lowStockCount}
                 </div>
                 <div style={{ padding: 8, borderRadius: 8, background: summary.lowStockCount > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)', fontSize: 20 }}>
                   <MdWarningAmber />
@@ -472,7 +637,11 @@ export default function InventoryPage() {
 
             <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-                <div className="stat-value" style={{ color: 'var(--success)' }}>+{summary.todayAddedStock.toLocaleString()}</div>
+                <div className="stat-value" style={{ color: 'var(--success)' }}>
+                  +{categoryFilter === 'adhoc'
+                    ? adhocItems.reduce((a, b) => a + b.addedStock, 0).toLocaleString()
+                    : summary.todayAddedStock.toLocaleString()}
+                </div>
                 <div style={{ padding: 8, borderRadius: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--success)', fontSize: 20 }}><MdAdd /></div>
               </div>
               <div className="stat-label">Today's Stock Added</div>
@@ -482,7 +651,9 @@ export default function InventoryPage() {
             <div className="stat-card" style={{ '--card-accent': summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div className="stat-value" style={{ color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
-                  {summary.outOfStockCount}
+                  {categoryFilter === 'adhoc'
+                    ? adhocItems.filter(i => i.status === 'Out of Stock').length
+                    : summary.outOfStockCount}
                 </div>
                 <div style={{ padding: 8, borderRadius: 8, background: summary.outOfStockCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(6,182,212,0.1)', color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)', fontSize: 20 }}>
                   <MdErrorOutline />
@@ -495,13 +666,93 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          {/* Table with Manager App Inventory fields merged (Carried Over, New Stock Added, Current Available, Expected) */}
-          <div className="card">
-            <div className="card-header">
-              <span className="card-title">Product Stock & DB2 Manager App Inventory</span>
-              <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filteredItems.length} products</span>
+          {/* ADHOC INVENTORY TABLE (when categoryFilter === 'adhoc' or 'all') */}
+          {(categoryFilter === 'adhoc' || categoryFilter === 'all') && (
+            <div className="card" style={{ marginBottom: categoryFilter === 'all' ? 24 : 0 }}>
+              <div className="card-header" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(217,119,6,0.02))' }}>
+                <div>
+                  <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706' }}>
+                    <MdInventory2 style={{ fontSize: 20 }} />
+                    ADHOC INVENTORY
+                  </span>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Central AdHoc stock balance — Distributed exclusively via Delivery Persons (DPs)
+                  </div>
+                </div>
+                <span className="badge badge-warning" style={{ fontWeight: 700 }}>
+                  {adhocItems.length} AdHoc Products
+                </span>
+              </div>
+              <div className="table-wrapper">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th style={{ minWidth: 160 }}>Product</th>
+                      <th>SKU</th>
+                      <th>Opening</th>
+                      <th>Added</th>
+                      <th>DP Taken</th>
+                      <th>Remaining</th>
+                      <th>Status</th>
+                      <th style={{ minWidth: 100 }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {adhocItems.length === 0 ? (
+                      <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No AdHoc inventory data found.</td></tr>
+                    ) : (
+                      adhocItems.map(item => {
+                        const statusColor = item.status === 'In Stock' ? 'badge-success' : item.status === 'Low Stock' ? 'badge-warning' : 'badge-danger';
+                        return (
+                          <tr key={item.id}>
+                            <td style={{ fontWeight: 700 }}>
+                              <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{item.name}</div>
+                            </td>
+                            <td><code style={{ fontSize: 11, background: 'var(--gray-100, #f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || '-'}</code></td>
+                            <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.openingStock} {item.unit}</td>
+                            <td style={{ fontWeight: 700, color: 'var(--success)' }}>+{item.addedStock} {item.unit}</td>
+                            <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{item.dpIssuedStock} {item.unit}</td>
+                            <td>
+                              <span style={{
+                                fontSize: 15,
+                                fontWeight: 800,
+                                color: item.remainingStock <= 0 ? 'var(--danger)' : item.remainingStock <= 10 ? 'var(--warning)' : 'var(--text-primary)'
+                              }}>
+                                {item.remainingStock} {item.unit}
+                              </span>
+                            </td>
+                            <td><span className={`badge ${statusColor}`}>{item.status}</span></td>
+                            <td>
+                              <button className="btn btn-primary btn-sm" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => openAddModal({ ...item, isAdhoc: true })}>
+                                <MdAdd /> Add Stock
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
-            <div className="table-wrapper">
+          )}
+
+          {/* MILK INVENTORY TABLE (when categoryFilter === 'milk' or 'all') */}
+          {(categoryFilter === 'milk' || categoryFilter === 'all') && (
+            <div className="card">
+              <div className="card-header">
+                <div>
+                  <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--primary)' }}>
+                    <MdStorefront style={{ fontSize: 20 }} />
+                    MILK INVENTORY & DB2 LIVE STOCK
+                  </span>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                    Milk stock & dispatches tracked via DB2 Manager App
+                  </div>
+                </div>
+                <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filteredItems.length} products</span>
+              </div>
+              <div className="table-wrapper">
               <table className="table">
                 <thead>
                   <tr>
@@ -557,6 +808,7 @@ export default function InventoryPage() {
               </table>
             </div>
           </div>
+          )}
         </div>
       )}
 
@@ -1147,6 +1399,78 @@ export default function InventoryPage() {
                   )}
                 </div>
               </div>
+
+              {/* ── Section 3: DP AdHoc Inventory / AdHoc DP Sales ── */}
+              <div className="card" style={{ marginTop: 20 }}>
+                <div className="card-header" style={{ background: 'linear-gradient(135deg, rgba(217,119,6,0.06), rgba(245,158,11,0.02))' }}>
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706' }}>
+                      <MdInventory2 style={{ color: '#d97706', fontSize: 20 }} />
+                      ADHOC DP SALES & INVENTORY
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      AdHoc stock issued to Delivery Persons & reported sales (Strictly separated from Direct Shop Sales)
+                    </div>
+                  </div>
+                  <span className="badge badge-warning" style={{ fontWeight: 700 }}>
+                    {adhocDpSales.length} DP Product Records
+                  </span>
+                </div>
+
+                <div style={{ padding: '16px 20px' }}>
+                  {adhocDpSales.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>
+                      <MdInventory2 style={{ fontSize: 36, marginBottom: 8, opacity: 0.3 }} />
+                      <div>No DP AdHoc sales records found for this date.</div>
+                    </div>
+                  ) : (
+                    <div className="table-wrapper">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>#</th>
+                            <th>DP Name</th>
+                            <th>Route</th>
+                            <th>Product</th>
+                            <th style={{ color: 'var(--primary)' }}>Taken</th>
+                            <th style={{ color: 'var(--success)' }}>Sold</th>
+                            <th style={{ color: 'var(--warning)' }}>Returned</th>
+                            <th style={{ color: '#7c3aed' }}>Remaining</th>
+                            <th>Sales Revenue (₹)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adhocDpSales.map((row, idx) => {
+                            const taken = parseFloat(row.quantity_taken || 0);
+                            const sold = parseFloat(row.quantity_sold || 0);
+                            const returned = parseFloat(row.quantity_returned || 0);
+                            const remaining = parseFloat(row.quantity_remaining || 0);
+                            const revenue = parseFloat(row.total_sales_amount || 0);
+
+                            return (
+                              <tr key={row.id || idx}>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>{idx + 1}</td>
+                                <td style={{ fontWeight: 700 }}>{row.dp_name}</td>
+                                <td><span className="badge badge-gray">{row.route_name || 'General Route'}</span></td>
+                                <td style={{ fontWeight: 600 }}>{row.product_name}</td>
+                                <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{taken}</td>
+                                <td style={{ fontWeight: 800, color: 'var(--success)', fontSize: 15 }}>{sold}</td>
+                                <td style={{ color: 'var(--warning)', fontWeight: 600 }}>{returned}</td>
+                                <td>
+                                  <span className="badge badge-blue" style={{ fontWeight: 700 }}>
+                                    {remaining}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight: 800, color: '#d97706' }}>₹{revenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              </div>
             </>
           ) : (
             <div className="card" style={{ textAlign: 'center', padding: '60px 20px' }}>
@@ -1164,6 +1488,416 @@ export default function InventoryPage() {
             </div>
           )}
         </div>
+      )}
+
+      {/* ── TAB 4: STOCK CORRECTNESS (DAILY MILK STOCK RECONCILIATION) ────────────────────────── */}
+      {activeTab === 'stock-correctness' && (
+        <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
+          {/* Header Bar with Sub-tabs & Operational Day Badge */}
+          <div style={{ background: 'linear-gradient(135deg, rgba(16,185,129,0.06), rgba(5,150,105,0.02))', border: '1px solid rgba(16,185,129,0.2)', borderRadius: 12, padding: '14px 20px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 14 }}>
+            <div>
+              <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                <MdFactCheck style={{ color: '#10b981', fontSize: 22 }} /> Stock Correctness
+              </div>
+              <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3 }}>
+                Daily milk stock reconciliation between Inventory Expected Stock and Manager Inventory Log.
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              {/* Sub-tab Switcher: Today's Check | History */}
+              <div style={{ display: 'flex', gap: 4, background: 'rgba(0,0,0,0.05)', padding: 3, borderRadius: 8 }}>
+                <button
+                  className={`btn btn-sm ${scSubTab === 'today' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 12, padding: '4px 12px', background: scSubTab === 'today' ? '#10b981' : 'transparent', border: 'none', color: scSubTab === 'today' ? '#fff' : 'var(--text-secondary)' }}
+                  onClick={() => setScSubTab('today')}
+                >
+                  <MdFactCheck /> Today's Check
+                </button>
+                <button
+                  className={`btn btn-sm ${scSubTab === 'history' ? 'btn-primary' : 'btn-ghost'}`}
+                  style={{ fontSize: 12, padding: '4px 12px', background: scSubTab === 'history' ? '#10b981' : 'transparent', border: 'none', color: scSubTab === 'history' ? '#fff' : 'var(--text-secondary)' }}
+                  onClick={() => setScSubTab('history')}
+                >
+                  <MdHistory /> History
+                </button>
+              </div>
+
+              {/* Active Operational Day Indicator */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, background: '#fff', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 20, padding: '4px 12px', fontSize: 12.5, fontWeight: 700, color: '#10b981' }}>
+                <MdCalendarToday style={{ fontSize: 14 }} />
+                <span>Op Day: <strong>{scData?.operationalDay || selectedDate || '26-Aug-2026'}</strong></span>
+                <span className="badge badge-success" style={{ fontSize: 10, padding: '1px 6px' }}>
+                  {scData?.isActiveDay !== false ? 'ACTIVE' : 'HISTORICAL'}
+                </span>
+              </div>
+
+              <button className="btn btn-secondary btn-sm" onClick={scSubTab === 'today' ? fetchStockCorrectnessToday : fetchStockCorrectnessHistory} disabled={scLoading || scHistoryLoading}>
+                <MdRefresh className={(scLoading || scHistoryLoading) ? 'spin' : ''} /> Refresh
+              </button>
+            </div>
+          </div>
+
+          {/* SUB-TAB 1: TODAY'S RECONCILIATION CHECK */}
+          {scSubTab === 'today' && (
+            <div>
+              {/* KPI Cards Grid */}
+              <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
+                <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div className="stat-value" style={{ color: 'var(--primary)' }}>
+                      {scData?.kpis?.productsChecked ?? 0}
+                    </div>
+                    <div style={{ padding: 8, borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', fontSize: 20 }}><MdFactCheck /></div>
+                  </div>
+                  <div className="stat-label">Products Checked</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Milk products evaluated today</div>
+                </div>
+
+                <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div className="stat-value" style={{ color: 'var(--success)' }}>
+                      {scData?.kpis?.correctCount ?? 0}
+                    </div>
+                    <div style={{ padding: 8, borderRadius: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--success)', fontSize: 20 }}><MdCheckCircle /></div>
+                  </div>
+                  <div className="stat-label">Correct</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Exact stock match</div>
+                </div>
+
+                <div className="stat-card" style={{ '--card-accent': (scData?.kpis?.mismatchCount || 0) > 0 ? 'var(--danger)' : 'var(--info)' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div className="stat-value" style={{ color: (scData?.kpis?.mismatchCount || 0) > 0 ? 'var(--danger)' : 'var(--info)' }}>
+                      {scData?.kpis?.mismatchCount ?? 0}
+                    </div>
+                    <div style={{ padding: 8, borderRadius: 8, background: (scData?.kpis?.mismatchCount || 0) > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(6,182,212,0.1)', color: (scData?.kpis?.mismatchCount || 0) > 0 ? 'var(--danger)' : 'var(--info)', fontSize: 20 }}><MdErrorOutline /></div>
+                  </div>
+                  <div className="stat-label">Mismatch</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                    {(scData?.kpis?.mismatchCount || 0) > 0 ? 'Discrepancy detected' : 'Zero mismatches'}
+                  </div>
+                </div>
+
+                <div className="stat-card" style={{ '--card-accent': '#d97706' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                    <div className="stat-value" style={{ color: '#d97706' }}>
+                      {scData?.kpis?.totalDifference ?? 0} Units
+                    </div>
+                    <div style={{ padding: 8, borderRadius: 8, background: 'rgba(245,158,11,0.1)', color: '#d97706', fontSize: 20 }}><MdWarningAmber /></div>
+                  </div>
+                  <div className="stat-label">Total Difference</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Cumulative absolute variance</div>
+                </div>
+              </div>
+
+              {/* Stock Reconciliation Table */}
+              <div className="card">
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap' }}>
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981' }}>
+                      <MdFactCheck style={{ fontSize: 20 }} />
+                      DAILY MILK STOCK RECONCILIATION TABLE
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Compares Expected Milk Stock vs Manager Inventory Logged Stock for {scData?.operationalDay || selectedDate} (Milk Products Only)
+                    </div>
+                  </div>
+                  <span className="badge badge-success" style={{ fontWeight: 700 }}>
+                    Milk Products Only
+                  </span>
+                </div>
+
+                <div className="table-wrapper">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th style={{ minWidth: 160 }}>Product</th>
+                        <th>Expected Stock</th>
+                        <th>Manager Inventory Log</th>
+                        <th>Difference</th>
+                        <th>Status</th>
+                        <th>Review Status</th>
+                        <th style={{ minWidth: 120 }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scLoading ? (
+                        <tr><td colSpan={7} style={{ textAlign: 'center', padding: 48 }}>Calculating Stock Correctness...</td></tr>
+                      ) : (!scData?.reconciliation || scData.reconciliation.length === 0) ? (
+                        <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No Milk inventory records found for reconciliation.</td></tr>
+                      ) : (
+                        scData.reconciliation.map(item => {
+                          const isCorrect = item.status === 'Correct';
+                          const isMismatch = item.status === 'Mismatch';
+                          const isMissing = item.status === 'Missing Log';
+
+                          const diffValue = item.difference;
+                          const diffDisplay = diffValue > 0 ? `+${diffValue}` : `${diffValue}`;
+
+                          return (
+                            <tr key={item.productId} style={{ background: isMismatch ? 'rgba(239,68,68,0.02)' : isMissing ? 'rgba(245,158,11,0.02)' : 'transparent' }}>
+                              <td style={{ fontWeight: 700 }}>
+                                <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{item.productName}</div>
+                                <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.unit}</div>
+                              </td>
+                              <td style={{ fontWeight: 700, color: 'var(--primary)', fontSize: 14 }}>
+                                {item.expectedStock} {item.unit}
+                              </td>
+                              <td style={{ fontWeight: 700, fontSize: 14, color: item.managerLoggedStock === null ? 'var(--text-muted)' : 'var(--text-primary)' }}>
+                                {item.managerLoggedStock !== null ? `${item.managerLoggedStock} ${item.unit}` : <span style={{ color: '#d97706', fontStyle: 'italic', fontWeight: 600 }}>Not Logged</span>}
+                              </td>
+                              <td>
+                                <span style={{
+                                  fontSize: 14,
+                                  fontWeight: 800,
+                                  color: diffValue < 0 ? '#ef4444' : diffValue > 0 ? '#10b981' : 'var(--text-muted)'
+                                }}>
+                                  {isMissing ? '—' : `${diffDisplay} ${item.unit}`}
+                                </span>
+                              </td>
+                              <td>
+                                {isCorrect && (
+                                  <span className="badge badge-success" style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <MdCheckCircle /> ✅ Correct
+                                  </span>
+                                )}
+                                {isMismatch && (
+                                  <span className="badge badge-danger" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <MdCancel /> 🔴 Mismatch ({diffDisplay})
+                                  </span>
+                                )}
+                                {isMissing && (
+                                  <span className="badge badge-warning" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                    <MdWarningAmber /> ⚠️ Missing Log
+                                  </span>
+                                )}
+                              </td>
+                              <td>
+                                <span className={`badge ${item.reviewStatus === 'Resolved' ? 'badge-success' : item.reviewStatus === 'Reviewed' ? 'badge-warning' : 'badge-danger'}`} style={{ fontWeight: 700 }}>
+                                  {item.reviewStatus || 'Pending Review'}
+                                </span>
+                              </td>
+                              <td>
+                                {!isCorrect && (
+                                  <button
+                                    className="btn btn-secondary btn-sm"
+                                    style={{ fontSize: 11.5, padding: '4px 10px' }}
+                                    onClick={() => {
+                                      setReviewItem(item);
+                                      setReviewForm({ reviewStatus: item.reviewStatus === 'Pending Review' ? 'Reviewed' : item.reviewStatus, remarks: item.remarks || '' });
+                                      setShowReviewModal(true);
+                                    }}
+                                  >
+                                    <MdEdit /> Review / Resolve
+                                  </button>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* SUB-TAB 2: PERMANENT DAILY RECONCILIATION HISTORY */}
+          {scSubTab === 'history' && (
+            <div>
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981' }}>
+                      <MdHistory style={{ fontSize: 20 }} />
+                      PERMANENT STOCK CORRECTNESS DAILY HISTORY
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Historical daily reconciliation audit logs — Click any date to view complete breakdown
+                    </div>
+                  </div>
+                  <span className="badge badge-blue">{scHistory.length} Days Recorded</span>
+                </div>
+
+                <div className="table-wrapper">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Operational Date</th>
+                        <th>Products Checked</th>
+                        <th style={{ color: 'var(--success)' }}>Correct</th>
+                        <th style={{ color: 'var(--danger)' }}>Mismatch</th>
+                        <th style={{ color: '#d97706' }}>Missing Log</th>
+                        <th>Total Difference</th>
+                        <th>Overall Status</th>
+                        <th style={{ textAlign: 'right' }}>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scHistoryLoading ? (
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: 48 }}>Loading correctness history...</td></tr>
+                      ) : scHistory.length === 0 ? (
+                        <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No historical correctness records found.</td></tr>
+                      ) : (
+                        scHistory.map(row => (
+                          <tr key={row.operationalDay}>
+                            <td style={{ fontWeight: 800, fontSize: 14 }}>
+                              {row.operationalDay}
+                            </td>
+                            <td style={{ fontWeight: 600 }}>{row.productsChecked} Products</td>
+                            <td style={{ color: 'var(--success)', fontWeight: 700 }}>{row.correctCount}</td>
+                            <td style={{ color: row.mismatchCount > 0 ? 'var(--danger)' : 'var(--text-muted)', fontWeight: 700 }}>
+                              {row.mismatchCount}
+                            </td>
+                            <td style={{ color: row.missingCount > 0 ? '#d97706' : 'var(--text-muted)', fontWeight: 700 }}>
+                              {row.missingCount}
+                            </td>
+                            <td style={{ fontWeight: 700 }}>{row.totalDifference} Units</td>
+                            <td>
+                              <span className={`badge ${row.mismatchCount > 0 ? 'badge-danger' : row.missingCount > 0 ? 'badge-warning' : 'badge-success'}`} style={{ fontWeight: 800 }}>
+                                {row.overallStatus}
+                              </span>
+                            </td>
+                            <td style={{ textAlign: 'right' }}>
+                              <button
+                                className="btn btn-ghost btn-sm"
+                                style={{ fontSize: 12, color: 'var(--primary)', fontWeight: 700 }}
+                                onClick={() => fetchStockCorrectnessDetail(row.operationalDay)}
+                              >
+                                View Details
+                              </button>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Historical Detail Inspection Card (when a historical date is selected) */}
+              {scSelectedHistory && (
+                <div className="card">
+                  <div className="card-header" style={{ background: 'linear-gradient(135deg, rgba(59,130,246,0.06), rgba(37,99,235,0.02))', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <div>
+                      <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--primary)' }}>
+                        <MdCalendarToday style={{ fontSize: 20 }} />
+                        Historical Reconciliation Detail — {scSelectedHistory.operationalDay}
+                      </span>
+                    </div>
+                    <button className="icon-btn" onClick={() => setScSelectedHistory(null)}><MdClose /></button>
+                  </div>
+
+                  <div className="table-wrapper">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Product</th>
+                          <th>Expected Stock</th>
+                          <th>Manager Inventory Log</th>
+                          <th>Difference</th>
+                          <th>Status</th>
+                          <th>Review Status</th>
+                          <th>Reviewed By</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {scSelectedHistory.reconciliation.map(item => (
+                          <tr key={item.productId || item.productName}>
+                            <td style={{ fontWeight: 700 }}>{item.productName}</td>
+                            <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{item.expectedStock}</td>
+                            <td style={{ fontWeight: 700 }}>{item.managerLoggedStock !== null ? item.managerLoggedStock : <span style={{ color: '#d97706', fontStyle: 'italic' }}>Not Logged</span>}</td>
+                            <td style={{ fontWeight: 800, color: item.difference < 0 ? '#ef4444' : item.difference > 0 ? '#10b981' : 'var(--text-muted)' }}>
+                              {item.difference > 0 ? `+${item.difference}` : item.difference}
+                            </td>
+                            <td>
+                              <span className={`badge ${item.status === 'Correct' ? 'badge-success' : item.status === 'Mismatch' ? 'badge-danger' : 'badge-warning'}`} style={{ fontWeight: 700 }}>
+                                {item.status}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`badge ${item.reviewStatus === 'Resolved' ? 'badge-success' : item.reviewStatus === 'Reviewed' ? 'badge-warning' : 'badge-danger'}`}>
+                                {item.reviewStatus || 'Pending Review'}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              {item.reviewedBy || '—'} {item.remarks ? `(${item.remarks})` : ''}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Review & Resolve Modal for Super Admin */}
+          <AnimatePresence>
+            {showReviewModal && reviewItem && (
+              <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowReviewModal(false)}>
+                <motion.div className="modal" style={{ maxWidth: 480 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+                  <div className="modal-header">
+                    <h2 className="modal-title" style={{ fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <MdEdit style={{ color: '#10b981' }} /> Review Stock Discrepancy
+                    </h2>
+                    <button className="icon-btn" onClick={() => setShowReviewModal(false)}><MdClose /></button>
+                  </div>
+                  <form onSubmit={handleReviewSubmit}>
+                    <div className="modal-body" style={{ padding: '20px 24px' }}>
+                      <div style={{ background: '#f8fafc', padding: 14, borderRadius: 8, marginBottom: 16, border: '1px solid var(--border)' }}>
+                        <div style={{ fontWeight: 800, fontSize: 15, color: 'var(--text-primary)', marginBottom: 4 }}>{reviewItem.productName}</div>
+                        <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>Operational Day: <strong>{scData?.operationalDay || selectedDate}</strong></div>
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginTop: 10, fontSize: 13 }}>
+                          <div>Expected: <strong style={{ color: 'var(--primary)' }}>{reviewItem.expectedStock}</strong></div>
+                          <div>Manager Logged: <strong style={{ color: '#7c3aed' }}>{reviewItem.managerLoggedStock ?? 'Not Logged'}</strong></div>
+                          <div>Difference: <strong style={{ color: '#ef4444' }}>{reviewItem.difference}</strong></div>
+                          <div>Current Status: <strong style={{ color: '#d97706' }}>{reviewItem.status}</strong></div>
+                        </div>
+                      </div>
+
+                      <div className="form-group" style={{ marginBottom: 14 }}>
+                        <label className="form-label">Review Status *</label>
+                        <select
+                          className="form-input"
+                          required
+                          value={reviewForm.reviewStatus}
+                          onChange={e => setReviewForm({ ...reviewForm, reviewStatus: e.target.value })}
+                        >
+                          <option value="Reviewed">Reviewed (Investigation in progress)</option>
+                          <option value="Resolved">Resolved (Reconciled & cleared)</option>
+                        </select>
+                      </div>
+
+                      <div className="form-group">
+                        <label className="form-label">Remarks / Action Taken Notes</label>
+                        <textarea
+                          className="form-input"
+                          rows={3}
+                          placeholder="Enter administrative review notes (e.g. Manager confirmed physical fridge count)..."
+                          value={reviewForm.remarks}
+                          onChange={e => setReviewForm({ ...reviewForm, remarks: e.target.value })}
+                        />
+                        <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+                          Note: Resolving a mismatch records administrative review and does NOT alter historical inventory transactions.
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="modal-footer">
+                      <button type="button" className="btn btn-secondary" onClick={() => setShowReviewModal(false)}>Cancel</button>
+                      <button type="submit" className="btn btn-primary" style={{ background: 'linear-gradient(135deg, #10b981, #059669)', border: 'none' }} disabled={submittingReview}>
+                        {submittingReview ? 'Saving...' : 'Save Review Status'}
+                      </button>
+                    </div>
+                  </form>
+                </motion.div>
+              </div>
+            )}
+          </AnimatePresence>
+        </motion.div>
       )}
 
       {/* Report Download Modal */}

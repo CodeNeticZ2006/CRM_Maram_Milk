@@ -55,6 +55,7 @@ function MasterModal({ title, fields, values, onClose, onSubmit, loading }) {
 // ── Products Tab ──────────────────────────────────────────────────
 function ProductsTab() {
   const [items, setItems] = useState([]);
+  const [categoryFilter, setCategoryFilter] = useState('all');
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
@@ -78,29 +79,57 @@ function ProductsTab() {
   };
 
   const fields = [
-    { key: 'name', label: 'Product Name', required: true, placeholder: 'e.g. Full Cream Milk' },
-    { key: 'category', label: 'Category', placeholder: 'Milk' },
-    { key: 'unit', label: 'Unit', required: true, placeholder: 'Litre / Packet' },
-    { key: 'price_per_unit', label: 'Price per Unit (₹)', required: true, type: 'number', placeholder: '25' },
+    { key: 'name', label: 'Product Name', required: true, placeholder: 'e.g. Curd Pot - 500ml' },
+    { key: 'category', label: 'Category', type: 'select', options: [{ value: 'Milk', label: 'Milk' }, { value: 'AdHoc', label: 'AdHoc' }] },
+    { key: 'unit', label: 'Unit', required: true, placeholder: 'e.g. 500ml / 500gm' },
+    { key: 'price_per_unit', label: 'Price per Unit (₹)', required: true, type: 'number', placeholder: '50' },
+    { key: 'sku', label: 'SKU Code', placeholder: 'e.g. ADH-CURD-500ML' },
     { key: 'status', label: 'Status', type: 'select', options: [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] },
   ];
 
+  const filteredItems = items.filter(i => {
+    if (categoryFilter === 'milk') return (i.category || '').toLowerCase() === 'milk';
+    if (categoryFilter === 'adhoc') return (i.category || '').toLowerCase() === 'adhoc';
+    return true;
+  });
+
   return (
     <div>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 14 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <label style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>Category Filter:</label>
+          <select
+            id="product-master-category-filter"
+            className="form-input"
+            style={{ width: 160, padding: '6px 12px', fontSize: 13 }}
+            value={categoryFilter}
+            onChange={e => setCategoryFilter(e.target.value)}
+          >
+            <option value="all">All Products</option>
+            <option value="milk">Milk Products</option>
+            <option value="adhoc">AdHoc Products</option>
+          </select>
+        </div>
         <button id="add-product-btn" className="btn btn-primary btn-sm" onClick={() => setModal({ item: null })}>
           <MdAdd /> Add Product
         </button>
       </div>
+
       <div className="table-wrapper">
         <table className="table">
-          <thead><tr><th>Name</th><th>Category</th><th>Unit</th><th>Price</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Category</th><th>SKU</th><th>Unit</th><th>Price</th><th>Status</th><th></th></tr></thead>
           <tbody>
-            {loading ? <tr><td colSpan={6} style={{ textAlign: 'center', padding: 32 }}>Loading...</td></tr> :
-              items.map(item => (
+            {loading ? <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32 }}>Loading...</td></tr> :
+              filteredItems.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No products found for selected category.</td></tr> :
+              filteredItems.map(item => (
                 <tr key={item.id}>
                   <td style={{ fontWeight: 600 }}>{item.name}</td>
-                  <td>{item.category}</td>
+                  <td>
+                    <span className={`badge ${item.category === 'AdHoc' ? 'badge-warning' : 'badge-blue'}`}>
+                      {item.category || 'Milk'}
+                    </span>
+                  </td>
+                  <td><code style={{ fontSize: 11, background: 'var(--gray-100, #f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || '-'}</code></td>
                   <td>{item.unit}</td>
                   <td style={{ fontWeight: 700 }}>₹{item.price_per_unit}</td>
                   <td><span className={`badge ${item.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{item.status}</span></td>

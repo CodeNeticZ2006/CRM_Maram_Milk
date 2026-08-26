@@ -77,11 +77,30 @@ function DeliveryPersonAuditContent() {
   const [attRouteFilter, setAttRouteFilter] = useState('all');
   const [attStatusFilter, setAttStatusFilter] = useState('all'); // 'all' | 'present' | 'absent' | 'standby'
 
-  // Tab 3 (Daily Audit) State
+  // Tab 3 (Daily Audit) State & AdHoc Product Sales Audit State
   // dailyDate starts empty; seeded from operationalDate once loaded (7:00 PM IST boundary)
   const [dailyDate, setDailyDate] = useState('');
   const [dailyData, setDailyData] = useState(null);
   const [dailyLoading, setDailyLoading] = useState(false);
+
+  // AdHoc DP Audit State & Modals
+  const [adhocAuditData, setAdhocAuditData] = useState([]);
+  const [adhocProductsList, setAdhocProductsList] = useState([]);
+  const [routesList, setRoutesList] = useState([]);
+  const [adhocLoading, setAdhocLoading] = useState(false);
+  const [expandedDpMap, setExpandedDpMap] = useState({});
+
+  const [showIssueModal, setShowIssueModal] = useState(false);
+  const [showRecordSaleModal, setShowRecordSaleModal] = useState(false);
+  const [submittingAdhoc, setSubmittingAdhoc] = useState(false);
+
+  const [issueForm, setIssueForm] = useState({
+    dpRefId: '', dpName: '', routeId: 'unassigned', routeName: 'General Route', productId: '', quantity: ''
+  });
+
+  const [saleForm, setSaleForm] = useState({
+    dpRefId: '', dpName: '', routeId: 'unassigned', routeName: 'General Route', productId: '', quantitySold: '', quantityReturned: 0
+  });
 
   // Seed dailyDate from backend operational day once loaded
   useEffect(() => {
@@ -97,13 +116,24 @@ function DeliveryPersonAuditContent() {
     return new Date(year, month - 1, 1);
   });
 
-  // Fetch Delivery Persons Profiles (Live DB2)
+  // Fetch Delivery Persons Profiles (Live DB2) & Routes & AdHoc Products
   const fetchDeliveryPersons = async () => {
     setDpLoading(true);
     try {
-      const res = await api.get('/access-control/delivery-persons').catch(() => ({ data: { data: [] } }));
-      const dps = res?.data?.data;
+      const [dpRes, routesRes, prodRes] = await Promise.all([
+        api.get('/access-control/delivery-persons').catch(() => ({ data: { data: [] } })),
+        api.get('/masters/routes').catch(() => ({ data: { data: [] } })),
+        api.get('/inventory/adhoc/central').catch(() => ({ data: { data: [] } }))
+      ]);
+
+      const dps = dpRes?.data?.data;
       setDeliveryPersons(Array.isArray(dps) ? dps : []);
+
+      const rList = routesRes?.data?.data;
+      setRoutesList(Array.isArray(rList) ? rList : []);
+
+      const pList = prodRes?.data?.data;
+      setAdhocProductsList(Array.isArray(pList) ? pList : []);
     } catch (e) {
       console.warn('DP profile fetch error:', e);
       setDeliveryPersons([]);
@@ -140,20 +170,27 @@ function DeliveryPersonAuditContent() {
     }
   }, [timeFilter, selectedDpId, startDate, endDate, currentCalendarDate]);
 
-  // Fetch Daily Audit Data for Tab 3
+  // Fetch Daily Audit Data for Tab 3 (Milk + AdHoc DP Audit)
   const fetchDailyAudit = useCallback(async () => {
     setDailyLoading(true);
+    setAdhocLoading(true);
     try {
-      const res = await api.get('/inventory/manager-inventory', { params: { date: dailyDate } }).catch(() => ({ data: null }));
-      if (res?.data?.success) {
-        setDailyData(res.data);
-      } else {
-        setDailyData(null);
-      }
+      const [res, adhocRes] = await Promise.all([
+        api.get('/inventory/manager-inventory', { params: { date: dailyDate } }).catch(() => ({ data: null })),
+        api.get('/inventory/adhoc/audit', { params: { date: dailyDate } }).catch(() => ({ data: null }))
+      ]);
+
+      if (res?.data?.success) setDailyData(res.data);
+      else setDailyData(null);
+
+      if (adhocRes?.data?.success) setAdhocAuditData(adhocRes.data.data || []);
+      else setAdhocAuditData([]);
     } catch {
       setDailyData(null);
+      setAdhocAuditData([]);
     } finally {
       setDailyLoading(false);
+      setAdhocLoading(false);
     }
   }, [dailyDate]);
 
@@ -163,7 +200,7 @@ function DeliveryPersonAuditContent() {
   }, [fetchDpAttendance]);
 
   useEffect(() => {
-    if (activeTab === 'daily-audit') {
+    if (activeTab === 'daily-audit' || activeTab === 'adhoc-sales') {
       fetchDailyAudit();
     }
   }, [activeTab, fetchDailyAudit]);
@@ -171,7 +208,76 @@ function DeliveryPersonAuditContent() {
   const handleRefreshAll = () => {
     fetchDeliveryPersons();
     fetchDpAttendance();
-    if (activeTab === 'daily-audit') fetchDailyAudit();
+    fetchDailyAudit();
+  };
+
+  // Submit Issue Stock Handler
+  const handleIssueStockSubmit = async (e) => {
+    e.preventDefault();
+    if (!issueForm.dpRefId || !issueForm.productId || !issueForm.quantity) {
+      return toast.error('Please fill in DP, Product, and Quantity.');
+    }
+    setSubmittingAdhoc(true);
+    try {
+      const dpObj = deliveryPersons.find(d => String(d.id) === String(issueForm.dpRefId) || String(d.dpCode) === String(issueForm.dpRefId));
+      const routeObj = routesList.find(r => String(r.id) === String(issueForm.routeId));
+
+      const res = await api.post('/inventory/adhoc/issue-dp-stock', {
+        dpRefId: issueForm.dpRefId,
+        dpName: dpObj?.name || issueForm.dpName || 'DP',
+        routeId: issueForm.routeId || 'unassigned',
+        routeName: routeObj?.route_name || issueForm.routeName || 'General Route',
+        productId: issueForm.productId,
+        quantity: issueForm.quantity,
+        date: dailyDate,
+      });
+
+      if (res.data?.success) {
+        toast.success(res.data.message || 'AdHoc stock issued to DP successfully!');
+        setShowIssueModal(false);
+        setIssueForm({ dpRefId: '', dpName: '', routeId: 'unassigned', routeName: 'General Route', productId: '', quantity: '' });
+        fetchDailyAudit();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to issue AdHoc stock.');
+    } finally {
+      setSubmittingAdhoc(false);
+    }
+  };
+
+  // Submit Record Sale Handler
+  const handleRecordSaleSubmit = async (e) => {
+    e.preventDefault();
+    if (!saleForm.dpRefId || !saleForm.productId || saleForm.quantitySold === '') {
+      return toast.error('Please fill in DP, Product, and Sold Quantity.');
+    }
+    setSubmittingAdhoc(true);
+    try {
+      const dpObj = deliveryPersons.find(d => String(d.id) === String(saleForm.dpRefId) || String(d.dpCode) === String(saleForm.dpRefId));
+      const routeObj = routesList.find(r => String(r.id) === String(saleForm.routeId));
+
+      const res = await api.post('/inventory/adhoc/record-dp-sale', {
+        dpRefId: saleForm.dpRefId,
+        dpName: dpObj?.name || saleForm.dpName || 'DP',
+        routeId: saleForm.routeId || 'unassigned',
+        routeName: routeObj?.route_name || saleForm.routeName || 'General Route',
+        productId: saleForm.productId,
+        quantitySold: saleForm.quantitySold,
+        quantityReturned: saleForm.quantityReturned || 0,
+        date: dailyDate,
+      });
+
+      if (res.data?.success) {
+        toast.success(res.data.message || 'DP AdHoc sale recorded successfully!');
+        setShowRecordSaleModal(false);
+        setSaleForm({ dpRefId: '', dpName: '', routeId: 'unassigned', routeName: 'General Route', productId: '', quantitySold: '', quantityReturned: 0 });
+        fetchDailyAudit();
+      }
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to record DP sale.');
+    } finally {
+      setSubmittingAdhoc(false);
+    }
   };
 
   // Calendar Helpers for Tab 4
@@ -336,6 +442,15 @@ function DeliveryPersonAuditContent() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
           >
             <MdPerson style={{ fontSize: 17 }} /> DP Overview ({safeDeliveryPersons.length})
+          </button>
+
+          <button
+            className={`btn btn-sm ${activeTab === 'adhoc-sales' ? 'btn-primary' : 'btn-secondary'}`}
+            onClick={() => setActiveTab('adhoc-sales')}
+            id="dp-tab-adhoc-sales"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, background: activeTab === 'adhoc-sales' ? 'linear-gradient(135deg, #d97706, #b45309)' : '', borderColor: activeTab === 'adhoc-sales' ? '#d97706' : '' }}
+          >
+            <MdAssignment style={{ fontSize: 17 }} /> AdHoc Product Sales ({adhocAuditData.length})
           </button>
         </div>
       </div>
@@ -995,6 +1110,418 @@ function DeliveryPersonAuditContent() {
           </div>
         </motion.div>
       )}
+
+      {/* ========================================================================= */}
+      {/* TAB 5 — ADHOC PRODUCT SALES AUDIT                                       */}
+      {/* ========================================================================= */}
+      {(activeTab === 'adhoc-sales' || activeTab === 'daily-audit') && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} style={{ marginTop: activeTab === 'daily-audit' ? 24 : 0 }}>
+          <div className="card" style={{ marginBottom: 20 }}>
+            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, background: 'linear-gradient(135deg, rgba(217,119,6,0.06), rgba(245,158,11,0.02))' }}>
+              <div>
+                <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706', fontSize: 16 }}>
+                  <MdAssignment style={{ fontSize: 22 }} />
+                  ADHOC PRODUCT SALES AUDIT
+                </span>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                  Complete DP-level AdHoc stock & sales reconciliation (Cumulative multi-route aggregation by DP + Day)
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Operational Day:</label>
+                  <input
+                    type="date"
+                    className="form-input"
+                    style={{ width: 140, padding: '4px 10px', fontSize: 12.5 }}
+                    value={dailyDate}
+                    onChange={e => setDailyDate(e.target.value)}
+                  />
+                </div>
+                <button
+                  className="btn btn-primary btn-sm"
+                  style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', border: 'none' }}
+                  onClick={() => {
+                    setIssueForm({ dpRefId: deliveryPersons[0]?.id || '', dpName: deliveryPersons[0]?.name || '', routeId: 'unassigned', routeName: 'General Route', productId: adhocProductsList[0]?.productId || adhocProductsList[0]?.id || '', quantity: '' });
+                    setShowIssueModal(true);
+                  }}
+                >
+                  <MdAdd /> Issue Stock to DP
+                </button>
+                <button
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    setSaleForm({ dpRefId: deliveryPersons[0]?.id || '', dpName: deliveryPersons[0]?.name || '', routeId: 'unassigned', routeName: 'General Route', productId: adhocProductsList[0]?.productId || adhocProductsList[0]?.id || '', quantitySold: '', quantityReturned: 0 });
+                    setShowRecordSaleModal(true);
+                  }}
+                >
+                  <MdEdit /> Record Sales / Returns
+                </button>
+              </div>
+            </div>
+
+            <div className="card-body" style={{ padding: '16px 20px' }}>
+              {/* AdHoc KPI Summary Grid */}
+              {(() => {
+                const totalTaken = adhocAuditData.reduce((a, b) => a + b.totalTaken, 0);
+                const totalSold = adhocAuditData.reduce((a, b) => a + b.totalSold, 0);
+                const totalReturned = adhocAuditData.reduce((a, b) => a + b.totalReturned, 0);
+                const totalRemaining = adhocAuditData.reduce((a, b) => a + b.totalRemaining, 0);
+                const totalRevenue = adhocAuditData.reduce((a, b) => a + b.totalRevenue, 0);
+
+                return (
+                  <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
+                    <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
+                      <div className="stat-value" style={{ color: 'var(--primary)' }}>{totalTaken}</div>
+                      <div className="stat-label">Stock Taken by DPs</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Across all active DPs</div>
+                    </div>
+                    <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
+                      <div className="stat-value" style={{ color: 'var(--success)' }}>{totalSold}</div>
+                      <div className="stat-label">Quantity Sold</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total customer sales</div>
+                    </div>
+                    <div className="stat-card" style={{ '--card-accent': 'var(--warning)' }}>
+                      <div className="stat-value" style={{ color: 'var(--warning)' }}>{totalReturned}</div>
+                      <div className="stat-label">Quantity Returned</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Returned to stock</div>
+                    </div>
+                    <div className="stat-card" style={{ '--card-accent': '#d97706' }}>
+                      <div className="stat-value" style={{ color: '#d97706' }}>₹{totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
+                      <div className="stat-label">Total AdHoc Revenue</div>
+                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Excludes Direct Shop Sales</div>
+                    </div>
+                  </div>
+                );
+              })()}
+
+              {/* DP AdHoc Audit Table */}
+              {adhocLoading ? (
+                <div style={{ textAlign: 'center', padding: 48 }}>Loading AdHoc DP Audit data...</div>
+              ) : adhocAuditData.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>
+                  <MdAssignment style={{ fontSize: 40, opacity: 0.3, marginBottom: 8 }} />
+                  <div>No DP AdHoc stock or sales records for <strong>{dailyDate}</strong>.</div>
+                  <p style={{ fontSize: 12, marginTop: 4 }}>Click "Issue Stock to DP" to dispatch central stock to a delivery person.</p>
+                </div>
+              ) : (
+                <div className="table-wrapper">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>DP NAME</th>
+                        <th>ROUTE(S)</th>
+                        <th>PRODUCT</th>
+                        <th style={{ color: 'var(--primary)' }}>TAKEN</th>
+                        <th style={{ color: 'var(--success)' }}>SOLD</th>
+                        <th style={{ color: 'var(--warning)' }}>RETURNED</th>
+                        <th style={{ color: '#7c3aed' }}>REMAINING</th>
+                        <th>AMOUNT (₹)</th>
+                        <th>DETAILS</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {adhocAuditData.map(dp => {
+                        const isExpanded = !!expandedDpMap[dp.dpRefId];
+                        return (
+                          <>
+                            {(dp.cumulativeProducts || []).map((prod, pIdx) => (
+                              <tr key={`${dp.dpRefId}_${prod.productId}`}>
+                                {pIdx === 0 && (
+                                  <td rowSpan={dp.cumulativeProducts.length} style={{ fontWeight: 700, verticalAlign: 'top', paddingTop: 14 }}>
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(217,119,6,0.1)', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>
+                                        {dp.dpName ? dp.dpName[0].toUpperCase() : 'D'}
+                                      </div>
+                                      <div>
+                                        <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{dp.dpName}</div>
+                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.date}</div>
+                                      </div>
+                                    </div>
+                                  </td>
+                                )}
+                                {pIdx === 0 && (
+                                  <td rowSpan={dp.cumulativeProducts.length} style={{ verticalAlign: 'top', paddingTop: 14 }}>
+                                    <span className="badge badge-gray" style={{ fontSize: 11, whiteSpace: 'normal', maxWidth: 160 }}>
+                                      {dp.routesList}
+                                    </span>
+                                  </td>
+                                )}
+                                <td style={{ fontWeight: 600 }}>{prod.productName}</td>
+                                <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{prod.taken}</td>
+                                <td style={{ fontWeight: 800, color: 'var(--success)', fontSize: 15 }}>{prod.sold}</td>
+                                <td style={{ fontWeight: 600, color: 'var(--warning)' }}>{prod.returned}</td>
+                                <td>
+                                  <span className="badge badge-blue" style={{ fontWeight: 700 }}>
+                                    {prod.remaining}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight: 800, color: '#d97706' }}>₹{prod.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+                                {pIdx === 0 && (
+                                  <td rowSpan={dp.cumulativeProducts.length} style={{ verticalAlign: 'top', paddingTop: 14 }}>
+                                    {dp.routeDetails && dp.routeDetails.length > 1 ? (
+                                      <button
+                                        className="btn btn-ghost btn-sm"
+                                        style={{ fontSize: 11, color: '#d97706', fontWeight: 700 }}
+                                        onClick={() => setExpandedDpMap(prev => ({ ...prev, [dp.dpRefId]: !prev[dp.dpRefId] }))}
+                                      >
+                                        {isExpanded ? 'Hide Routes' : `Breakdown (${dp.routeDetails.length} Routes)`}
+                                      </button>
+                                    ) : (
+                                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Single Route</span>
+                                    )}
+                                  </td>
+                                )}
+                              </tr>
+                            ))}
+                            {/* Expandable Route Breakdown Row */}
+                            {isExpanded && (
+                              <tr key={`${dp.dpRefId}_breakdown`}>
+                                <td colSpan={9} style={{ background: 'rgba(245,158,11,0.03)', padding: 12 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: '#d97706', marginBottom: 6 }}>
+                                    📍 Detailed Per-Route Breakdown for {dp.dpName}:
+                                  </div>
+                                  <table className="table" style={{ fontSize: 12, background: '#fff' }}>
+                                    <thead>
+                                      <tr style={{ background: '#f8fafc' }}>
+                                        <th>Route Name</th>
+                                        <th>Product</th>
+                                        <th>Taken</th>
+                                        <th>Sold</th>
+                                        <th>Returned</th>
+                                        <th>Remaining</th>
+                                        <th>Revenue</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody>
+                                      {dp.routeDetails.map(rd => (
+                                        <tr key={rd.id}>
+                                          <td style={{ fontWeight: 600 }}>{rd.routeName}</td>
+                                          <td>{rd.productName}</td>
+                                          <td>{rd.taken}</td>
+                                          <td style={{ color: 'var(--success)', fontWeight: 700 }}>{rd.sold}</td>
+                                          <td style={{ color: 'var(--warning)' }}>{rd.returned}</td>
+                                          <td>{rd.remaining}</td>
+                                          <td style={{ fontWeight: 700, color: '#d97706' }}>₹{rd.amount}</td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </td>
+                              </tr>
+                            )}
+                          </>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* ── ISSUE STOCK TO DP MODAL ── */}
+      <AnimatePresence>
+        {showIssueModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowIssueModal(false)}>
+            <motion.div className="modal" style={{ maxWidth: 480 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdAdd style={{ color: '#d97706' }} /> Issue AdHoc Stock to DP
+                </h2>
+                <button className="icon-btn" onClick={() => setShowIssueModal(false)}><MdClose /></button>
+              </div>
+              <form onSubmit={handleIssueStockSubmit}>
+                <div className="modal-body" style={{ padding: '20px 24px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label className="form-label">Delivery Person *</label>
+                      <select
+                        className="form-input"
+                        required
+                        value={issueForm.dpRefId}
+                        onChange={e => {
+                          const dp = deliveryPersons.find(d => String(d.id) === e.target.value || String(d.dpCode) === e.target.value);
+                          setIssueForm({ ...issueForm, dpRefId: e.target.value, dpName: dp?.name || '' });
+                        }}
+                      >
+                        <option value="">Select Delivery Person</option>
+                        {deliveryPersons.map(dp => (
+                          <option key={dp.id} value={dp.id}>{dp.name} ({dp.dpCode || 'DP'})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Route</label>
+                      <select
+                        className="form-input"
+                        value={issueForm.routeId}
+                        onChange={e => {
+                          const r = routesList.find(rt => String(rt.id) === e.target.value);
+                          setIssueForm({ ...issueForm, routeId: e.target.value, routeName: r?.route_name || 'General Route' });
+                        }}
+                      >
+                        <option value="unassigned">General Route (Unassigned)</option>
+                        {routesList.map(r => (
+                          <option key={r.id} value={r.id}>{r.route_name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">AdHoc Product *</label>
+                      <select
+                        className="form-input"
+                        required
+                        value={issueForm.productId}
+                        onChange={e => setIssueForm({ ...issueForm, productId: e.target.value })}
+                      >
+                        <option value="">Select Product</option>
+                        {adhocProductsList.map(p => (
+                          <option key={p.productId || p.id} value={p.productId || p.id}>
+                            {p.name} (Rem: {p.remainingStock || 0} {p.unit})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label className="form-label">Quantity to Issue *</label>
+                      <input
+                        type="number"
+                        min="1"
+                        step="1"
+                        className="form-input"
+                        required
+                        placeholder="e.g. 10"
+                        value={issueForm.quantity}
+                        onChange={e => setIssueForm({ ...issueForm, quantity: e.target.value })}
+                      />
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, display: 'block' }}>
+                        Issuing stock decreases Central Stock and increases DP Stock balance.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowIssueModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', border: 'none' }} disabled={submittingAdhoc}>
+                    {submittingAdhoc ? 'Issuing...' : 'Confirm Stock Issue'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── RECORD DP SALES / RETURNS MODAL ── */}
+      <AnimatePresence>
+        {showRecordSaleModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowRecordSaleModal(false)}>
+            <motion.div className="modal" style={{ maxWidth: 480 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdEdit style={{ color: '#d97706' }} /> Record DP Sales & Returns
+                </h2>
+                <button className="icon-btn" onClick={() => setShowRecordSaleModal(false)}><MdClose /></button>
+              </div>
+              <form onSubmit={handleRecordSaleSubmit}>
+                <div className="modal-body" style={{ padding: '20px 24px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label className="form-label">Delivery Person *</label>
+                      <select
+                        className="form-input"
+                        required
+                        value={saleForm.dpRefId}
+                        onChange={e => {
+                          const dp = deliveryPersons.find(d => String(d.id) === e.target.value || String(d.dpCode) === e.target.value);
+                          setSaleForm({ ...saleForm, dpRefId: e.target.value, dpName: dp?.name || '' });
+                        }}
+                      >
+                        <option value="">Select Delivery Person</option>
+                        {deliveryPersons.map(dp => (
+                          <option key={dp.id} value={dp.id}>{dp.name} ({dp.dpCode || 'DP'})</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Route</label>
+                      <select
+                        className="form-input"
+                        value={saleForm.routeId}
+                        onChange={e => {
+                          const r = routesList.find(rt => String(rt.id) === e.target.value);
+                          setSaleForm({ ...saleForm, routeId: e.target.value, routeName: r?.route_name || 'General Route' });
+                        }}
+                      >
+                        <option value="unassigned">General Route (Unassigned)</option>
+                        {routesList.map(r => (
+                          <option key={r.id} value={r.id}>{r.route_name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">AdHoc Product *</label>
+                      <select
+                        className="form-input"
+                        required
+                        value={saleForm.productId}
+                        onChange={e => setSaleForm({ ...saleForm, productId: e.target.value })}
+                      >
+                        <option value="">Select Product</option>
+                        {adhocProductsList.map(p => (
+                          <option key={p.productId || p.id} value={p.productId || p.id}>{p.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Quantity Sold *</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        className="form-input"
+                        required
+                        placeholder="e.g. 7"
+                        value={saleForm.quantitySold}
+                        onChange={e => setSaleForm({ ...saleForm, quantitySold: e.target.value })}
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Quantity Returned</label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="1"
+                        className="form-input"
+                        placeholder="e.g. 3"
+                        value={saleForm.quantityReturned}
+                        onChange={e => setSaleForm({ ...saleForm, quantityReturned: e.target.value })}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowRecordSaleModal(false)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', border: 'none' }} disabled={submittingAdhoc}>
+                    {submittingAdhoc ? 'Saving...' : 'Save Sales Record'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* ── DP OVERVIEW QUICK PREVIEW MODAL ── */}
       <AnimatePresence>
