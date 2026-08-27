@@ -510,16 +510,15 @@ function DeliveryPersonAuditContent() {
                       <th>NAME</th>
                       <th>MOBILE</th>
                       <th>VEHICLE NO</th>
-                      <th>PETROL BAL.</th>
                       <th>CURRENT STATUS</th>
                       <th style={{ textAlign: 'right' }}>ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dpLoading ? (
-                      <tr><td colSpan={7} style={{ textAlign: 'center', padding: 36 }}>Loading DP profiles from DB2...</td></tr>
+                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: 36 }}>Loading DP profiles from DB2...</td></tr>
                     ) : filteredOverviewDps.length === 0 ? (
-                      <tr><td colSpan={7} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>No matching DPs found in DB2.</td></tr>
+                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>No matching DPs found in DB2.</td></tr>
                     ) : (
                       filteredOverviewDps.map(dp => (
                         <tr
@@ -531,7 +530,6 @@ function DeliveryPersonAuditContent() {
                           <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{dp.name}</td>
                           <td style={{ fontSize: 12.5 }}>{dp.mobileNumber || '—'}</td>
                           <td style={{ fontSize: 12, fontFamily: 'monospace' }}>{dp.vehicleNumber || '—'}</td>
-                          <td style={{ fontWeight: 700, color: 'var(--success)' }}>₹{dp.petrolBalance || 0}</td>
                           <td>
                             <span className={`badge ${dp.isActive !== false ? 'badge-success' : 'badge-danger'}`}>
                               {dp.isActive !== false ? 'Active' : 'Inactive'}
@@ -1526,10 +1524,6 @@ function DeliveryPersonAuditContent() {
                   <div>
                     <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Assigned Route / Zone</span>
                     <div style={{ fontWeight: 600 }}>{selectedDpDetail.assignedRoute || selectedDpDetail.zone || 'Unassigned'}</div>
-                  </div>
-                  <div>
-                    <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Petrol Balance</span>
-                    <div style={{ fontWeight: 800, color: 'var(--success)' }}>₹{selectedDpDetail.petrolBalance || 0}</div>
                   </div>
                   <div>
                     <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Account Status</span>

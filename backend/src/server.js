@@ -137,8 +137,8 @@ const start = async () => {
       checkAndTriggerRollover().catch(err => console.warn('⚠️ Background rollover check warning:', err.message));
     }, 60000);
 
-    app.listen(PORT, () => {
-      console.log(`\n✅ Server running on http://localhost:${PORT}`);
+    app.listen(PORT, '0.0.0.0', () => {
+      console.log(`\n✅ Server running on http://127.0.0.1:${PORT}`);
       console.log(`📡 API Base: http://localhost:${PORT}/api`);
       console.log(`🔐 Auth:     http://localhost:${PORT}/api/auth`);
       console.log(`📊 Dashboard:http://localhost:${PORT}/api/dashboard`);

@@ -17,6 +17,11 @@ const crmPool = new Pool({
   connectionTimeoutMillis: 30000,
 });
 
+// Handle idle client errors so unexpected connection resets (e.g. ECONNRESET on Render) do not crash the app
+crmPool.on('error', (err) => {
+  console.warn('⚠️  Unexpected idle error on DB1 (CRM) pool:', err.message);
+});
+
 // ================================================
 // DB2 — Manager App DB (Oregon) — READ-ONLY
 // ================================================
@@ -28,6 +33,10 @@ const appPool = new Pool({
   max: 10,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 30000,
+});
+
+appPool.on('error', (err) => {
+  console.warn('⚠️  Unexpected idle error on DB2 (App) pool:', err.message);
 });
 
 // Test connections on startup

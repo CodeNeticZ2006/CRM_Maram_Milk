@@ -165,19 +165,29 @@ const getMonthlyTrends = async (req, res, next) => {
 
     const revenueResult = await readFromCRM(`
       SELECT 
-        TO_CHAR(DATE_TRUNC('month', payment_date), 'Mon YYYY') as month,
+        TO_CHAR(DATE_TRUNC('month', COALESCE(payment_date, created_at)), 'Mon YYYY') as month,
         COALESCE(SUM(amount),0) as revenue
       FROM payments
-      WHERE payment_date >= NOW() - INTERVAL '6 months' AND status = 'Verified'
-      GROUP BY DATE_TRUNC('month', payment_date)
-      ORDER BY DATE_TRUNC('month', payment_date)
+      WHERE status = 'Verified' AND (payment_date >= NOW() - INTERVAL '6 months' OR created_at >= NOW() - INTERVAL '6 months')
+      GROUP BY DATE_TRUNC('month', COALESCE(payment_date, created_at))
+      ORDER BY DATE_TRUNC('month', COALESCE(payment_date, created_at))
     `);
+
+    const customer_growth = (result.rows || []).map(r => ({
+      month: r.month,
+      new_customers: parseInt(r.new_customers, 10) || 0
+    }));
+
+    const revenue_trends = (revenueResult.rows || []).map(r => ({
+      month: r.month,
+      revenue: parseFloat(r.revenue) || 0
+    }));
 
     res.json({
       success: true,
       data: {
-        customer_growth: result.rows,
-        revenue_trends: revenueResult.rows,
+        customer_growth,
+        revenue_trends,
       },
     });
   } catch (err) {
