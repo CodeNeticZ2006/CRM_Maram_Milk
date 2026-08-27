@@ -635,6 +635,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
       let presentDays = 0;
       let absentDays = 0;
       let standbyDays = 0;
+      let notMarkedDays = 0;
       let pendingDays = 0;
 
       const calendarGrid = datesList.map((dStr) => {
@@ -680,26 +681,24 @@ const getDpAttendanceAudit = async (req, res, next) => {
             status = 'PRESENT';
           }
         } else {
-          // DB2 Active Era date (July 15 to Today) — Manager App attendance schedule
-          if ((dp?.name || '').toLowerCase().includes('ansar')) {
-            if (dStr === '2026-07-28' || dStr === '2026-08-04' || dStr === '2026-08-08') status = 'ABSENT';
-            else if (dStr === '2026-08-05' || dStr === '2026-07-20') status = 'STANDBY'; // Standby on specific unassigned days
-            else status = 'PRESENT';
-          } else if (idx === 1 && (dStr === '2026-07-22' || dStr === '2026-08-03' || dStr === '2026-08-07')) {
-            status = 'ABSENT';
-          } else if (idx === 2 && (dStr === '2026-07-24' || dStr === '2026-08-06')) {
-            status = 'STANDBY';
-          } else {
-            status = 'PRESENT';
-          }
+          // No attendance record, allocation, or log for this date -> NOT MARKED
+          status = 'NOT_MARKED';
         }
 
         // Increment stats for valid active DB2 audit days ONLY
         if (!isBeforeDb2 && !isFuture) {
-          if (status === 'PRESENT') presentDays++;
-          else if (status === 'ABSENT') absentDays++;
-          else if (status === 'STANDBY') standbyDays++;
-          else if (status === 'PENDING') pendingDays++;
+          if (status === 'PRESENT') {
+            presentDays++;
+          } else if (status === 'ABSENT') {
+            absentDays++;
+          } else if (status === 'STANDBY') {
+            presentDays++; // Standby means present at hub (unassigned to route)
+            standbyDays++;
+          } else if (status === 'NOT_MARKED') {
+            notMarkedDays++;
+          } else if (status === 'PENDING') {
+            pendingDays++;
+          }
         }
 
         return {
@@ -715,8 +714,9 @@ const getDpAttendanceAudit = async (req, res, next) => {
         };
       });
 
-      const totalDays = presentDays + absentDays + standbyDays + pendingDays;
-      const attendancePercentage = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 100;
+      const totalDays = (presentDays - standbyDays) + standbyDays + absentDays + notMarkedDays + pendingDays;
+      const markedDays = presentDays + absentDays;
+      const attendancePercentage = markedDays > 0 ? Math.round((presentDays / markedDays) * 100) : (presentDays > 0 ? 100 : 0);
 
       return {
         dpId: dp.id,
@@ -729,6 +729,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
         presentDays,
         absentDays,
         standbyDays,
+        notMarkedDays,
         pendingDays,
         attendancePercentage,
         calendarGrid,

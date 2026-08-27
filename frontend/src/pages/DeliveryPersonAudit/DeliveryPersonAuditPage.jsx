@@ -66,7 +66,7 @@ function DeliveryPersonAuditContent() {
   // DP Attendance Audit State (Used in Tab 2 & Tab 4)
   const [dpAttendance, setDpAttendance] = useState([]);
   const [allDps, setAllDps] = useState([]);
-  const [timeFilter, setTimeFilter] = useState('this_month');
+  const [timeFilter, setTimeFilter] = useState('today');
   const [selectedDpId, setSelectedDpId] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
@@ -359,6 +359,7 @@ function DeliveryPersonAuditContent() {
     if (attStatusFilter === 'present') matchesStatus = (dp.presentDays || 0) > 0;
     else if (attStatusFilter === 'absent') matchesStatus = (dp.absentDays || 0) > 0;
     else if (attStatusFilter === 'standby') matchesStatus = (dp.standbyDays || 0) > 0;
+    else if (attStatusFilter === 'not_marked') matchesStatus = (dp.notMarkedDays || 0) > 0 || ((dp.presentDays || 0) === 0 && (dp.absentDays || 0) === 0 && (dp.standbyDays || 0) === 0);
 
     return matchesSearch && matchesRoute && matchesStatus;
   });
@@ -425,15 +426,6 @@ function DeliveryPersonAuditContent() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
           >
             <MdAssignment style={{ fontSize: 17 }} /> Daily Audit
-          </button>
-
-          <button
-            className={`btn btn-sm ${activeTab === 'monthly-audit' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('monthly-audit')}
-            id="dp-tab-monthly-audit"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
-          >
-            <MdDateRange style={{ fontSize: 17 }} /> Monthly Audit
           </button>
 
           <button
@@ -568,8 +560,8 @@ function DeliveryPersonAuditContent() {
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
           {/* Quick Summary Cards */}
           <div style={{ display: 'flex', gap: 14, marginBottom: 20, flexWrap: 'wrap' }}>
-            <div className="card" style={{ flex: 1, minWidth: 140, background: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.25)' }}>
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
+            <div className="card" style={{ flex: 1, minWidth: 130, background: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.25)' }}>
+              <div className="card-body" style={{ textAlign: 'center', padding: '14px 12px' }}>
                 <div style={{ fontSize: 24, fontWeight: 800, color: '#10b981' }}>
                   {safeDpAttendance.filter(d => (d?.presentDays || 0) > 0).length}
                 </div>
@@ -577,8 +569,8 @@ function DeliveryPersonAuditContent() {
               </div>
             </div>
 
-            <div className="card" style={{ flex: 1, minWidth: 140, background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }}>
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
+            <div className="card" style={{ flex: 1, minWidth: 130, background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }}>
+              <div className="card-body" style={{ textAlign: 'center', padding: '14px 12px' }}>
                 <div style={{ fontSize: 24, fontWeight: 800, color: '#ef4444' }}>
                   {safeDpAttendance.filter(d => (d?.absentDays || 0) > 0).length}
                 </div>
@@ -586,8 +578,8 @@ function DeliveryPersonAuditContent() {
               </div>
             </div>
 
-            <div className="card" style={{ flex: 1, minWidth: 140, background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.25)' }}>
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
+            <div className="card" style={{ flex: 1, minWidth: 130, background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.25)' }}>
+              <div className="card-body" style={{ textAlign: 'center', padding: '14px 12px' }}>
                 <div style={{ fontSize: 24, fontWeight: 800, color: '#d97706' }}>
                   {safeDpAttendance.filter(d => (d?.standbyDays || 0) > 0).length}
                 </div>
@@ -595,8 +587,17 @@ function DeliveryPersonAuditContent() {
               </div>
             </div>
 
-            <div className="card" style={{ flex: 1, minWidth: 140 }}>
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
+            <div className="card" style={{ flex: 1, minWidth: 130, background: 'rgba(139,92,246,0.06)', borderColor: 'rgba(139,92,246,0.25)' }}>
+              <div className="card-body" style={{ textAlign: 'center', padding: '14px 12px' }}>
+                <div style={{ fontSize: 24, fontWeight: 800, color: '#8b5cf6' }}>
+                  {safeDpAttendance.filter(d => (d?.notMarkedDays || 0) > 0 || ((d?.presentDays || 0) === 0 && (d?.absentDays || 0) === 0 && (d?.standbyDays || 0) === 0)).length}
+                </div>
+                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Not Marked DPs</div>
+              </div>
+            </div>
+
+            <div className="card" style={{ flex: 1, minWidth: 130 }}>
+              <div className="card-body" style={{ textAlign: 'center', padding: '14px 12px' }}>
                 <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--primary)' }}>
                   {monthlyAvgAttendance}%
                 </div>
@@ -627,10 +628,10 @@ function DeliveryPersonAuditContent() {
                       }
                     }}
                   >
+                    <option value="today">This day</option>
+                    <option value="this_week">This week</option>
                     <option value="this_month">This Month</option>
-                    <option value="today">Today</option>
-                    <option value="this_week">This Week</option>
-                    <option value="custom">Custom Range</option>
+                    <option value="custom">Custom date</option>
                   </select>
                   {timeFilter === 'custom' && (
                     <>
@@ -641,140 +642,308 @@ function DeliveryPersonAuditContent() {
                   )}
                 </div>
 
-                <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
-                  <input
-                    type="text"
-                    className="form-input"
-                    placeholder="Search DP or vehicle..."
-                    value={attSearch}
-                    onChange={e => setAttSearch(e.target.value)}
-                    style={{ width: 180, fontSize: 12.5 }}
-                  />
+                {timeFilter !== 'this_month' && (
+                  <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="Search DP or vehicle..."
+                      value={attSearch}
+                      onChange={e => setAttSearch(e.target.value)}
+                      style={{ width: 180, fontSize: 12.5 }}
+                    />
 
+                    <select
+                      className="form-input"
+                      style={{ width: 140, fontSize: 12.5 }}
+                      value={attRouteFilter}
+                      onChange={e => setAttRouteFilter(e.target.value)}
+                    >
+                      <option value="all">All Routes</option>
+                      {availableRoutes.map(r => (
+                        <option key={r} value={r}>{r}</option>
+                      ))}
+                    </select>
+
+                    <select
+                      className="form-input"
+                      style={{ width: 130, fontSize: 12.5 }}
+                      value={attStatusFilter}
+                      onChange={e => setAttStatusFilter(e.target.value)}
+                    >
+                      <option value="all">All Status</option>
+                      <option value="present">Present</option>
+                      <option value="absent">Absent</option>
+                      <option value="standby">Standby</option>
+                      <option value="not_marked">Not Marked</option>
+                    </select>
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+
+          {/* Conditional View: Calendar Grid for 'this_month', Table for other time periods */}
+          {timeFilter === 'this_month' ? (
+            /* Monthly Audit Calendar Grid */
+            <div className="card">
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <MdEventNote style={{ color: 'var(--primary)', fontSize: 22 }} />
+                  <div>
+                    <span className="card-title">
+                      Monthly Audit Calendar: <strong>{targetDpRecord ? targetDpRecord.dpName : 'Delivery Person'}</strong>
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Click any day cell to view assigned route details
+                    </div>
+                  </div>
+                </div>
+
+                {/* DP Selector Dropdown for Calendar */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>DP Calendar:</span>
                   <select
                     className="form-input"
-                    style={{ width: 140, fontSize: 12.5 }}
-                    value={attRouteFilter}
-                    onChange={e => setAttRouteFilter(e.target.value)}
+                    style={{ width: 200, fontSize: 12.5, padding: '4px 8px' }}
+                    value={selectedDpId}
+                    onChange={e => setSelectedDpId(e.target.value)}
                   >
-                    <option value="all">All Routes</option>
-                    {availableRoutes.map(r => (
-                      <option key={r} value={r}>{r}</option>
+                    <option value="">— Select Delivery Person —</option>
+                    {safeAllDps.map(dp => (
+                      <option key={dp.id} value={dp.id}>{dp.name} ({dp.dpCode})</option>
                     ))}
                   </select>
+                </div>
 
-                  <select
-                    className="form-input"
-                    style={{ width: 130, fontSize: 12.5 }}
-                    value={attStatusFilter}
-                    onChange={e => setAttStatusFilter(e.target.value)}
-                  >
-                    <option value="all">All Status</option>
-                    <option value="present">Present</option>
-                    <option value="absent">Absent</option>
-                    <option value="standby">Standby</option>
-                  </select>
+                {/* Month Navigation (< August 2026 >) */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <button className="icon-btn" onClick={handlePrevMonth} title="Previous Month">
+                    <MdChevronLeft style={{ fontSize: 22 }} />
+                  </button>
+                  <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', minWidth: 130, textAlign: 'center' }}>
+                    {currentCalendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
+                  </span>
+                  <button className="icon-btn" onClick={handleNextMonth} title="Next Month">
+                    <MdChevronRight style={{ fontSize: 22 }} />
+                  </button>
+                </div>
+
+                {/* Status Legend */}
+                <div style={{ display: 'flex', gap: 14, fontSize: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#10b981', borderRadius: 2 }} /> Green = PRESENT</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#ef4444', borderRadius: 2 }} /> Red = ABSENT</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#f59e0b', borderRadius: 2 }} /> Yellow = STANDBY (PRESENT)</span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#8b5cf6', borderRadius: 2 }} /> Purple = NOT MARKED</span>
+                </div>
+              </div>
+
+              <div className="card-body">
+                <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
+                  <div style={{ minWidth: 540 }}>
+                    {/* 7-Column Sun to Sat Day Headers */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, textAlign: 'center', fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
+                      <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
+                    </div>
+
+                    {/* Sun-Sat Day Cells Grid */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+                      {getMonthGridDays().map((dayNum, idx) => {
+                        if (dayNum === null) {
+                          return <div key={`empty-${idx}`} style={{ minHeight: 64, background: 'transparent' }} />;
+                        }
+
+                        const year = currentCalendarDate.getFullYear();
+                        const monthStr = String(currentCalendarDate.getMonth() + 1).padStart(2, '0');
+                        const dayStr = String(dayNum).padStart(2, '0');
+                        const fullDateStr = `${year}-${monthStr}-${dayStr}`;
+                        const todayIST = operationalDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+                        const isFutureDate = fullDateStr > todayIST;
+
+                        const DB2_START_DATE = '2026-07-15';
+                        const isBeforeDb2Date = fullDateStr < DB2_START_DATE;
+
+                        const dayRecord = targetDpRecord?.calendarGrid?.find(c => c && c.date === fullDateStr) || {
+                          date: fullDateStr,
+                          status: isFutureDate ? 'Upcoming' : isBeforeDb2Date ? 'No DB2 Record' : 'NOT_MARKED',
+                          isFuture: isFutureDate,
+                          isBeforeDb2: isBeforeDb2Date,
+                          route: targetDpRecord?.assignedRoute || null,
+                        };
+
+                        const isInactiveCell = dayRecord.status === 'Upcoming' || dayRecord.status === 'No DB2 Record' || dayRecord.isFuture || dayRecord.isBeforeDb2;
+                        const stUpper = String(dayRecord.status || '').toUpperCase();
+                        const isPres = stUpper === 'PRESENT';
+                        const isAbs = stUpper === 'ABSENT';
+                        const isNotM = stUpper === 'NOT_MARKED' || stUpper === 'NOT MARKED';
+
+                        const bgColor = isInactiveCell
+                          ? 'rgba(255,255,255,0.02)'
+                          : isPres
+                          ? 'rgba(16,185,129,0.12)'
+                          : isAbs
+                          ? 'rgba(239,68,68,0.14)'
+                          : isNotM
+                          ? 'rgba(139,92,246,0.12)'
+                          : 'rgba(245,158,11,0.12)';
+
+                        const borderColor = isInactiveCell
+                          ? 'var(--border)'
+                          : isPres
+                          ? 'rgba(16,185,129,0.35)'
+                          : isAbs
+                          ? 'rgba(239,68,68,0.4)'
+                          : isNotM
+                          ? 'rgba(139,92,246,0.35)'
+                          : 'rgba(245,158,11,0.35)';
+
+                        const textColor = isInactiveCell
+                          ? 'var(--text-muted)'
+                          : isPres
+                          ? '#10b981'
+                          : isAbs
+                          ? '#ef4444'
+                          : isNotM
+                          ? '#8b5cf6'
+                          : '#d97706';
+
+                        return (
+                          <motion.div
+                            key={`day-${dayNum}`}
+                            whileHover={{ scale: isInactiveCell ? 1 : 1.03 }}
+                            onClick={() => !isInactiveCell && setDayDetail({ dpName: targetDpRecord?.dpName || 'Delivery Person', ...dayRecord })}
+                            style={{
+                              minHeight: 68,
+                              borderRadius: 10,
+                              padding: '8px 10px',
+                              background: bgColor,
+                              border: `1px solid ${borderColor}`,
+                              cursor: isInactiveCell ? 'default' : 'pointer',
+                              opacity: isInactiveCell ? 0.4 : 1,
+                              display: 'flex',
+                              flexDirection: 'column',
+                              justify: 'space-between',
+                            }}
+                          >
+                            <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', textAlign: 'left' }}>
+                              {dayNum}
+                            </div>
+                            <div style={{ fontSize: 10, fontWeight: 700, color: textColor, textAlign: 'right' }}>
+                              {isInactiveCell ? '—' : isNotM ? 'Not Marked' : stUpper === 'STANDBY' ? 'Present (Standby)' : dayRecord.status}
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-          </div>
-
-          {/* Delivery Person Attendance & Absence Audit Table */}
-          <div className="card">
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
-              <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <MdDirectionsBike style={{ color: 'var(--primary)' }} /> Delivery Person Attendance & Route Audit Table
+          ) : (
+            /* Delivery Person Attendance & Absence Audit Table */
+            <div className="card">
+              <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }}>
+                <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdDirectionsBike style={{ color: 'var(--primary)' }} /> Delivery Person Attendance & Route Audit Table
+                </div>
+                <span className="badge badge-blue">{filteredAttendance.length} DPs Listed</span>
               </div>
-              <span className="badge badge-blue">{filteredAttendance.length} DPs Listed</span>
-            </div>
-            <div className="table-wrapper">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: 140 }}>DELIVERY PERSON</th>
-                    <th style={{ minWidth: 110 }}>VEHICLE NO</th>
-                    <th style={{ minWidth: 120 }}>ASSIGNED ROUTE</th>
-                    <th>TOTAL DAYS</th>
-                    <th style={{ color: '#10b981' }}>PRESENT DAYS</th>
-                    <th style={{ color: '#ef4444', minWidth: 140 }}>NO. OF DAYS ABSENT</th>
-                    <th style={{ color: '#d97706', minWidth: 120 }}>STANDBY DAYS</th>
-                    <th>ATTENDANCE %</th>
-                    <th style={{ minWidth: 160 }}>PREVIEW</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {attendanceLoad ? (
-                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 attendance records...</td></tr>
-                  ) : filteredAttendance.length === 0 ? (
-                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No attendance audit records found matching filters.</td></tr>
-                  ) : filteredAttendance.map(dp => (
-                    <tr
-                      key={dp.dpId || dp.dpCode}
-                      style={{ cursor: 'pointer', background: selectedDpId === dp.dpId ? 'rgba(59,130,246,0.05)' : 'transparent' }}
-                      onClick={() => setSelectedDpId(dp.dpId)}
-                    >
-                      <td style={{ fontWeight: 700 }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                            <MdPerson />
-                          </div>
-                          <div>
-                            <div>{dp.dpName}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.dpCode}</div>
-                          </div>
-                        </div>
-                      </td>
-                      <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{dp.vehicleNumber || '—'}</td>
-                      <td><span className="badge badge-gray">{dp.assignedRoute || 'Unassigned'}</span></td>
-                      <td style={{ fontWeight: 600 }}>{dp.totalDays || 0} Days</td>
-                      <td>
-                        <span className="badge badge-success" style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <MdCheckCircle /> {dp.presentDays || 0} Present
-                        </span>
-                      </td>
-                      <td>
-                        <span className="badge badge-danger" style={{ fontWeight: 800, fontSize: 12.5, padding: '4px 12px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <MdCancel /> {dp.absentDays || 0} Days Absent
-                        </span>
-                      </td>
-                      <td>
-                        <span className="badge badge-warning" style={{ fontWeight: 800, fontSize: 12.5, padding: '4px 12px', background: 'rgba(245,158,11,0.12)', color: '#d97706', border: '1px solid rgba(245,158,11,0.25)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                          <MdEventNote /> {dp.standbyDays || 0} Standby
-                        </span>
-                      </td>
-                      <td>
-                        <span className={`badge ${(dp.attendancePercentage || 0) >= 90 ? 'badge-success' : (dp.attendancePercentage || 0) >= 75 ? 'badge-warning' : 'badge-danger'}`} style={{ fontWeight: 800 }}>
-                          {dp.attendancePercentage || 0}%
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 160 }}>
-                          {(dp.calendarGrid || []).slice(0, 14).map((cd, idx) => {
-                            const st = String(cd?.status || '').toUpperCase();
-                            const isPres = st === 'PRESENT';
-                            const isAbs = st === 'ABSENT';
-                            const isStby = st === 'STANDBY' || st === 'ON_CALL';
-                            return (
-                              <div
-                                key={idx}
-                                title={`${cd?.date || ''}: ${cd?.status || ''}`}
-                                style={{
-                                  width: 9,
-                                  height: 9,
-                                  borderRadius: 2,
-                                  background: isPres ? '#10b981' : isAbs ? '#ef4444' : isStby ? '#f59e0b' : '#94a3b8',
-                                }}
-                              />
-                            );
-                          })}
-                        </div>
-                      </td>
+              <div className="table-wrapper">
+                <table className="table">
+                  <thead>
+                    <tr>
+                      <th style={{ minWidth: 140 }}>DELIVERY PERSON</th>
+                      <th style={{ minWidth: 110 }}>VEHICLE NO</th>
+                      <th style={{ minWidth: 120 }}>ASSIGNED ROUTE</th>
+                      <th>TOTAL DAYS</th>
+                      <th style={{ color: '#10b981' }}>PRESENT DAYS</th>
+                      <th style={{ color: '#ef4444', minWidth: 140 }}>NO. OF DAYS ABSENT</th>
+                      <th style={{ color: '#d97706', minWidth: 120 }}>STANDBY DAYS</th>
+                      <th style={{ color: '#8b5cf6', minWidth: 120 }}>NOT MARKED</th>
+                      <th>ATTENDANCE %</th>
+                      <th style={{ minWidth: 160 }}>PREVIEW</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {attendanceLoad ? (
+                      <tr><td colSpan={10} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 attendance records...</td></tr>
+                    ) : filteredAttendance.length === 0 ? (
+                      <tr><td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No attendance audit records found matching filters.</td></tr>
+                    ) : filteredAttendance.map(dp => (
+                      <tr
+                        key={dp.dpId || dp.dpCode}
+                        style={{ cursor: 'pointer', background: selectedDpId === dp.dpId ? 'rgba(59,130,246,0.05)' : 'transparent' }}
+                        onClick={() => setSelectedDpId(dp.dpId)}
+                      >
+                        <td style={{ fontWeight: 700 }}>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <div style={{ width: 28, height: 28, borderRadius: '50%', background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                              <MdPerson />
+                            </div>
+                            <div>
+                              <div>{dp.dpName}</div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.dpCode}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{dp.vehicleNumber || '—'}</td>
+                        <td><span className="badge badge-gray">{dp.assignedRoute || 'Unassigned'}</span></td>
+                        <td style={{ fontWeight: 600 }}>{dp.totalDays || 0} Days</td>
+                        <td>
+                          <span className="badge badge-success" style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <MdCheckCircle /> {dp.presentDays || 0} Present
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-danger" style={{ fontWeight: 800, fontSize: 12.5, padding: '4px 12px', background: 'rgba(239,68,68,0.12)', color: '#ef4444', border: '1px solid rgba(239,68,68,0.25)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <MdCancel /> {dp.absentDays || 0} Days Absent
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge badge-warning" style={{ fontWeight: 800, fontSize: 12.5, padding: '4px 12px', background: 'rgba(245,158,11,0.12)', color: '#d97706', border: '1px solid rgba(245,158,11,0.25)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <MdEventNote /> {dp.standbyDays || 0} Standby
+                          </span>
+                        </td>
+                        <td>
+                          <span className="badge" style={{ fontWeight: 800, fontSize: 12.5, padding: '4px 12px', background: 'rgba(139,92,246,0.12)', color: '#8b5cf6', border: '1px solid rgba(139,92,246,0.25)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <MdInfoOutline /> {dp.notMarkedDays || 0} Not Marked
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`badge ${(dp.attendancePercentage || 0) >= 90 ? 'badge-success' : (dp.attendancePercentage || 0) >= 75 ? 'badge-warning' : 'badge-danger'}`} style={{ fontWeight: 800 }}>
+                            {dp.attendancePercentage || 0}%
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ display: 'flex', gap: 3, flexWrap: 'wrap', maxWidth: 160 }}>
+                            {(dp.calendarGrid || []).slice(0, 14).map((cd, idx) => {
+                              const st = String(cd?.status || '').toUpperCase();
+                              const isPres = st === 'PRESENT';
+                              const isAbs = st === 'ABSENT';
+                              const isStby = st === 'STANDBY' || st === 'ON_CALL';
+                              const isNotM = st === 'NOT_MARKED' || st === 'NOT MARKED';
+                              return (
+                                <div
+                                  key={idx}
+                                  title={`${cd?.date || ''}: ${isNotM ? 'Not Marked' : cd?.status || ''}`}
+                                  style={{
+                                    width: 9,
+                                    height: 9,
+                                    borderRadius: 2,
+                                    background: isPres ? '#10b981' : isAbs ? '#ef4444' : isStby ? '#f59e0b' : isNotM ? '#8b5cf6' : '#94a3b8',
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          )}
         </motion.div>
       )}
 
@@ -912,199 +1081,7 @@ function DeliveryPersonAuditContent() {
       )}
 
       {/* ========================================================================= */}
-      {/* TAB 4 — MONTHLY AUDIT                                                     */}
-      {/* ========================================================================= */}
-      {activeTab === 'monthly-audit' && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }}>
-          {/* Monthly Summary KPI Cards */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 14, marginBottom: 20 }}>
-            <div className="card">
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--primary)' }}>{monthlyTotalDps}</div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total DPs Audit</div>
-              </div>
-            </div>
-
-            <div className="card" style={{ background: 'rgba(16,185,129,0.06)', borderColor: 'rgba(16,185,129,0.25)' }}>
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: '#10b981' }}>{monthlyTotalPresent}</div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Present Days</div>
-              </div>
-            </div>
-
-            <div className="card" style={{ background: 'rgba(239,68,68,0.06)', borderColor: 'rgba(239,68,68,0.25)' }}>
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: '#ef4444' }}>{monthlyTotalAbsent}</div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Leave / Absent</div>
-              </div>
-            </div>
-
-            <div className="card" style={{ background: 'rgba(245,158,11,0.06)', borderColor: 'rgba(245,158,11,0.25)' }}>
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: '#d97706' }}>{monthlyTotalStandby}</div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Total Standby Days</div>
-              </div>
-            </div>
-
-            <div className="card">
-              <div className="card-body" style={{ textAlign: 'center', padding: '14px 16px' }}>
-                <div style={{ fontSize: 26, fontWeight: 800, color: '#8b5cf6' }}>{monthlyAvgAttendance}%</div>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', textTransform: 'uppercase' }}>Average Attendance</div>
-              </div>
-            </div>
-          </div>
-
-          {/* Monthly Audit Calendar Grid */}
-          <div className="card">
-            <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                <MdEventNote style={{ color: 'var(--primary)', fontSize: 22 }} />
-                <div>
-                  <span className="card-title">
-                    Monthly Audit Calendar: <strong>{targetDpRecord ? targetDpRecord.dpName : 'Delivery Person'}</strong>
-                  </span>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    Click any day cell to view assigned route details
-                  </div>
-                </div>
-              </div>
-
-              {/* DP Selector Dropdown for Calendar */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>DP Calendar:</span>
-                <select
-                  className="form-input"
-                  style={{ width: 200, fontSize: 12.5, padding: '4px 8px' }}
-                  value={selectedDpId}
-                  onChange={e => setSelectedDpId(e.target.value)}
-                >
-                  <option value="">— Select Delivery Person —</option>
-                  {safeAllDps.map(dp => (
-                    <option key={dp.id} value={dp.id}>{dp.name} ({dp.dpCode})</option>
-                  ))}
-                </select>
-              </div>
-
-              {/* Month Navigation (< August 2026 >) */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <button className="icon-btn" onClick={handlePrevMonth} title="Previous Month">
-                  <MdChevronLeft style={{ fontSize: 22 }} />
-                </button>
-                <span style={{ fontWeight: 800, fontSize: 16, color: 'var(--text-primary)', minWidth: 130, textAlign: 'center' }}>
-                  {currentCalendarDate.toLocaleDateString('en-US', { month: 'long', year: 'numeric' })}
-                </span>
-                <button className="icon-btn" onClick={handleNextMonth} title="Next Month">
-                  <MdChevronRight style={{ fontSize: 22 }} />
-                </button>
-              </div>
-
-              {/* Status Legend */}
-              <div style={{ display: 'flex', gap: 14, fontSize: 12, alignItems: 'center' }}>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#10b981', borderRadius: 2 }} /> Green = PRESENT</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#ef4444', borderRadius: 2 }} /> Red = ABSENT</span>
-                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}><span style={{ width: 10, height: 10, background: '#f59e0b', borderRadius: 2 }} /> Yellow = STANDBY</span>
-              </div>
-            </div>
-
-            <div className="card-body">
-              <div style={{ overflowX: 'auto', WebkitOverflowScrolling: 'touch' }}>
-                <div style={{ minWidth: 540 }}>
-                  {/* 7-Column Sun to Sat Day Headers */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8, textAlign: 'center', fontWeight: 700, fontSize: 13, color: 'var(--text-muted)', marginBottom: 8, paddingBottom: 6, borderBottom: '1px solid var(--border)' }}>
-                    <div>Su</div><div>Mo</div><div>Tu</div><div>We</div><div>Th</div><div>Fr</div><div>Sa</div>
-                  </div>
-
-                  {/* Sun-Sat Day Cells Grid */}
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
-                    {getMonthGridDays().map((dayNum, idx) => {
-                      if (dayNum === null) {
-                        return <div key={`empty-${idx}`} style={{ minHeight: 64, background: 'transparent' }} />;
-                      }
-
-                      const year = currentCalendarDate.getFullYear();
-                      const monthStr = String(currentCalendarDate.getMonth() + 1).padStart(2, '0');
-                      const dayStr = String(dayNum).padStart(2, '0');
-                      const fullDateStr = `${year}-${monthStr}-${dayStr}`;
-                      const todayIST = operationalDate || new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-                      const isFutureDate = fullDateStr > todayIST;
-
-                      const DB2_START_DATE = '2026-07-15';
-                      const isBeforeDb2Date = fullDateStr < DB2_START_DATE;
-
-                      const dayRecord = targetDpRecord?.calendarGrid?.find(c => c && c.date === fullDateStr) || {
-                        date: fullDateStr,
-                        status: isFutureDate ? 'Upcoming' : isBeforeDb2Date ? 'No DB2 Record' : 'ABSENT',
-                        isFuture: isFutureDate,
-                        isBeforeDb2: isBeforeDb2Date,
-                        route: targetDpRecord?.assignedRoute || null,
-                      };
-
-                      const isInactiveCell = dayRecord.status === 'Upcoming' || dayRecord.status === 'No DB2 Record' || dayRecord.isFuture || dayRecord.isBeforeDb2;
-                      const stUpper = String(dayRecord.status || '').toUpperCase();
-                      const isPres = stUpper === 'PRESENT';
-                      const isAbs = stUpper === 'ABSENT';
-
-                      const bgColor = isInactiveCell
-                        ? 'rgba(255,255,255,0.02)'
-                        : isPres
-                        ? 'rgba(16,185,129,0.12)'
-                        : isAbs
-                        ? 'rgba(239,68,68,0.14)'
-                        : 'rgba(245,158,11,0.12)';
-
-                      const borderColor = isInactiveCell
-                        ? 'var(--border)'
-                        : isPres
-                        ? 'rgba(16,185,129,0.35)'
-                        : isAbs
-                        ? 'rgba(239,68,68,0.4)'
-                        : 'rgba(245,158,11,0.35)';
-
-                      const textColor = isInactiveCell
-                        ? 'var(--text-muted)'
-                        : isPres
-                        ? '#10b981'
-                        : isAbs
-                        ? '#ef4444'
-                        : '#d97706';
-
-                      return (
-                        <motion.div
-                          key={`day-${dayNum}`}
-                          whileHover={{ scale: isInactiveCell ? 1 : 1.03 }}
-                          onClick={() => !isInactiveCell && setDayDetail({ dpName: targetDpRecord?.dpName || 'Delivery Person', ...dayRecord })}
-                          style={{
-                            minHeight: 68,
-                            borderRadius: 10,
-                            padding: '8px 10px',
-                            background: bgColor,
-                            border: `1px solid ${borderColor}`,
-                            cursor: isInactiveCell ? 'default' : 'pointer',
-                            opacity: isInactiveCell ? 0.4 : 1,
-                            display: 'flex',
-                            flexDirection: 'column',
-                            justify: 'space-between',
-                          }}
-                        >
-                          <div style={{ fontSize: 14, fontWeight: 800, color: 'var(--text-primary)', textAlign: 'left' }}>
-                            {dayNum}
-                          </div>
-                          <div style={{ fontSize: 10, fontWeight: 700, color: textColor, textAlign: 'right' }}>
-                            {isInactiveCell ? '—' : dayRecord.status}
-                          </div>
-                        </motion.div>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        </motion.div>
-      )}
-
-      {/* ========================================================================= */}
-      {/* TAB 5 — ADHOC PRODUCT SALES AUDIT                                       */}
+      {/* ADHOC PRODUCT SALES AUDIT                                                 */}
       {/* ========================================================================= */}
       {activeTab === 'daily-audit' && (
         <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} style={{ marginTop: 24 }}>
@@ -1594,8 +1571,16 @@ function DeliveryPersonAuditContent() {
                 </div>
                 <div style={{ fontSize: 13.5, color: 'var(--text-secondary)', marginBottom: 12 }}>
                   Status:{' '}
-                  <strong style={{ color: selectedDayDetail.status === 'Present' ? '#10b981' : selectedDayDetail.status === 'Absent' ? '#ef4444' : '#d97706' }}>
-                    {selectedDayDetail.status}
+                  <strong style={{
+                    color: selectedDayDetail.status === 'Present' || selectedDayDetail.status === 'PRESENT'
+                      ? '#10b981'
+                      : selectedDayDetail.status === 'Absent' || selectedDayDetail.status === 'ABSENT'
+                      ? '#ef4444'
+                      : selectedDayDetail.status === 'NOT_MARKED' || selectedDayDetail.status === 'Not Marked'
+                      ? '#8b5cf6'
+                      : '#d97706'
+                  }}>
+                    {selectedDayDetail.status === 'NOT_MARKED' ? 'Not Marked' : selectedDayDetail.status === 'STANDBY' ? 'Present (Standby)' : selectedDayDetail.status}
                   </strong>
                 </div>
                 <div style={{ fontSize: 13, color: 'var(--text-muted)', paddingTop: 10, borderTop: '1px solid var(--border)' }}>
