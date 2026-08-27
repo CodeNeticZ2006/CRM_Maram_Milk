@@ -1,30 +1,26 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import {
-  MdPeople, MdDeliveryDining, MdAttachMoney, MdPending,
-  MdTrendingUp, MdTrendingDown
-} from 'react-icons/md';
+import { MdTrendingUp, MdTrendingDown } from 'react-icons/md';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
 
-const StatCard = ({ icon, label, value, color, iconBg, change, changeDir }) => (
+const StatCard = ({ label, value, color, change, changeDir }) => (
   <motion.div
     className="stat-card"
-    style={{ '--card-accent': color, '--icon-bg': iconBg }}
+    style={{ '--card-accent': color }}
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
     whileHover={{ y: -2 }}
   >
-    <div className="stat-card-header">
-      <div className="stat-icon">{icon}</div>
-      {change !== undefined && (
+    {change !== undefined && (
+      <div className="stat-card-header" style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
         <div className={`stat-change ${changeDir}`}>
           {changeDir === 'up' ? <MdTrendingUp /> : <MdTrendingDown />}
           {change}
         </div>
-      )}
-    </div>
+      </div>
+    )}
     <div className="stat-value">{value}</div>
     <div className="stat-label">{label}</div>
   </motion.div>
@@ -86,22 +82,22 @@ export default function DashboardPage() {
       {/* Statistics Cards */}
       <p className="section-title" style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>STATISTICS</p>
       <div className="dashboard-grid" style={{ marginBottom: 24 }}>
-        <StatCard icon={<MdPeople style={{ color: '#3b82f6' }} />} label="No. of Customer Registered" value={fmt(s.total_customers)} color="#3b82f6" iconBg="rgba(59,130,246,0.1)" />
-        <StatCard icon={<span style={{ color: '#10b981', fontSize: 18 }}>💰</span>} label="Total In-Hand Wallet Amount" value={fmtCur(s.total_in_hand_wallet)} color="#10b981" iconBg="rgba(16,185,129,0.1)" />
-        <StatCard icon={<span style={{ color: '#ef4444', fontSize: 18 }}>📉</span>} label="Total Negative Wallet Amount" value={fmtCur(s.total_negative_wallet)} color="#ef4444" iconBg="rgba(239,68,68,0.1)" />
-        <StatCard icon={<MdPeople style={{ color: '#06b6d4' }} />} label="No. of Active Customers" value={fmt(s.active_customers)} color="#06b6d4" iconBg="rgba(6,182,212,0.1)" />
-        <StatCard icon={<span style={{ color: '#8b5cf6', fontSize: 18 }}>📋</span>} label="No. of Active Subscription" value={fmt(s.active_subscriptions)} color="#8b5cf6" iconBg="rgba(139,92,246,0.1)" />
-        <StatCard icon={<span style={{ color: '#3b82f6', fontSize: 18 }}>💧</span>} label="Total Milk Delivered (This Month)" value={`${fmt(kpi.milk_inventory?.today_dispatch || 0)} L`} color="#3b82f6" iconBg="rgba(59,130,246,0.1)" />
-        <StatCard icon={<span style={{ color: '#f59e0b', fontSize: 18 }}>❓</span>} label="Total No. of Enquiry This Month" value={fmt(s.total_enquiries_this_month)} color="#f59e0b" iconBg="rgba(245,158,11,0.1)" />
-        <StatCard icon={<MdPeople style={{ color: '#10b981' }} />} label="No. of Customer Registered (Month)" value={fmt(s.registered_this_month)} color="#10b981" iconBg="rgba(16,185,129,0.1)" />
-        <StatCard icon={<MdPeople style={{ color: '#06b6d4' }} />} label="Customers Registered Today" value={fmt(s.registered_today)} color="#06b6d4" iconBg="rgba(6,182,212,0.1)" />
+        <StatCard label="No. of Customer Registered" value={fmt(s.total_customers)} color="#3b82f6" />
+        <StatCard label="Total In-Hand Wallet Amount" value={fmtCur(s.total_in_hand_wallet)} color="#10b981" />
+        <StatCard label="Total Negative Wallet Amount" value={fmtCur(s.total_negative_wallet)} color="#ef4444" />
+        <StatCard label="No. of Active Customers" value={fmt(s.active_customers)} color="#06b6d4" />
+        <StatCard label="No. of Active Subscription" value={fmt(s.active_subscriptions)} color="#8b5cf6" />
+        <StatCard label="Total Milk Delivered (This Month)" value={`${fmt(s.total_milk_delivered_month || kpi.milk_inventory?.today_dispatch || 0)} L`} color="#3b82f6" />
+        <StatCard label="Total No. of Enquiry This Month" value={fmt(s.total_enquiries_this_month)} color="#f59e0b" />
+        <StatCard label="No. of Customer Registered (Month)" value={fmt(s.registered_this_month)} color="#10b981" />
+        <StatCard label="Customers Registered Today" value={fmt(s.registered_today)} color="#06b6d4" />
       </div>
 
       {/* Hold & Change Requests */}
       <div className="request-widgets">
         {[
-          { title: `HOLD REQUEST`, subtitle: `This Month`, count: s.hold_requests_pending, color: '#f59e0b', bg: 'rgba(245,158,11,0.06)', emoji: '⏸️' },
-          { title: `CHANGES REQUEST`, subtitle: `This Month`, count: s.change_requests_pending, color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)', emoji: '✏️' },
+          { title: `HOLD REQUEST`, subtitle: `This Month`, count: s.hold_requests_pending, color: '#f59e0b', bg: 'rgba(245,158,11,0.06)' },
+          { title: `CHANGES REQUEST`, subtitle: `This Month`, count: s.change_requests_pending, color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)' },
         ].map((w) => (
           <motion.div
             key={w.title}
@@ -112,7 +108,7 @@ export default function DashboardPage() {
           >
             <div className="card-body" style={{ textAlign: 'center', padding: '24px' }}>
               <p style={{ fontSize: 11.5, fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase', color: w.color, marginBottom: 8 }}>
-                {w.emoji} {w.title}
+                {w.title}
               </p>
               <p style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 16 }}>{w.subtitle}</p>
               <div style={{ fontSize: 48, fontWeight: 800, color: w.color, lineHeight: 1 }}>{fmt(w.count)}</div>
@@ -125,10 +121,10 @@ export default function DashboardPage() {
       {/* KPI Row */}
       <p className="section-title" style={{ marginBottom: 12, fontSize: 13, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.5px' }}>TODAY'S KPIs</p>
       <div className="dashboard-grid" style={{ marginBottom: 24 }}>
-        <StatCard icon={<MdDeliveryDining style={{ color: '#3b82f6' }} />} label="Today's Deliveries" value={fmt(kpi.deliveries_today)} color="#3b82f6" iconBg="rgba(59,130,246,0.1)" />
-        <StatCard icon={<MdAttachMoney style={{ color: '#10b981' }} />} label="Today's Revenue" value={fmtCur(kpi.revenue_today)} color="#10b981" iconBg="rgba(16,185,129,0.1)" />
-        <StatCard icon={<MdPending style={{ color: '#f59e0b' }} />} label="Pending Invoices" value={fmt(kpi.pending_invoices)} color="#f59e0b" iconBg="rgba(245,158,11,0.1)" />
-        <StatCard icon={<span style={{ color: '#8b5cf6', fontSize: 18 }}>📦</span>} label="Closing Milk Stock" value={`${kpi.milk_inventory?.closing_stock || 0} L`} color="#8b5cf6" iconBg="rgba(139,92,246,0.1)" />
+        <StatCard label="Today's Deliveries" value={fmt(kpi.deliveries_today)} color="#3b82f6" />
+        <StatCard label="Today's Revenue" value={fmtCur(kpi.revenue_today)} color="#10b981" />
+        <StatCard label="Pending Invoices" value={fmt(kpi.pending_invoices)} color="#f59e0b" />
+        <StatCard label="Closing Milk Stock" value={`${kpi.milk_inventory?.closing_stock || 0} L`} color="#8b5cf6" />
       </div>
 
       {/* Wallet Statistics */}
@@ -152,7 +148,7 @@ export default function DashboardPage() {
         </div>
         <div className="card" style={{ background: 'rgba(59,130,246,0.03)', borderColor: 'rgba(59,130,246,0.2)' }}>
           <div className="card-body">
-            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', marginBottom: 12, textTransform: 'uppercase' }}>💰 Wallet Recharge (Online)</p>
+            <p style={{ fontSize: 12, fontWeight: 700, color: 'var(--primary)', marginBottom: 12, textTransform: 'uppercase' }}>Wallet Recharge (Online)</p>
             <div style={{ fontSize: 32, fontWeight: 800, color: 'var(--primary)' }}>{fmtCur(wm.online_recharge)}</div>
           </div>
         </div>
@@ -180,7 +176,7 @@ export default function DashboardPage() {
         {/* Customer Growth */}
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">📈 Customer Growth (6 Months)</h3>
+            <h3 className="card-title">Customer Growth (6 Months)</h3>
           </div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={220}>
@@ -204,7 +200,7 @@ export default function DashboardPage() {
         {/* Revenue */}
         <div className="card">
           <div className="card-header">
-            <h3 className="card-title">💰 Monthly Revenue</h3>
+            <h3 className="card-title">Monthly Revenue</h3>
           </div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={220}>
@@ -222,6 +218,7 @@ export default function DashboardPage() {
     </div>
   );
 }
+
 
 
 

@@ -30,34 +30,41 @@ const getDashboardStats = async (req, res, next) => {
       revenueToday,
       pendingPayments,
       milkInventory,
+      totalMilkDeliveredMonth,
     ] = await Promise.all([
       readFromCRM('SELECT COUNT(*) FROM customers'),
       readFromCRM("SELECT COUNT(*) FROM customers WHERE status = 'Active'"),
       readFromCRM('SELECT COUNT(*) FROM customers WHERE EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2', [currentMonth, currentYear]),
       // registeredToday: uses actual IST calendar date (real event time, not operational day)
-      readFromCRM('SELECT COUNT(*) FROM customers WHERE DATE(created_at AT TIME ZONE \'Asia/Kolkata\') = $1', [istCalendarDate]),
+      readFromCRM('SELECT COUNT(*) FROM customers WHERE DATE(created_at) = $1', [istCalendarDate]),
       readFromCRM("SELECT COUNT(*) FROM subscriptions WHERE status = 'Active'"),
       readFromCRM('SELECT COUNT(*) FROM customer_enquiries WHERE EXTRACT(MONTH FROM created_at) = $1 AND EXTRACT(YEAR FROM created_at) = $2', [currentMonth, currentYear]),
       readFromCRM("SELECT COUNT(*) FROM hold_requests WHERE status = 'Pending'"),
       readFromCRM("SELECT COUNT(*) FROM change_requests WHERE status = 'Pending'"),
       readFromCRM(`SELECT 
-        COALESCE(SUM(balance),0) as total_wallet,
-        COALESCE(SUM(CASE WHEN balance < 0 THEN balance ELSE 0 END),0) as negative_wallet,
-        COALESCE(SUM(total_recharged),0) as total_recharged
-        FROM wallet`),
+        COALESCE(SUM(COALESCE(w.balance, c.wallet_balance, 0)), 0) as total_wallet,
+        COALESCE(SUM(CASE WHEN COALESCE(w.balance, c.wallet_balance, 0) < 0 THEN COALESCE(w.balance, c.wallet_balance, 0) ELSE 0 END), 0) as negative_wallet,
+        COALESCE(SUM(COALESCE(w.total_recharged, 0)), 0) as total_recharged
+        FROM customers c
+        LEFT JOIN wallet w ON w.customer_id = c.id`),
       // walletToday: uses operational day (7 PM IST boundary)
       readFromCRM(`SELECT 
         COALESCE(SUM(CASE WHEN method='Cash' THEN amount ELSE 0 END),0) as cash_recharge,
         COALESCE(SUM(CASE WHEN method!='Cash' THEN amount ELSE 0 END),0) as online_recharge,
         COALESCE(SUM(amount),0) as total_recharge
-        FROM wallet_transactions WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata')=$1 AND type='Recharge'`, [opDay]),
+        FROM wallet_transactions WHERE DATE(created_at)=$1 AND type='Recharge'`, [opDay]),
       // deliveriesToday: uses operational day
-      readFromCRM("SELECT COUNT(*) FROM deliveries WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') = $1 AND status = 'Delivered'", [opDay]),
+      readFromCRM("SELECT COUNT(*) FROM deliveries WHERE DATE(COALESCE(delivered_at, created_at)) = $1 AND status = 'Delivered'", [opDay]),
       // revenueToday: uses operational day
-      readFromCRM("SELECT COALESCE(SUM(amount),0) as revenue FROM payments WHERE payment_date = $1 AND status = 'Verified'", [opDay]),
+      readFromCRM("SELECT COALESCE(SUM(amount),0) as revenue FROM payments WHERE (payment_date = $1 OR DATE(created_at) = $1) AND status = 'Verified'", [opDay]),
       readFromCRM("SELECT COUNT(*) FROM invoices WHERE payment_status = 'Pending'"),
       // milkInventory: uses operational day
       readFromCRM('SELECT * FROM milk_inventory WHERE date = $1', [opDay]),
+      readFromCRM(`SELECT COALESCE(SUM(quantity), 0) as total_delivered 
+        FROM deliveries 
+        WHERE EXTRACT(MONTH FROM COALESCE(delivered_at, created_at)) = $1 
+          AND EXTRACT(YEAR FROM COALESCE(delivered_at, created_at)) = $2 
+          AND status = 'Delivered'`, [currentMonth, currentYear]),
     ]);
 
     // Get monthly wallet stats
@@ -70,7 +77,7 @@ const getDashboardStats = async (req, res, next) => {
         COALESCE(SUM(CASE WHEN method='Cash' AND type='Recharge' THEN amount ELSE 0 END),0) as cash_recharge,
         COALESCE(SUM(CASE WHEN method!='Cash' AND type='Recharge' THEN amount ELSE 0 END),0) as online_recharge
       FROM wallet_transactions
-      WHERE DATE(created_at AT TIME ZONE 'Asia/Kolkata') BETWEEN $1 AND $2`,
+      WHERE DATE(created_at) BETWEEN $1 AND $2`,
       [monthStart, monthEnd]
     );
 
@@ -89,6 +96,7 @@ const getDashboardStats = async (req, res, next) => {
           change_requests_pending: parseInt(changeCount.rows[0].count),
           total_in_hand_wallet: parseFloat(walletStats.rows[0].total_wallet),
           total_negative_wallet: parseFloat(walletStats.rows[0].negative_wallet),
+          total_milk_delivered_month: parseFloat(totalMilkDeliveredMonth.rows[0].total_delivered),
         },
         kpi: {
           deliveries_today: parseInt(deliveriesToday.rows[0].count),

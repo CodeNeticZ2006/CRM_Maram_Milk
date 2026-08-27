@@ -65,7 +65,6 @@ const NAV_SECTIONS = [
     items: [
       { to: '/inventory', icon: <MdInventory />, label: 'Inventory' },
       { to: '/delivery-person-audit', icon: <MdCalendarToday />, label: 'Delivery Person Audit' },
-      { to: '/route', icon: <MdDirectionsBike />, label: 'Route' },
       { to: '/ecom-orders', icon: <MdShoppingCart />, label: 'Ecom Orders' },
       { to: '/empty-bottles', icon: <MdWineBar />, label: 'Empty Bottles' },
     ]

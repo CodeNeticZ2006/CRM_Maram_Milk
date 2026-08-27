@@ -4,7 +4,8 @@ import {
   MdRefresh, MdPerson, MdDirectionsBike,
   MdCalendarToday, MdFilterList, MdCheckCircle, MdCancel,
   MdEventNote, MdChevronLeft, MdChevronRight, MdClose,
-  MdSearch, MdAssignment, MdDateRange, MdInfoOutline
+  MdSearch, MdAssignment, MdDateRange, MdInfoOutline,
+  MdAdd, MdEdit
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -200,7 +201,7 @@ function DeliveryPersonAuditContent() {
   }, [fetchDpAttendance]);
 
   useEffect(() => {
-    if (activeTab === 'daily-audit' || activeTab === 'adhoc-sales') {
+    if (activeTab === 'daily-audit') {
       fetchDailyAudit();
     }
   }, [activeTab, fetchDailyAudit]);
@@ -442,15 +443,6 @@ function DeliveryPersonAuditContent() {
             style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
           >
             <MdPerson style={{ fontSize: 17 }} /> DP Overview ({safeDeliveryPersons.length})
-          </button>
-
-          <button
-            className={`btn btn-sm ${activeTab === 'adhoc-sales' ? 'btn-primary' : 'btn-secondary'}`}
-            onClick={() => setActiveTab('adhoc-sales')}
-            id="dp-tab-adhoc-sales"
-            style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 700, background: activeTab === 'adhoc-sales' ? 'linear-gradient(135deg, #d97706, #b45309)' : '', borderColor: activeTab === 'adhoc-sales' ? '#d97706' : '' }}
-          >
-            <MdAssignment style={{ fontSize: 17 }} /> AdHoc Product Sales ({adhocAuditData.length})
           </button>
         </div>
       </div>
@@ -1114,8 +1106,8 @@ function DeliveryPersonAuditContent() {
       {/* ========================================================================= */}
       {/* TAB 5 — ADHOC PRODUCT SALES AUDIT                                       */}
       {/* ========================================================================= */}
-      {(activeTab === 'adhoc-sales' || activeTab === 'daily-audit') && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} style={{ marginTop: activeTab === 'daily-audit' ? 24 : 0 }}>
+      {activeTab === 'daily-audit' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} style={{ marginTop: 24 }}>
           <div className="card" style={{ marginBottom: 20 }}>
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, background: 'linear-gradient(135deg, rgba(217,119,6,0.06), rgba(245,158,11,0.02))' }}>
               <div>
