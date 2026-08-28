@@ -4,82 +4,120 @@ const { getExpectedOperationalDate } = require('../services/operationalDay.servi
 
 const getISTDate = () => getExpectedOperationalDate();
 
+// ── Deterministic DB2 Item Resolver (category-guarded, prevents cross-mapping) ──
+// Resolves a CRM product name + material + category to the correct DB2 InventoryItem.
+// Strict category guards prevent "500ml" in milk bottle from matching "500ml" in oil.
+const resolveDb2InventoryItem = (productName, productMaterial = '', productCategory = '', db2Items) => {
+  const sName  = (productName || '').toLowerCase();
+  const sMat   = (productMaterial || '').toLowerCase();
+  const sCat   = (productCategory || '').toLowerCase();
+
+  const isMilk   = sName.includes('milk') || sCat === 'milk';
+  const isBottle = sMat.includes('bottle') || sName.includes('bottle');
+  const isPacket = sMat.includes('packet') || sName.includes('packet');
+
+  let match = null;
+
+  // 1. Exact name match (most reliable)
+  match = db2Items.find(i => i.name.toLowerCase() === sName);
+
+  // 2. Milk-specific material-based matching (only for confirmed milk products)
+  if (!match && isMilk) {
+    if (sName.includes('1l') || sName.includes('1 litre')) {
+      match = db2Items.find(i =>
+        (i.name.toLowerCase().includes('1l') || i.name.toLowerCase().includes('1 litre')) &&
+        i.material.toLowerCase() === 'bottle'
+      );
+    }
+    if (!match && (sName.includes('500') || sName.includes('half') || sName.includes('½'))) {
+      if (isPacket) {
+        match = db2Items.find(i =>
+          (i.name.toLowerCase().includes('500') || i.name.toLowerCase().includes('half')) &&
+          i.material.toLowerCase() === 'packet'
+        );
+      } else if (isBottle) {
+        match = db2Items.find(i =>
+          (i.name.toLowerCase().includes('500') || i.name.toLowerCase().includes('half')) &&
+          i.material.toLowerCase() === 'bottle'
+        );
+      }
+    }
+  }
+
+  // 3. Non-milk: ghee weight disambiguation
+  if (!match && sName.includes('ghee')) {
+    if (sName.includes('250')) {
+      match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('250'));
+    } else if (sName.includes('500')) {
+      match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('500'));
+    }
+  }
+
+  // 4. Explicit keyword map for non-milk adhoc products (no partial-string risk)
+  if (!match && !isMilk) {
+    const nonMilkKeywordMap = [
+      { key: 'coconut',   db2Name: 'Coconut Oil' },
+      { key: 'groundnut', db2Name: 'Groundnut Oil' },
+      { key: 'sesame',    db2Name: 'Sesame Oil' },
+      { key: 'curd',      db2Name: 'Curd' },
+      { key: 'paneer',    db2Name: 'Paneer' },
+      { key: 'butter',    db2Name: 'Butter' },
+      { key: 'honey',     db2Name: 'Honey' },
+      { key: 'sugar',     db2Name: 'Cane Sugar' },
+      { key: 'karupatti', db2Name: 'Karupatti' },
+      { key: 'appalam',   db2Name: 'Appalam' },
+    ];
+    for (const entry of nonMilkKeywordMap) {
+      if (sName.includes(entry.key)) {
+        match = db2Items.find(i => i.name.toLowerCase() === entry.db2Name.toLowerCase());
+        if (match) break;
+      }
+    }
+  }
+
+  // 5. Safe partial match — strictly within same broad category
+  if (!match) {
+    match = db2Items.find(i => {
+      const iName   = i.name.toLowerCase();
+      const iMat    = (i.material || '').toLowerCase();
+      const db2IsMilk = iMat === 'bottle' || iMat === 'packet' || iName.includes('milk');
+      if (isMilk !== db2IsMilk) return false;   // hard category guard
+      return (sName.length > 4 && iName.includes(sName)) ||
+             (iName.length > 4 && sName.includes(iName));
+    });
+  }
+
+  return match || null;
+};
+
 // ── DB2 Sync Helper for AdHoc Products ──────────────────────────────────────
-const syncAdhocProductToDB2 = async (productName, targetDate, addedStock, remainingStock, openingStock = 0, productMaterial = '', productUnit = '') => {
+const syncAdhocProductToDB2 = async (productName, targetDate, addedStock, remainingStock, openingStock = 0, productMaterial = '', productCategory = '') => {
   try {
     const itemsRes = await readFromApp('SELECT id, name, unit, material FROM "InventoryItem"');
     if (!itemsRes.rows || itemsRes.rows.length === 0) return;
 
-    const db2Items = itemsRes.rows;
-    const sName = (productName || '').toLowerCase();
-    const sMat  = (productMaterial || '').toLowerCase();
-    const sUnit = (productUnit || '').toLowerCase();
+    let match = resolveDb2InventoryItem(productName, productMaterial, productCategory, db2Items);
 
-    const isBottle = sMat.includes('bottle') || sName.includes('bottle');
-    const isPacket = sMat.includes('packet') || sName.includes('packet');
-
-    let match = null;
-
-    // 1. MILK 1L (Bottle)
-    if ((sName.includes('1l') || sName.includes('1 litre')) && !sName.includes('oil')) {
-      match = db2Items.find(i => i.name.toLowerCase().includes('1l') && i.material.toLowerCase() === 'bottle');
-    }
-
-    // 2. MILK 500mL / HALF LITRE BOTTLE vs PACKET
-    if (!match && (sName.includes('500') || sName.includes('half') || sName.includes('½'))) {
-      if (sName.includes('milk') || (!sName.includes('ghee') && !sName.includes('curd') && !sName.includes('oil') && !sName.includes('sugar'))) {
-        if (isPacket) {
-          match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'packet');
-        } else if (isBottle) {
-          match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'bottle');
-        }
+    if (!match) {
+      // Auto-create missing DB2 InventoryItem for AdHoc product so Manager App DB has a dedicated item record
+      const newInventoryItemId = randomUUID();
+      const itemMat = productMaterial || productCategory || 'AdHoc';
+      try {
+        await writeToApp(
+          `INSERT INTO "InventoryItem" (id, name, unit, material, "createdAt", "updatedAt")
+           VALUES ($1, $2, $3, $4, NOW(), NOW())`,
+          [newInventoryItemId, productName, productCategory || 'Units', itemMat]
+        );
+        match = { id: newInventoryItemId, name: productName, unit: productCategory || 'Units', material: itemMat };
+        console.log(`✨ [DB2 Sync] Auto-created DB2 InventoryItem for '${productName}' (${newInventoryItemId})`);
+      } catch (createErr) {
+        console.warn(`⚠️ DB2 InventoryItem auto-create warning for '${productName}':`, createErr.message);
       }
     }
 
-    // 3. Ghee weight matching (500gm vs 250gm)
-    if (!match && sName.includes('ghee')) {
-      if (sName.includes('250') || sUnit.includes('250')) {
-        match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('250'));
-      } else if (sName.includes('500') || sUnit.includes('500')) {
-        match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('500'));
-      }
-    }
+    if (!match) return;
 
-    // 4. Specific Keyword Matching for Non-Milk Products
-    if (!match) {
-      const keywordsMap = [
-        { key: 'curd', db2Name: 'Curd' },
-        { key: 'paneer', db2Name: 'Paneer' },
-        { key: 'butter', db2Name: 'Butter' },
-        { key: 'appalam', db2Name: 'Appalam' },
-        { key: 'honey', db2Name: 'Honey' },
-        { key: 'sugar', db2Name: 'Cane Sugar' },
-        { key: 'karupatti', db2Name: 'Karupatti' },
-        { key: 'coconut', db2Name: 'Coconut Oil' },
-        { key: 'groundnut', db2Name: 'Groundnut Oil' },
-        { key: 'sesame', db2Name: 'Sesame Oil' },
-      ];
 
-      for (const item of keywordsMap) {
-        if (sName.includes(item.key)) {
-          match = db2Items.find(i => i.name.toLowerCase() === item.db2Name.toLowerCase());
-          if (match) break;
-        }
-      }
-    }
-
-    // 5. Fallback: exact/partial match
-    if (!match) {
-      match = db2Items.find(i => {
-        const iName = i.name.toLowerCase();
-        return sName.includes(iName) || iName.includes(sName);
-      });
-    }
-
-    if (!match) {
-      console.warn(`⚠️ DB2 sync: No matching DB2 InventoryItem for '${productName}'`);
-      return;
-    }
 
     const inventoryItemId = match.id;
 
@@ -166,14 +204,35 @@ const getAdhocInventory = async (req, res, next) => {
     const db2ItemsRes = await readFromApp('SELECT id, name, unit, material FROM "InventoryItem"').catch(() => ({ rows: [] }));
     const db2Items = db2ItemsRes.rows || [];
 
+    // 4b. Fetch stock history from inventory_history to recover any additions made via general stock addition
+    let historyRecs = [];
+    try {
+      const histRes = await readFromCRM(
+        `SELECT inventory_item_id, product_name,
+                SUM(CASE WHEN DATE(created_at) = $1 OR created_at::date = $1 THEN quantity_added ELSE 0 END) as added_today,
+                SUM(quantity_added) as total_added
+         FROM inventory_history
+         WHERE action_type = 'ADD_STOCK' OR action_type = 'ADJUSTMENT'
+         GROUP BY inventory_item_id, product_name`,
+        [targetDate]
+      );
+      historyRecs = histRes.rows || [];
+    } catch (e) { /* silent */ }
+
     // Combine products with central inventory data
     const items = adhocProducts.map(p => {
       const rec = centralRecs.find(r => r.product_id === p.id);
       const prev = prevRecs.find(r => r.product_id === p.id);
 
       const pName = p.name.toLowerCase();
-      const matchDb2Item = db2Items.find(i => pName.includes(i.name.toLowerCase()) || i.name.toLowerCase().includes(pName));
+      // Use the deterministic resolver instead of unsafe includes() to prevent cross-category DB2 mapping
+      const matchDb2Item = resolveDb2InventoryItem(p.name, '', p.category || 'AdHoc', db2Items);
       const db2Rec = matchDb2Item ? db2DailyRecs.find(r => r.inventoryItemId === matchDb2Item.id) : null;
+
+      const hist = historyRecs.find(h =>
+        String(h.inventory_item_id) === String(p.id) ||
+        (h.product_name && (h.product_name.toLowerCase().includes(pName) || pName.includes(h.product_name.toLowerCase())))
+      );
 
       let openingStock = 0;
       let addedStock = 0;
@@ -192,6 +251,23 @@ const getAdhocInventory = async (req, res, next) => {
       } else if (prev) {
         openingStock = parseFloat(prev.remaining_stock || 0);
         remainingStock = openingStock;
+      } else if (hist) {
+        addedStock = parseFloat(hist.added_today || 0);
+        remainingStock = parseFloat(hist.total_added || 0);
+        openingStock = Math.max(0, remainingStock - addedStock);
+
+        // Auto-backfill adhoc_central_inventory so it's persisted permanently
+        try {
+          writeToCRM(
+            `INSERT INTO adhoc_central_inventory (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_by, updated_at)
+             VALUES ($1, $2, $3, $4, $5, 0, $6, 'AutoSync', NOW())
+             ON CONFLICT (product_id, date) DO UPDATE SET
+               added_stock = EXCLUDED.added_stock,
+               remaining_stock = EXCLUDED.remaining_stock,
+               updated_at = NOW()`,
+            [randomUUID(), p.id, targetDate, openingStock, addedStock, remainingStock]
+          ).catch(() => {});
+        } catch (e) { /* silent */ }
       }
 
       let status = 'In Stock';
@@ -306,8 +382,8 @@ const addAdhocStock = async (req, res, next) => {
       [randomUUID(), targetDate, productId, prod.name, qty, addedBy, remarks || `Added ${qty} ${prod.unit} to central stock`]
     );
 
-    // Sync directly to DB2 (Manager App DB)
-    await syncAdhocProductToDB2(prod.name, targetDate, addedStock, remainingStock, openingStock);
+    // Sync directly to DB2 (Manager App DB) — pass category so resolver guards milk vs. adhoc
+    await syncAdhocProductToDB2(prod.name, targetDate, addedStock, remainingStock, openingStock, prod.unit || '', prod.category || 'AdHoc');
 
     res.status(201).json({
       success: true,
@@ -891,7 +967,7 @@ const overrideAdhocStock = async (req, res, next) => {
       : Math.max(0, opening + added - dpIssued);
 
     // Verify product exists
-    const prodRes = await readFromCRM(`SELECT id, name, unit FROM products WHERE id = $1`, [productId]);
+    const prodRes = await readFromCRM(`SELECT id, name, unit, category FROM products WHERE id = $1`, [productId]);
     if (prodRes.rows.length === 0) {
       return res.status(404).json({ success: false, message: 'Product not found.' });
     }
@@ -921,8 +997,8 @@ const overrideAdhocStock = async (req, res, next) => {
        remarks || `Direct override: opening=${opening}, added=${added}, dpIssued=${dpIssued}, remaining=${remaining}`]
     );
 
-    // Sync directly to DB2 (Manager App DB)
-    await syncAdhocProductToDB2(prod.name, targetDate, added, remaining, opening);
+    // Sync directly to DB2 (Manager App DB) — pass category so resolver guards milk vs. adhoc
+    await syncAdhocProductToDB2(prod.name, targetDate, added, remaining, opening, prod.unit || '', prod.category || 'AdHoc');
 
     res.json({
       success: true,

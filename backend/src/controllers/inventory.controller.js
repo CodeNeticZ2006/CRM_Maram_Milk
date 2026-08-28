@@ -290,24 +290,140 @@ const addStock = async (req, res, next) => {
           const db2Items = db2ItemsRes.rows;
 
           const sName = db1Name.toLowerCase();
+          const db1Category = (db1ProdRes.rows[0].category || '').toLowerCase();
+
+          // ── Deterministic DB2 item resolver (category-guarded) ──────────────
+          // Prevents cross-category matches (e.g. "500ml" in milk bottle ≠ "500ml" in oil)
+          const isMilkProduct = sName.includes('milk') || db1Category === 'milk';
           const isBottle = sName.includes('bottle');
           const isPacket = sName.includes('packet');
 
           let match = null;
-          if ((sName.includes('1l') || sName.includes('1 litre')) && !sName.includes('oil')) {
-            match = db2Items.find(i => i.name.toLowerCase().includes('1l') && i.material.toLowerCase() === 'bottle');
+
+          // 1. Exact name match (case-insensitive) — most reliable
+          match = db2Items.find(i => i.name.toLowerCase() === sName);
+
+          // 2. Milk-specific material-based matching (only if product is clearly milk)
+          if (!match && isMilkProduct) {
+            if (sName.includes('1l') || sName.includes('1 litre')) {
+              match = db2Items.find(i =>
+                (i.name.toLowerCase().includes('1l') || i.name.toLowerCase().includes('1 litre')) &&
+                i.material.toLowerCase() === 'bottle'
+              );
+            }
+            if (!match && (sName.includes('500') || sName.includes('half') || sName.includes('½'))) {
+              if (isPacket) {
+                match = db2Items.find(i =>
+                  (i.name.toLowerCase().includes('500') || i.name.toLowerCase().includes('half')) &&
+                  i.material.toLowerCase() === 'packet'
+                );
+              } else if (isBottle) {
+                match = db2Items.find(i =>
+                  (i.name.toLowerCase().includes('500') || i.name.toLowerCase().includes('half')) &&
+                  i.material.toLowerCase() === 'bottle'
+                );
+              }
+            }
           }
-          if (!match && (sName.includes('500') || sName.includes('half') || sName.includes('½'))) {
-            if (isPacket) match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'packet');
-            else if (isBottle) match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'bottle');
+
+          // 3. Non-milk keyword map for adhoc products (explicit, no partial-string risk)
+          if (!match && !isMilkProduct) {
+            const nonMilkKeywordMap = [
+              { key: 'coconut',    db2Name: 'Coconut Oil' },
+              { key: 'groundnut',  db2Name: 'Groundnut Oil' },
+              { key: 'sesame',     db2Name: 'Sesame Oil' },
+              { key: 'curd',       db2Name: 'Curd' },
+              { key: 'paneer',     db2Name: 'Paneer' },
+              { key: 'butter',     db2Name: 'Butter' },
+              { key: 'honey',      db2Name: 'Honey' },
+              { key: 'sugar',      db2Name: 'Cane Sugar' },
+              { key: 'karupatti',  db2Name: 'Karupatti' },
+              { key: 'appalam',    db2Name: 'Appalam' },
+            ];
+            for (const entry of nonMilkKeywordMap) {
+              if (sName.includes(entry.key)) {
+                // For ghee: disambiguate by weight (250gm vs 500gm)
+                if (entry.key === 'ghee') {
+                  if (sName.includes('250')) {
+                    match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('250'));
+                  } else {
+                    match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('500'));
+                  }
+                } else {
+                  match = db2Items.find(i => i.name.toLowerCase() === entry.db2Name.toLowerCase());
+                }
+                if (match) break;
+              }
+            }
           }
+
+          // 4. Safe partial match as last resort — only within same broad category
           if (!match) {
-            match = db2Items.find(i => sName.includes(i.name.toLowerCase()) || i.name.toLowerCase().includes(sName));
+            match = db2Items.find(i => {
+              const iName = i.name.toLowerCase();
+              const iMat  = (i.material || '').toLowerCase();
+              // Milk guard: skip milk-material DB2 items when product is non-milk and vice versa
+              const db2IsMilk = iMat === 'bottle' || iMat === 'packet' || iName.includes('milk');
+              if (isMilkProduct !== db2IsMilk) return false;
+              // Only allow partial match if one name contains the full other name (no single-token overlap)
+              return (sName.length > 4 && iName.includes(sName)) || (iName.length > 4 && sName.includes(iName));
+            });
           }
 
           if (match) {
             db2InventoryItemId = match.id;
             itemName = match.name;
+          } else {
+            itemName = db1Name;
+          }
+
+          // If product is AdHoc / Non-Milk, sync directly to adhoc_central_inventory in CRM DB
+          if (db1Category === 'adhoc' || !sName.includes('milk')) {
+            try {
+              const recRes = await readFromCRM(
+                `SELECT * FROM adhoc_central_inventory WHERE product_id = $1 AND date = $2`,
+                [inventoryItemId, dateStr]
+              );
+
+              let openingStock = 0;
+              let addedStock = 0;
+              let dpIssuedStock = 0;
+
+              if (recRes.rows.length > 0) {
+                const rec = recRes.rows[0];
+                openingStock = parseFloat(rec.opening_stock || 0);
+                addedStock = parseFloat(rec.added_stock || 0) + added;
+                dpIssuedStock = parseFloat(rec.dp_issued_stock || 0);
+              } else {
+                const prevRes = await readFromCRM(
+                  `SELECT remaining_stock FROM adhoc_central_inventory WHERE product_id = $1 AND date < $2 ORDER BY date DESC LIMIT 1`,
+                  [inventoryItemId, dateStr]
+                );
+                if (prevRes.rows.length > 0) openingStock = parseFloat(prevRes.rows[0].remaining_stock || 0);
+                addedStock = added;
+              }
+
+              const remainingStock = openingStock + addedStock - dpIssuedStock;
+
+              await writeToCRM(
+                `INSERT INTO adhoc_central_inventory (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_by, updated_at)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+                 ON CONFLICT (product_id, date) DO UPDATE SET
+                   added_stock = EXCLUDED.added_stock,
+                   remaining_stock = EXCLUDED.remaining_stock,
+                   updated_by = EXCLUDED.updated_by,
+                   updated_at = NOW()`,
+                [randomUUID(), inventoryItemId, dateStr, openingStock, addedStock, dpIssuedStock, remainingStock, addedBy]
+              );
+
+              await writeToCRM(
+                `INSERT INTO adhoc_stock_transactions (id, date, product_id, product_name, transaction_type, quantity, performed_by, remarks)
+                 VALUES ($1, $2, $3, $4, 'ADD_STOCK', $5, $6, $7)`,
+                [randomUUID(), dateStr, inventoryItemId, db1Name, added, addedBy, remarks || `Added ${added} ${itemUnit} to central stock`]
+              );
+            } catch (adhocErr) {
+              console.warn('⚠️ adhoc_central_inventory sync warning in addStock:', adhocErr.message);
+            }
           }
         }
       }
@@ -878,14 +994,14 @@ const getManagerInventory = async (req, res, next) => {
       milTotalUnits += q;
 
       const n = pName.toLowerCase();
-      if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
-        mil1LBottle += q;
-      } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
-        milHalfLPacket += q;
-      } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
-        milHalfLBottle += q;
-      } else {
-        milHalfLBottle += q;
+      if (n.includes('milk')) {
+        if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
+          mil1LBottle += q;
+        } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
+          milHalfLPacket += q;
+        } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
+          milHalfLBottle += q;
+        }
       }
 
       return acc;
@@ -1471,14 +1587,14 @@ const generateInventoryReport = async (req, res, next) => {
       const q = parseInt(row.quantity || 0);
       milTotalUnits += q;
       const n = (row.productName || row.product || '').toLowerCase();
-      if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
-        mil1LBottle += q;
-      } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
-        milHalfLPacket += q;
-      } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
-        milHalfLBottle += q;
-      } else {
-        milHalfLBottle += q;
+      if (n.includes('milk')) {
+        if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
+          mil1LBottle += q;
+        } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
+          milHalfLPacket += q;
+        } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
+          milHalfLBottle += q;
+        }
       }
     });
 

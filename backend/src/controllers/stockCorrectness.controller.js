@@ -166,12 +166,14 @@ const getStockCorrectnessToday = async (req, res) => {
       managerLogMap[pKey] = (managerLogMap[pKey] || 0) + q;
 
       const pName = (row.product || '').toLowerCase();
-      if (pName.includes('1l') || pName.includes('1 l') || (pName.includes('bottle') && (pName.includes('1') || pName.includes('litre')))) {
-        mil1LBottle += q;
-      } else if (pName.includes('packet') || pName.includes('pack') || pName.includes('(p)')) {
-        milHalfLPacket += q;
-      } else if (pName.includes('500') || pName.includes('half') || pName.includes('bottle') || pName.includes('(b)')) {
-        milHalfLBottle += q;
+      if (pName.includes('milk')) {
+        if (pName.includes('1l') || pName.includes('1 l') || (pName.includes('bottle') && (pName.includes('1') || pName.includes('litre')))) {
+          mil1LBottle += q;
+        } else if (pName.includes('packet') || pName.includes('pack') || pName.includes('(p)')) {
+          milHalfLPacket += q;
+        } else if (pName.includes('500') || pName.includes('half') || pName.includes('bottle') || pName.includes('(b)')) {
+          milHalfLBottle += q;
+        }
       }
     });
 

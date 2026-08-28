@@ -1452,15 +1452,16 @@ export default function InventoryPage() {
                         const q = parseInt(r.quantity || 0);
                         totalUnits += q;
                         const n = (r.productName || r.product || '').toLowerCase();
-                        if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && (n.includes('1') || n.includes('litre')))) {
+                        // Only count milk-specific items in the three milk KPI buckets
+                        const isMilkItem = n.includes('milk');
+                        if (isMilkItem && (n.includes('1l') || n.includes('1 l') || n.includes('1 litre'))) {
                           total1LBottle += q;
-                        } else if (n.includes('packet') || n.includes('pack') || n.includes('(p)')) {
+                        } else if (isMilkItem && (n.includes('packet') || n.includes('pack') || n.includes('(p)'))) {
                           totalHalfLPacket += q;
-                        } else if (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)')) {
-                          totalHalfLBottle += q;
-                        } else {
+                        } else if (isMilkItem && (n.includes('500') || n.includes('half') || n.includes('bottle') || n.includes('(b)'))) {
                           totalHalfLBottle += q;
                         }
+                        // Non-milk products (oils, dairy etc.) count toward totalUnits only
                       });
                       return { total1LBottle, totalHalfLBottle, totalHalfLPacket, totalUnits };
                     })();
