@@ -263,20 +263,53 @@ const addStock = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'Quantity added must be greater than zero.' });
     }
 
-    const dateStr = getISTDate();
+    const dateStr = req.body.date || getISTDate();
     const addedBy = req.admin?.name || req.admin?.email || 'Super Admin';
 
-    // 1. Fetch item name and unit from DB2
+    // 1. Fetch item name and unit from DB2 (with fallback for DB1 products)
     let itemName = 'Inventory Item';
     let itemUnit = unit || 'Litres';
+    let db2InventoryItemId = inventoryItemId;
+
     try {
       const itemRes = await readFromApp(
-        'SELECT name, unit FROM "InventoryItem" WHERE id = $1',
+        'SELECT id, name, unit, material FROM "InventoryItem" WHERE id = $1',
         [inventoryItemId]
       );
       if (itemRes.rows.length > 0) {
         itemName = itemRes.rows[0].name;
         if (!unit) itemUnit = itemRes.rows[0].unit || 'Litres';
+      } else {
+        // Fallback: If inventoryItemId is a DB1 product ID, fetch product info from CRM DB products
+        const db1ProdRes = await readFromCRM('SELECT name, unit, category FROM products WHERE id = $1', [inventoryItemId]).catch(() => ({ rows: [] }));
+        if (db1ProdRes.rows.length > 0) {
+          const db1Name = db1ProdRes.rows[0].name;
+          if (!unit) itemUnit = db1ProdRes.rows[0].unit || 'Litres';
+          
+          const db2ItemsRes = await readFromApp('SELECT id, name, unit, material FROM "InventoryItem"');
+          const db2Items = db2ItemsRes.rows;
+
+          const sName = db1Name.toLowerCase();
+          const isBottle = sName.includes('bottle');
+          const isPacket = sName.includes('packet');
+
+          let match = null;
+          if ((sName.includes('1l') || sName.includes('1 litre')) && !sName.includes('oil')) {
+            match = db2Items.find(i => i.name.toLowerCase().includes('1l') && i.material.toLowerCase() === 'bottle');
+          }
+          if (!match && (sName.includes('500') || sName.includes('half') || sName.includes('½'))) {
+            if (isPacket) match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'packet');
+            else if (isBottle) match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'bottle');
+          }
+          if (!match) {
+            match = db2Items.find(i => sName.includes(i.name.toLowerCase()) || i.name.toLowerCase().includes(sName));
+          }
+
+          if (match) {
+            db2InventoryItemId = match.id;
+            itemName = match.name;
+          }
+        }
       }
     } catch (e) { /* silent */ }
 
@@ -288,7 +321,7 @@ const addStock = async (req, res, next) => {
     try {
       const currentRes = await readFromApp(
         'SELECT id, "currentStock", "newStockAdded", "carriedOverStock" FROM "InventoryDailyRecord" WHERE "inventoryItemId" = $1 AND date = $2',
-        [inventoryItemId, dateStr]
+        [db2InventoryItemId, dateStr]
       );
 
       if (currentRes.rows.length > 0) {
@@ -301,7 +334,7 @@ const addStock = async (req, res, next) => {
           `SELECT "currentStock" FROM "InventoryDailyRecord"
            WHERE "inventoryItemId" = $1 AND date < $2
            ORDER BY date DESC LIMIT 1`,
-          [inventoryItemId, dateStr]
+          [db2InventoryItemId, dateStr]
         );
         if (prevRes.rows.length > 0) {
           previousStock = parseFloat(prevRes.rows[0].currentStock || 0);
@@ -343,7 +376,7 @@ const addStock = async (req, res, next) => {
              (id, date, "inventoryItemId", "currentStock", "carriedOverStock",
               "newStockAdded", "expectedStock", "createdAt", "updatedAt")
            VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
-          [newRecordId, dateStr, inventoryItemId, updatedStock, carriedOver, added, carriedOver + added]
+          [newRecordId, dateStr, db2InventoryItemId, updatedStock, carriedOver, added, carriedOver + added]
         );
       }
     } catch (db2Err) {

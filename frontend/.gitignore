@@ -6,6 +6,8 @@ build/
 .env
 .env.*
 !.env.example
+*.env
+env
 *.log
 npm-debug.log*
 .cache/

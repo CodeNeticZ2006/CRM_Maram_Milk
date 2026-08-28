@@ -468,6 +468,7 @@ img { max-width: 100%; display: block; }
 .badge-info    { background: rgba(139,92,246,0.12); color: #7c3aed; }
 .badge-blue    { background: rgba(59,130,246,0.12); color: #2563eb; }
 .badge-gray    { background: rgba(100,116,139,0.12);color: #475569; }
+.badge-purple  { background: rgba(124,58,237,0.12); color: #7c3aed; }
 
 /* ══════════════════════════════════════════════════════
    TABLE

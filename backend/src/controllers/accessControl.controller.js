@@ -2,6 +2,20 @@ const bcrypt = require('bcryptjs');
 const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
 
 // ─────────────────────────────────────────────
+// GET /api/access-control/admin-profile — Root Super Admin from super_admin table
+// ─────────────────────────────────────────────
+const getAdminProfile = async (req, res, next) => {
+  try {
+    const result = await readFromCRM(
+      'SELECT id, name, email, phone, role, last_login FROM super_admin ORDER BY id ASC LIMIT 1'
+    ).catch(() => ({ rows: [] }));
+
+    const admin = result.rows[0] || null;
+    res.json({ success: true, data: admin });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
 // GET /api/access-control/users — All CRM & Manager Users
 // ─────────────────────────────────────────────
 const getUsers = async (req, res, next) => {
@@ -110,18 +124,44 @@ const createUser = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
-// PATCH /api/access-control/users/:id/permissions — Update Role Permissions
+// PATCH /api/access-control/users/:id — Full User Update (name, email, role, access, permissions, status, password)
 // ─────────────────────────────────────────────
 const updateUserPermissions = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { role, access, permissions, status } = req.body;
+    const { name, email, role, access, permissions, status, password } = req.body;
+
+    // Build dynamic SET clause
+    const setClauses = [];
+    const values = [];
+    let idx = 1;
+
+    if (name)        { setClauses.push(`name=$${idx++}`);        values.push(name); }
+    if (email)       { setClauses.push(`email=$${idx++}`);       values.push(email.trim().toLowerCase()); }
+    if (role)        { setClauses.push(`role=$${idx++}`);        values.push(role); }
+    if (access)      { setClauses.push(`access=$${idx++}`);      values.push(access); }
+    if (permissions) { setClauses.push(`permissions=$${idx++}`); values.push(JSON.stringify(permissions)); }
+    if (status)      { setClauses.push(`status=$${idx++}`);      values.push(status); }
+    if (password && password.length >= 8) {
+      const hash = await bcrypt.hash(password, 12);
+      setClauses.push(`password_hash=$${idx++}`);
+      values.push(hash);
+    }
+
+    if (setClauses.length === 0) {
+      return res.status(400).json({ success: false, message: 'No fields provided to update.' });
+    }
+
+    values.push(id);
     await writeToCRM(
-      `UPDATE super_admin_users SET role=$1, access=$2, permissions=$3, status=$4 WHERE id=$5`,
-      [role, access, JSON.stringify(permissions || []), status || 'Active', id]
+      `UPDATE super_admin_users SET ${setClauses.join(', ')} WHERE id=$${idx}`,
+      values
     );
-    res.json({ success: true, message: 'Permissions updated successfully.' });
-  } catch (err) { next(err); }
+    res.json({ success: true, message: 'User updated successfully.' });
+  } catch (err) {
+    if (err.code === '23505') return res.status(400).json({ success: false, message: 'Email already in use by another account.' });
+    next(err);
+  }
 };
 
-module.exports = { getUsers, getDeliveryPersons, createUser, updateUserPermissions };
+module.exports = { getAdminProfile, getUsers, getDeliveryPersons, createUser, updateUserPermissions };

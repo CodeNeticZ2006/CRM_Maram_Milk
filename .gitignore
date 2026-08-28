@@ -1,18 +1,45 @@
 # Root-level .gitignore — Maram Milk CRM
 # ─────────────────────────────────────────────────────────────────
 
-# ── Generated Documentation & Local User Guides ──────────────────
-MODULES_USER_GUIDE.md
-WALKTHROUGH.md
-IMPLEMENTATION_PLAN.md
+# ── Environment & Secret Files (NEVER commit credentials) ───────
+.env
+.env.*
+!.env.example
+*.env
+env
+**/env
 
-# ── Temporary Utility & Scratch Scripts ───────────────────────────
+# ── Node.js & Package Managers ────────────────────────────────────
+node_modules/
+**/node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+
+# ── Build Output & Caches ─────────────────────────────────────────
+dist/
+build/
+**/dist/
+**/build/
+.vite/
+**/.vite/
+.cache/
+coverage/
+*.tsbuildinfo
+
+# ── Temporary Utility, Diagnostic & Scratch Scripts ───────────────
+backend/test_*.js
+backend/check_*.js
+backend/inspect_*.js
 backend/src/utils/update_admin.js
 backend/src/utils/inspect_db2.js
 backend/src/seeds/temp_*.js
 backend/src/seeds/check_*.js
+backend/src/seeds/fix_*.js
 backend/src/seeds/verify_*.js
-backend/test_*.js
+backend/src/seeds/inspect_*.js
 scratch/
 tmp/
 temp/
@@ -33,40 +60,12 @@ Desktop.ini
 *.sw?
 *.bak
 
-# ── Environment Files (NEVER commit secrets) ──────────────────────
-.env
-.env.*
-!.env.example
-*.env
-
-# ── Node.js & Package Managers ────────────────────────────────────
-node_modules/
-**/node_modules/
-npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
-pnpm-debug.log*
-.pnpm-store/
-
-# ── Backend Build Output & Runtime Logs ───────────────────────────
-backend/dist/
-backend/build/
-backend/*.log
-backend/node_modules/
-
-# ── Frontend Build Output & Cache ────────────────────────────────
-frontend/dist/
-frontend/build/
-frontend/.vite/
-frontend/node_modules/
-
 # ── Logs & Debugging ─────────────────────────────────────────────
 logs/
 *.log
 
-# ── TypeScript & Coverage ────────────────────────────────────────
-*.tsbuildinfo
-.cache/
-coverage/
-
+# ── Documentation & Local User Guides ────────────────────────────
+MODULES_USER_GUIDE.md
+WALKTHROUGH.md
+IMPLEMENTATION_PLAN.md
 data-*.csv

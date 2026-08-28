@@ -10,6 +10,7 @@ const {
   recordCustomerAdhocSale,
   getDpAdhocAudit,
   getAdhocReportData,
+  overrideAdhocStock,
 } = require('../controllers/adhoc.controller');
 
 router.use(authenticate);
@@ -25,5 +26,6 @@ router.post('/add-stock',          requirePermission('INVENTORY', true), addAdho
 router.post('/issue-dp-stock',     requirePermission('INVENTORY', true), issueDpAdhocStock);
 router.post('/record-dp-sale',     requirePermission('INVENTORY', true), recordDpAdhocSale);
 router.post('/record-customer-sale', requirePermission('INVENTORY', true), recordCustomerAdhocSale);
+router.put('/override',            requirePermission('INVENTORY', true), overrideAdhocStock);
 
 module.exports = router;

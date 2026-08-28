@@ -1,8 +1,122 @@
-const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
+const { readFromCRM, writeToCRM, readFromApp, writeToApp } = require('../config/database');
 const { randomUUID } = require('crypto');
 const { getExpectedOperationalDate } = require('../services/operationalDay.service');
 
 const getISTDate = () => getExpectedOperationalDate();
+
+// ── DB2 Sync Helper for AdHoc Products ──────────────────────────────────────
+const syncAdhocProductToDB2 = async (productName, targetDate, addedStock, remainingStock, openingStock = 0, productMaterial = '', productUnit = '') => {
+  try {
+    const itemsRes = await readFromApp('SELECT id, name, unit, material FROM "InventoryItem"');
+    if (!itemsRes.rows || itemsRes.rows.length === 0) return;
+
+    const db2Items = itemsRes.rows;
+    const sName = (productName || '').toLowerCase();
+    const sMat  = (productMaterial || '').toLowerCase();
+    const sUnit = (productUnit || '').toLowerCase();
+
+    const isBottle = sMat.includes('bottle') || sName.includes('bottle');
+    const isPacket = sMat.includes('packet') || sName.includes('packet');
+
+    let match = null;
+
+    // 1. MILK 1L (Bottle)
+    if ((sName.includes('1l') || sName.includes('1 litre')) && !sName.includes('oil')) {
+      match = db2Items.find(i => i.name.toLowerCase().includes('1l') && i.material.toLowerCase() === 'bottle');
+    }
+
+    // 2. MILK 500mL / HALF LITRE BOTTLE vs PACKET
+    if (!match && (sName.includes('500') || sName.includes('half') || sName.includes('½'))) {
+      if (sName.includes('milk') || (!sName.includes('ghee') && !sName.includes('curd') && !sName.includes('oil') && !sName.includes('sugar'))) {
+        if (isPacket) {
+          match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'packet');
+        } else if (isBottle) {
+          match = db2Items.find(i => i.name.toLowerCase().includes('500') && i.material.toLowerCase() === 'bottle');
+        }
+      }
+    }
+
+    // 3. Ghee weight matching (500gm vs 250gm)
+    if (!match && sName.includes('ghee')) {
+      if (sName.includes('250') || sUnit.includes('250')) {
+        match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('250'));
+      } else if (sName.includes('500') || sUnit.includes('500')) {
+        match = db2Items.find(i => i.name.toLowerCase().includes('ghee') && i.name.toLowerCase().includes('500'));
+      }
+    }
+
+    // 4. Specific Keyword Matching for Non-Milk Products
+    if (!match) {
+      const keywordsMap = [
+        { key: 'curd', db2Name: 'Curd' },
+        { key: 'paneer', db2Name: 'Paneer' },
+        { key: 'butter', db2Name: 'Butter' },
+        { key: 'appalam', db2Name: 'Appalam' },
+        { key: 'honey', db2Name: 'Honey' },
+        { key: 'sugar', db2Name: 'Cane Sugar' },
+        { key: 'karupatti', db2Name: 'Karupatti' },
+        { key: 'coconut', db2Name: 'Coconut Oil' },
+        { key: 'groundnut', db2Name: 'Groundnut Oil' },
+        { key: 'sesame', db2Name: 'Sesame Oil' },
+      ];
+
+      for (const item of keywordsMap) {
+        if (sName.includes(item.key)) {
+          match = db2Items.find(i => i.name.toLowerCase() === item.db2Name.toLowerCase());
+          if (match) break;
+        }
+      }
+    }
+
+    // 5. Fallback: exact/partial match
+    if (!match) {
+      match = db2Items.find(i => {
+        const iName = i.name.toLowerCase();
+        return sName.includes(iName) || iName.includes(sName);
+      });
+    }
+
+    if (!match) {
+      console.warn(`⚠️ DB2 sync: No matching DB2 InventoryItem for '${productName}'`);
+      return;
+    }
+
+    const inventoryItemId = match.id;
+
+    const recRes = await readFromApp(
+      'SELECT id, "newStockAdded", "currentStock", "carriedOverStock" FROM "InventoryDailyRecord" WHERE "inventoryItemId" = $1 AND date = $2',
+      [inventoryItemId, targetDate]
+    );
+
+    if (recRes.rows.length > 0) {
+      const existingId = recRes.rows[0].id;
+      const expectedStock = openingStock + addedStock;
+      await writeToApp(
+        `UPDATE "InventoryDailyRecord"
+         SET "newStockAdded"    = $1,
+             "currentStock"     = $2,
+             "carriedOverStock" = $3,
+             "expectedStock"    = $4,
+             "updatedAt"        = NOW()
+         WHERE id = $5`,
+        [addedStock, remainingStock, openingStock, expectedStock, existingId]
+      );
+      console.log(`✅ [DB2 Sync] Updated DB2 InventoryDailyRecord for ${productName} (DB2 item: ${match.name}) on ${targetDate}. Added: ${addedStock}, Current: ${remainingStock}`);
+    } else {
+      const newId = randomUUID();
+      await writeToApp(
+        `INSERT INTO "InventoryDailyRecord"
+           (id, date, "inventoryItemId", "currentStock", "carriedOverStock", "newStockAdded", "expectedStock", "createdAt", "updatedAt")
+         VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
+        [newId, targetDate, inventoryItemId, remainingStock, openingStock, addedStock, openingStock + addedStock]
+      );
+      console.log(`✅ [DB2 Sync] Created DB2 InventoryDailyRecord for ${productName} (DB2 item: ${match.name}) on ${targetDate}. Added: ${addedStock}, Current: ${remainingStock}`);
+    }
+  } catch (err) {
+    console.warn(`⚠️ DB2 sync error for '${productName}':`, err.message);
+  }
+};
+
 
 // ─────────────────────────────────────────────────────────────────────────────
 // GET /api/inventory/adhoc — Central AdHoc Inventory Summary
@@ -37,10 +151,29 @@ const getAdhocInventory = async (req, res, next) => {
     );
     const prevRecs = prevRecsRes.rows || [];
 
+    // 4. Fetch DB2 daily records as additional source of truth
+    let db2DailyRecs = [];
+    try {
+      const db2RecsRes = await readFromApp(
+        `SELECT r.id, r."inventoryItemId", r."currentStock", r."carriedOverStock", r."newStockAdded"
+         FROM "InventoryDailyRecord" r
+         WHERE r.date = $1`,
+        [targetDate]
+      );
+      db2DailyRecs = db2RecsRes.rows || [];
+    } catch (e) { /* silent */ }
+
+    const db2ItemsRes = await readFromApp('SELECT id, name, unit, material FROM "InventoryItem"').catch(() => ({ rows: [] }));
+    const db2Items = db2ItemsRes.rows || [];
+
     // Combine products with central inventory data
     const items = adhocProducts.map(p => {
       const rec = centralRecs.find(r => r.product_id === p.id);
       const prev = prevRecs.find(r => r.product_id === p.id);
+
+      const pName = p.name.toLowerCase();
+      const matchDb2Item = db2Items.find(i => pName.includes(i.name.toLowerCase()) || i.name.toLowerCase().includes(pName));
+      const db2Rec = matchDb2Item ? db2DailyRecs.find(r => r.inventoryItemId === matchDb2Item.id) : null;
 
       let openingStock = 0;
       let addedStock = 0;
@@ -52,6 +185,10 @@ const getAdhocInventory = async (req, res, next) => {
         addedStock = parseFloat(rec.added_stock || 0);
         dpIssuedStock = parseFloat(rec.dp_issued_stock || 0);
         remainingStock = parseFloat(rec.remaining_stock || (openingStock + addedStock - dpIssuedStock));
+      } else if (db2Rec) {
+        openingStock = parseFloat(db2Rec.carriedOverStock || 0);
+        addedStock = parseFloat(db2Rec.newStockAdded || 0);
+        remainingStock = parseFloat(db2Rec.currentStock || 0);
       } else if (prev) {
         openingStock = parseFloat(prev.remaining_stock || 0);
         remainingStock = openingStock;
@@ -169,9 +306,12 @@ const addAdhocStock = async (req, res, next) => {
       [randomUUID(), targetDate, productId, prod.name, qty, addedBy, remarks || `Added ${qty} ${prod.unit} to central stock`]
     );
 
+    // Sync directly to DB2 (Manager App DB)
+    await syncAdhocProductToDB2(prod.name, targetDate, addedStock, remainingStock, openingStock);
+
     res.status(201).json({
       success: true,
-      message: `Successfully added ${qty} ${prod.unit} of ${prod.name} to central inventory.`,
+      message: `Successfully added ${qty} ${prod.unit} of ${prod.name} to central inventory and Manager App DB2!`,
       data: {
         productId,
         productName: prod.name,
@@ -720,6 +860,78 @@ const getAdhocReportData = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PUT /api/inventory/adhoc/override — Direct Override of AdHoc Central Stock
+// (Equivalent to DB2 Override for milk items — for testing / manual correction)
+// ─────────────────────────────────────────────────────────────────────────────
+const overrideAdhocStock = async (req, res, next) => {
+  try {
+    const {
+      productId,
+      date,
+      openingStock,
+      addedStock,
+      dpIssuedStock,
+      remainingStock,
+      overriddenBy = 'Super Admin',
+      remarks = '',
+    } = req.body;
+
+    if (!productId) {
+      return res.status(400).json({ success: false, message: 'productId is required.' });
+    }
+
+    const targetDate = date || getISTDate();
+    const opening  = parseFloat(openingStock  ?? 0);
+    const added    = parseFloat(addedStock    ?? 0);
+    const dpIssued = parseFloat(dpIssuedStock ?? 0);
+    // If remainingStock is explicitly provided use it; otherwise compute
+    const remaining = remainingStock !== undefined && remainingStock !== null
+      ? parseFloat(remainingStock)
+      : Math.max(0, opening + added - dpIssued);
+
+    // Verify product exists
+    const prodRes = await readFromCRM(`SELECT id, name, unit FROM products WHERE id = $1`, [productId]);
+    if (prodRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Product not found.' });
+    }
+    const prod = prodRes.rows[0];
+
+    // Upsert — overwrite all four columns for the target date
+    await writeToCRM(
+      `INSERT INTO adhoc_central_inventory
+         (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_by, updated_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW())
+       ON CONFLICT (product_id, date) DO UPDATE SET
+         opening_stock   = EXCLUDED.opening_stock,
+         added_stock     = EXCLUDED.added_stock,
+         dp_issued_stock = EXCLUDED.dp_issued_stock,
+         remaining_stock = EXCLUDED.remaining_stock,
+         updated_by      = EXCLUDED.updated_by,
+         updated_at      = NOW()`,
+      [randomUUID(), productId, targetDate, opening, added, dpIssued, remaining, overriddenBy]
+    );
+
+    // Audit log
+    await writeToCRM(
+      `INSERT INTO adhoc_stock_transactions
+         (id, date, product_id, product_name, transaction_type, quantity, performed_by, remarks)
+       VALUES ($1, $2, $3, $4, 'OVERRIDE', $5, $6, $7)`,
+      [randomUUID(), targetDate, productId, prod.name, remaining, overriddenBy,
+       remarks || `Direct override: opening=${opening}, added=${added}, dpIssued=${dpIssued}, remaining=${remaining}`]
+    );
+
+    // Sync directly to DB2 (Manager App DB)
+    await syncAdhocProductToDB2(prod.name, targetDate, added, remaining, opening);
+
+    res.json({
+      success: true,
+      message: `Stock overridden for ${prod.name} on ${targetDate} and synchronized to Manager App DB2!`,
+      data: { productId, productName: prod.name, date: targetDate, openingStock: opening, addedStock: added, dpIssuedStock: dpIssued, remainingStock: remaining },
+    });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getAdhocInventory,
   addAdhocStock,
@@ -729,4 +941,5 @@ module.exports = {
   recordCustomerAdhocSale,
   getDpAdhocAudit,
   getAdhocReportData,
+  overrideAdhocStock,
 };

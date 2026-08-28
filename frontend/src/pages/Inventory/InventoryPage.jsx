@@ -9,7 +9,8 @@ import {
   MdCalendarToday, MdCancel, MdPerson,
   MdVerified, MdWarning, MdSave, MdBusiness,
   MdInventory2, MdFlashOn, MdStorefront, MdDateRange,
-  MdDownload, MdFileDownload, MdFactCheck
+  MdDownload, MdFileDownload, MdFactCheck,
+  MdLocalDrink, MdKitchen, MdOpacity, MdEco, MdShoppingCart
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -31,7 +32,7 @@ export default function InventoryPage() {
   const [activeTab, setActiveTab]         = useState('inventory'); // 'inventory' | 'history' | 'manager-inventory' | 'stock-correctness'
   const [items, setItems]                 = useState([]);
   const [adhocItems, setAdhocItems]       = useState([]);
-  const [categoryFilter, setCategoryFilter] = useState('all'); // 'all' | 'milk' | 'adhoc'
+
   const [summary, setSummary]             = useState({ totalStock: 0, todayAddedStock: 0, lowStockCount: 0, outOfStockCount: 0, totalProducts: 0 });
   const [lowStockAlerts, setLowAlerts]   = useState([]);
   const [history, setHistory]             = useState([]);
@@ -86,10 +87,14 @@ export default function InventoryPage() {
 
   // Stock Add/Update Modals
   const [showAddModal, setShowAddModal]       = useState(false);
+  const [selectedModalItem, setSelectedModalItem] = useState(null); // specific item when clicked from table row
   const [showCorrectModal, setShowCorrectModal] = useState(false);
   const [showDb2UpdateModal, setShowDb2UpdateModal] = useState(null); // DB2 specific modal item
   const [db2Form, setDb2Form]                 = useState({ newStockAdded: 0, currentStock: 0 });
   const [confirmDialog, setConfirmDialog]     = useState(null);
+  // Adhoc Override Modal
+  const [showAdhocOverrideModal, setShowAdhocOverrideModal] = useState(null); // adhoc item
+  const [adhocOverrideForm, setAdhocOverrideForm] = useState({ openingStock: 0, addedStock: 0, dpIssuedStock: 0, remainingStock: 0, remarks: '' });
 
   // Form State for Add Stock
   const [addForm, setAddForm] = useState({
@@ -180,7 +185,7 @@ export default function InventoryPage() {
     return 4;
   };
 
-  // Fetch Inventory (incorporating DB2 Manager App Stock fields & AdHoc Central Stock)
+  // Fetch Inventory (incorporating DB2 Manager App Stock fields & AdHoc Central Stock for categories)
   const fetchInventory = useCallback(async () => {
     setLoading(true);
     try {
@@ -198,7 +203,6 @@ export default function InventoryPage() {
         if (res.data.availableDates) setAvailableDates(res.data.availableDates);
         setIsDb2Synced(true);
       }
-
       if (adhocRes.data?.success) {
         setAdhocItems(adhocRes.data.data || []);
       }
@@ -363,17 +367,43 @@ export default function InventoryPage() {
     }
   };
 
+  // Adhoc Direct Stock Override Handler
+  const handleAdhocOverride = async (e) => {
+    e.preventDefault();
+    setSubmitting(true);
+    try {
+      await api.put('/inventory/adhoc/override', {
+        productId: showAdhocOverrideModal.id,
+        date: selectedDate,
+        openingStock:  parseFloat(adhocOverrideForm.openingStock  || 0),
+        addedStock:    parseFloat(adhocOverrideForm.addedStock    || 0),
+        dpIssuedStock: parseFloat(adhocOverrideForm.dpIssuedStock || 0),
+        remainingStock: parseFloat(adhocOverrideForm.remainingStock || 0),
+        overriddenBy: admin?.name || 'Super Admin',
+        remarks: adhocOverrideForm.remarks,
+      });
+      toast.success(`Stock overridden for ${showAdhocOverrideModal.name}!`);
+      setShowAdhocOverrideModal(null);
+      fetchInventory();
+    } catch {
+      toast.error('Failed to override adhoc stock.');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   const allProductsForModal = [
     ...items.map(i => ({ ...i, isAdhoc: false })),
-    ...adhocItems.map(a => ({ ...a, isAdhoc: true }))
+    ...adhocItems.map(i => ({ ...i, isAdhoc: true }))
   ];
 
   const openAddModal = (item = null) => {
+    setSelectedModalItem(item);
     const targetItem = item || allProductsForModal[0];
     setAddForm({
       inventoryItemId: targetItem ? targetItem.id : '',
       quantityAdded: '',
-      unit: targetItem ? targetItem.unit : 'Units',
+      unit: targetItem ? (targetItem.unit || 'Units') : 'Litres',
       supplier: '',
       batchNumber: '',
       remarks: '',
@@ -403,7 +433,18 @@ export default function InventoryPage() {
       isAdhoc: selectedItem?.isAdhoc || selectedItem?.category === 'AdHoc',
       qty,
       unit: addForm.unit,
-      payload: { ...addForm, quantityAdded: qty },
+      payload: {
+        inventoryItemId: selectedItem?.id,
+        productId: selectedItem?.id,
+        quantityAdded: qty,
+        quantity: qty,
+        unit: addForm.unit,
+        date: selectedDate,
+        addedBy: admin?.name || 'Super Admin',
+        supplier: addForm.supplier,
+        batchNumber: addForm.batchNumber,
+        remarks: addForm.remarks,
+      },
     });
   };
 
@@ -567,27 +608,11 @@ export default function InventoryPage() {
       {/* ── TAB 1: CURRENT INVENTORY (Incorporating DB2 Manager App Stock fields) ────────────────────────── */}
       {activeTab === 'inventory' && (
         <div>
-          {/* Date Picker & Category Filter Bar */}
+          {/* Date Picker Bar */}
           <div style={{ background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: 10, padding: '10px 16px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                <MdFilterList style={{ color: 'var(--primary)', fontSize: 18 }} />
-                <label style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>Category:</label>
-                <select
-                  id="inventory-category-filter"
-                  className="form-input"
-                  style={{ width: 150, padding: '5px 10px', fontSize: 13, fontWeight: 600 }}
-                  value={categoryFilter}
-                  onChange={e => setCategoryFilter(e.target.value)}
-                >
-                  <option value="all">All Products</option>
-                  <option value="milk">Milk</option>
-                  <option value="adhoc">AdHoc</option>
-                </select>
-              </div>
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>
-                {categoryFilter === 'adhoc' ? '📦 AdHoc inventory is distributed exclusively via Delivery Persons.' : '🥛 Milk inventory tracks DB2 live dispatches.'}
-              </span>
+              <MdFilterList style={{ color: 'var(--primary)', fontSize: 18 }} />
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>🥛 Milk inventory tracks DB2 live dispatches.</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Target Date:</label>
@@ -606,24 +631,20 @@ export default function InventoryPage() {
             <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div className="stat-value" style={{ color: 'var(--primary)' }}>
-                  {categoryFilter === 'adhoc'
-                    ? adhocItems.reduce((a, b) => a + b.remainingStock, 0).toLocaleString()
-                    : summary.totalStock.toLocaleString()}
+                  {summary.totalStock.toLocaleString()}
                 </div>
                 <div style={{ padding: 8, borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', fontSize: 20 }}><MdInventory /></div>
               </div>
               <div className="stat-label">Total Stock Available</div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
-                {categoryFilter === 'adhoc' ? `Across ${adhocItems.length} AdHoc products` : `Across ${summary.totalProducts} registered products`}
+                Across {summary.totalProducts} registered products
               </div>
             </div>
 
             <div className="stat-card" style={{ '--card-accent': summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div className="stat-value" style={{ color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)' }}>
-                  {categoryFilter === 'adhoc'
-                    ? adhocItems.filter(i => i.status === 'Low Stock').length
-                    : summary.lowStockCount}
+                  {summary.lowStockCount}
                 </div>
                 <div style={{ padding: 8, borderRadius: 8, background: summary.lowStockCount > 0 ? 'rgba(245,158,11,0.1)' : 'rgba(16,185,129,0.1)', color: summary.lowStockCount > 0 ? 'var(--warning)' : 'var(--success)', fontSize: 20 }}>
                   <MdWarningAmber />
@@ -638,9 +659,7 @@ export default function InventoryPage() {
             <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div className="stat-value" style={{ color: 'var(--success)' }}>
-                  +{categoryFilter === 'adhoc'
-                    ? adhocItems.reduce((a, b) => a + b.addedStock, 0).toLocaleString()
-                    : summary.todayAddedStock.toLocaleString()}
+                  +{summary.todayAddedStock.toLocaleString()}
                 </div>
                 <div style={{ padding: 8, borderRadius: 8, background: 'rgba(16,185,129,0.1)', color: 'var(--success)', fontSize: 20 }}><MdAdd /></div>
               </div>
@@ -651,9 +670,7 @@ export default function InventoryPage() {
             <div className="stat-card" style={{ '--card-accent': summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
                 <div className="stat-value" style={{ color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)' }}>
-                  {categoryFilter === 'adhoc'
-                    ? adhocItems.filter(i => i.status === 'Out of Stock').length
-                    : summary.outOfStockCount}
+                  {summary.outOfStockCount}
                 </div>
                 <div style={{ padding: 8, borderRadius: 8, background: summary.outOfStockCount > 0 ? 'rgba(239,68,68,0.1)' : 'rgba(6,182,212,0.1)', color: summary.outOfStockCount > 0 ? 'var(--danger)' : 'var(--info)', fontSize: 20 }}>
                   <MdErrorOutline />
@@ -666,149 +683,233 @@ export default function InventoryPage() {
             </div>
           </div>
 
-          {/* ADHOC INVENTORY TABLE (when categoryFilter === 'adhoc' or 'all') */}
-          {(categoryFilter === 'adhoc' || categoryFilter === 'all') && (
-            <div className="card" style={{ marginBottom: categoryFilter === 'all' ? 24 : 0 }}>
-              <div className="card-header" style={{ background: 'linear-gradient(135deg, rgba(245,158,11,0.06), rgba(217,119,6,0.02))' }}>
-                <div>
-                  <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706' }}>
-                    <MdInventory2 style={{ fontSize: 20 }} />
-                    ADHOC INVENTORY
-                  </span>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    Central AdHoc stock balance — Distributed exclusively via Delivery Persons (DPs)
-                  </div>
-                </div>
-                <span className="badge badge-warning" style={{ fontWeight: 700 }}>
-                  {adhocItems.length} AdHoc Products
-                </span>
-              </div>
-              <div className="table-wrapper">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th style={{ minWidth: 160 }}>Product</th>
-                      <th>SKU</th>
-                      <th>Opening</th>
-                      <th>Added</th>
-                      <th>DP Taken</th>
-                      <th>Remaining</th>
-                      <th>Status</th>
-                      <th style={{ minWidth: 100 }}>Action</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {adhocItems.length === 0 ? (
-                      <tr><td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No AdHoc inventory data found.</td></tr>
-                    ) : (
-                      adhocItems.map(item => {
-                        const statusColor = item.status === 'In Stock' ? 'badge-success' : item.status === 'Low Stock' ? 'badge-warning' : 'badge-danger';
-                        return (
-                          <tr key={item.id}>
-                            <td style={{ fontWeight: 700 }}>
-                              <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{item.name}</div>
-                            </td>
-                            <td><code style={{ fontSize: 11, background: 'var(--gray-100, #f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || '-'}</code></td>
-                            <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.openingStock} {item.unit}</td>
-                            <td style={{ fontWeight: 700, color: 'var(--success)' }}>+{item.addedStock} {item.unit}</td>
-                            <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{item.dpIssuedStock} {item.unit}</td>
-                            <td>
-                              <span style={{
-                                fontSize: 15,
-                                fontWeight: 800,
-                                color: item.remainingStock <= 0 ? 'var(--danger)' : item.remainingStock <= 10 ? 'var(--warning)' : 'var(--text-primary)'
-                              }}>
-                                {item.remainingStock} {item.unit}
-                              </span>
-                            </td>
-                            <td><span className={`badge ${statusColor}`}>{item.status}</span></td>
-                            <td>
-                              <button className="btn btn-primary btn-sm" style={{ fontSize: 12, padding: '4px 10px' }} onClick={() => openAddModal({ ...item, isAdhoc: true })}>
-                                <MdAdd /> Add Stock
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          )}
+          {/* ─── CATEGORY DIVISIONS ─────────────────────────────────────────── */}
+          {(() => {
+            /* ── helpers ── */
+            const iconBox = (IconComp, bg, color) => (
+              <span style={{ width: 32, height: 32, borderRadius: 8, background: bg, color, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 18, flexShrink: 0 }}>
+                <IconComp />
+              </span>
+            );
 
-          {/* MILK INVENTORY TABLE (when categoryFilter === 'milk' or 'all') */}
-          {(categoryFilter === 'milk' || categoryFilter === 'all') && (
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: 'var(--primary)' }}>
-                    <MdStorefront style={{ fontSize: 20 }} />
-                    MILK INVENTORY & DB2 LIVE STOCK
-                  </span>
-                  <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                    Milk stock & dispatches tracked via DB2 Manager App
+            /* classify milk items (from DB2 items) */
+            const classifyMilk = (item) => {
+              const n = (item?.name || '').toLowerCase();
+              const m = (item?.material || '').toLowerCase();
+              const u = (item?.unit || '').toLowerCase();
+              if (n.includes('1l bottle') || (n.includes('1l') && (n.includes('bottle') || m.includes('bottle')))) return '1L';
+              if (n.includes('half litre bottle') || n.includes('500ml bottle') || n.includes('500 ml bottle') || (m.includes('bottle') && (n.includes('500') || n.includes('half') || u.includes('500')))) return 'HLB';
+              if (n.includes('500ml packet') || n.includes('500 ml packet') || (m.includes('packet') && (n.includes('500') || n.includes('half') || u.includes('500')))) return 'HLP';
+              return null;
+            };
+            const milkLabel = { '1L': 'Milk 1L Bottle', 'HLB': 'Milk ½L Bottle', 'HLP': 'Milk ½L Packet' };
+            const milkItems = ['1L', 'HLB', 'HLP'].map(k => filteredItems.find(i => classifyMilk(i) === k)).filter(Boolean);
+
+            /* classify adhoc items into categories */
+            const classifyAdhoc = (item) => {
+              const n = (item?.name || '').toLowerCase();
+              if (n.includes('butter') || n.includes('ghee') || n.includes('curd') || n.includes('paneer') || n.includes('cheese') || n.includes('cream') || n.includes('lassi')) return 'dairy';
+              if (n.includes('oil')) return 'oils';
+              if (n.includes('sugar') || n.includes('honey') || n.includes('jaggery') || n.includes('sweet')) return 'sweeteners';
+              return 'grocery';
+            };
+            const dairyItems     = adhocItems.filter(i => classifyAdhoc(i) === 'dairy');
+            const oilsItems      = adhocItems.filter(i => classifyAdhoc(i) === 'oils');
+            const sweetenerItems = adhocItems.filter(i => classifyAdhoc(i) === 'sweeteners');
+            const groceryItems   = adhocItems.filter(i => classifyAdhoc(i) === 'grocery');
+
+            /* reusable row renderer for milk (DB2 fields) */
+            const milkRow = (item) => {
+              const label     = milkLabel[classifyMilk(item)] || item.name;
+              const opening   = item.carriedOverStock ?? 0;
+              const added     = item.newStockAdded ?? 0;
+              const expected  = item.expectedStock ?? (opening + added);
+              const remaining = item.currentStock ?? 0;
+              const dpTaken   = Math.max(0, expected - remaining);
+              const sc = item.status === 'In Stock' ? 'badge-success' : item.status === 'Low Stock' ? 'badge-warning' : 'badge-danger';
+              const remainColor = remaining <= 0 ? 'var(--danger)' : remaining <= 20 ? 'var(--warning)' : '#3b82f6';
+              return (
+                <tr key={item.id}>
+                  <td style={{ fontWeight: 700 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {iconBox(MdLocalDrink, 'rgba(59,130,246,0.1)', '#3b82f6')}
+                      <div>
+                        <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 700 }}>{label}</div>
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.name}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td><code style={{ fontSize: 11, background: 'var(--gray-100,#f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || `MK-${item.id}`}</code></td>
+                  <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{opening} {item.unit}</td>
+                  <td style={{ fontWeight: 700, color: 'var(--success)' }}>+{added} {item.unit}</td>
+                  <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{dpTaken} {item.unit}</td>
+                  <td><span style={{ fontSize: 15, fontWeight: 800, color: remainColor }}>{remaining.toLocaleString()} {item.unit}</span></td>
+                  <td><span className={`badge ${sc}`}>{item.status}</span></td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-primary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => openAddModal(item)}><MdAdd /> Add</button>
+                      <button className="btn btn-secondary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => {
+                        setShowDb2UpdateModal(item);
+                        setDb2Form({ newStockAdded: item.newStockAdded || 0, currentStock: item.currentStock || 0 });
+                      }}><MdEdit /> DB2 Override</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            };
+
+            /* reusable row renderer for adhoc items */
+            const adhocRow = (item, IconComp, iconBg, iconColor) => {
+              const sc = item.status === 'In Stock' ? 'badge-success' : item.status === 'Low Stock' ? 'badge-warning' : 'badge-danger';
+              const remaining = parseFloat(item.remainingStock ?? 0);
+              const remainColor = remaining <= 0 ? 'var(--danger)' : remaining <= 10 ? 'var(--warning)' : iconColor;
+              return (
+                <tr key={item.id}>
+                  <td style={{ fontWeight: 700 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      {iconBox(IconComp, iconBg, iconColor)}
+                      <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 700 }}>{item.name}</div>
+                    </div>
+                  </td>
+                  <td><code style={{ fontSize: 11, background: 'var(--gray-100,#f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || '-'}</code></td>
+                  <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.openingStock ?? 0} {item.unit}</td>
+                  <td style={{ fontWeight: 700, color: 'var(--success)' }}>+{item.addedStock ?? 0} {item.unit}</td>
+                  <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{item.dpIssuedStock ?? 0} {item.unit}</td>
+                  <td><span style={{ fontSize: 15, fontWeight: 800, color: remainColor }}>{remaining.toLocaleString()} {item.unit}</span></td>
+                  <td><span className={`badge ${sc}`}>{item.status}</span></td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button className="btn btn-primary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => openAddModal({ ...item, isAdhoc: true })}><MdAdd /> Add</button>
+                      <button className="btn btn-secondary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => {
+                        setShowAdhocOverrideModal(item);
+                        setAdhocOverrideForm({
+                          openingStock:  item.openingStock  ?? 0,
+                          addedStock:    item.addedStock    ?? 0,
+                          dpIssuedStock: item.dpIssuedStock ?? 0,
+                          remainingStock: item.remainingStock ?? 0,
+                          remarks: '',
+                        });
+                      }}><MdEdit /> Override</button>
+                    </div>
+                  </td>
+                </tr>
+              );
+            };
+
+            /* reusable card shell */
+            const DivCard = ({ title, subtitle, IconComp, accentColor, accentBg, badgeCount, badgeClass, children }) => (
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="card-header" style={{ background: accentBg }}>
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: accentColor }}>
+                      <IconComp style={{ fontSize: 20 }} />
+                      {title}
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{subtitle}</div>
                   </div>
+                  <span className={`badge ${badgeClass}`} style={{ fontWeight: 700 }}>{badgeCount}</span>
                 </div>
-                <span style={{ fontSize: 12.5, color: 'var(--text-muted)' }}>{filteredItems.length} products</span>
-              </div>
-              <div className="table-wrapper">
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th style={{ minWidth: 150 }}>Item Name</th>
-                    <th>Material / Unit</th>
-                    <th>Carried Over</th>
-                    <th>New Stock Added</th>
-                    <th>Current Available</th>
-                    <th>Expected Stock</th>
-                    <th>Status</th>
-                    <th style={{ minWidth: 140 }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filteredItems.map(item => {
-                    const statusColor = item.status === 'In Stock' ? 'badge-success' : item.status === 'Low Stock' ? 'badge-warning' : 'badge-danger';
-                    return (
-                      <tr key={item.id}>
-                        <td style={{ fontWeight: 700 }}>
-                          <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{item.name}</div>
-                        </td>
-                        <td><span className="badge badge-gray">{item.material || 'Milk'} ({item.unit})</span></td>
-                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.carriedOverStock ?? 0} {item.unit}</td>
-                        <td style={{ fontWeight: 700, color: 'var(--primary)' }}>+{item.newStockAdded ?? 0} {item.unit}</td>
-                        <td>
-                          <span style={{
-                            fontSize: 15,
-                            fontWeight: 800,
-                            color: item.currentStock <= 0 ? 'var(--danger)' : item.currentStock <= 20 ? 'var(--warning)' : 'var(--text-primary)'
-                          }}>
-                            {item.currentStock.toLocaleString()} {item.unit}
-                          </span>
-                        </td>
-                        <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.expectedStock ?? item.currentStock} {item.unit}</td>
-                        <td><span className={`badge ${statusColor}`}>{item.status}</span></td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 6 }}>
-                            <button className="btn btn-primary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => openAddModal(item)}>
-                              <MdAdd /> Add
-                            </button>
-                            <button className="btn btn-secondary btn-sm" style={{ fontSize: 12, padding: '4px 8px' }} onClick={() => {
-                              setShowDb2UpdateModal(item);
-                              setDb2Form({ newStockAdded: item.newStockAdded || 0, currentStock: item.currentStock || 0 });
-                            }}>
-                              <MdEdit /> DB2 Override
-                            </button>
-                          </div>
-                        </td>
+                <div className="table-wrapper">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th style={{ minWidth: 200 }}>Product</th>
+                        <th>SKU</th>
+                        <th>Opening</th>
+                        <th>Added</th>
+                        <th>DP Taken</th>
+                        <th>Remaining</th>
+                        <th>Status</th>
+                        <th style={{ minWidth: 110 }}>Action</th>
                       </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          </div>
-          )}
+                    </thead>
+                    <tbody>{children}</tbody>
+                  </table>
+                </div>
+              </div>
+            );
+
+            const emptyRow = (msg) => (
+              <tr><td colSpan={8} style={{ textAlign: 'center', padding: 28, color: 'var(--text-muted)', fontSize: 13 }}>{msg}</td></tr>
+            );
+
+            return (
+              <>
+                {/* 1. MILK */}
+                <DivCard
+                  title="MILK DIVISION"
+                  subtitle="Central milk stock — 1L Bottle · ½L Bottle · ½L Packet"
+                  IconComp={MdLocalDrink}
+                  accentColor="#3b82f6"
+                  accentBg="linear-gradient(135deg,rgba(59,130,246,0.06),rgba(14,165,233,0.02))"
+                  badgeCount={`${milkItems.length} Products`}
+                  badgeClass="badge-blue"
+                >
+                  {milkItems.length === 0 ? emptyRow('No milk products found for this date.') : milkItems.map(milkRow)}
+                </DivCard>
+
+                {/* 2. DAIRY */}
+                <DivCard
+                  title="DAIRY DIVISION"
+                  subtitle="Butter · Ghee · Curd · Paneer and other dairy products"
+                  IconComp={MdKitchen}
+                  accentColor="#7c3aed"
+                  accentBg="linear-gradient(135deg,rgba(124,58,237,0.06),rgba(91,33,182,0.02))"
+                  badgeCount={`${dairyItems.length} Products`}
+                  badgeClass="badge-purple"
+                >
+                  {dairyItems.length === 0
+                    ? emptyRow('No dairy products found for this date.')
+                    : dairyItems.map(i => adhocRow(i, MdKitchen, 'rgba(124,58,237,0.1)', '#7c3aed'))}
+                </DivCard>
+
+                {/* 3. OILS */}
+                <DivCard
+                  title="OILS DIVISION"
+                  subtitle="Coconut Oil · Groundnut Oil · Sesame Oil and other cooking oils"
+                  IconComp={MdOpacity}
+                  accentColor="#d97706"
+                  accentBg="linear-gradient(135deg,rgba(217,119,6,0.06),rgba(245,158,11,0.02))"
+                  badgeCount={`${oilsItems.length} Products`}
+                  badgeClass="badge-warning"
+                >
+                  {oilsItems.length === 0
+                    ? emptyRow('No oil products found for this date.')
+                    : oilsItems.map(i => adhocRow(i, MdOpacity, 'rgba(217,119,6,0.1)', '#d97706'))}
+                </DivCard>
+
+                {/* 4. SWEETENERS */}
+                <DivCard
+                  title="SWEETENERS DIVISION"
+                  subtitle="Honey · Cane Sugar · Jaggery and other sweeteners"
+                  IconComp={MdEco}
+                  accentColor="#059669"
+                  accentBg="linear-gradient(135deg,rgba(5,150,105,0.06),rgba(16,185,129,0.02))"
+                  badgeCount={`${sweetenerItems.length} Products`}
+                  badgeClass="badge-success"
+                >
+                  {sweetenerItems.length === 0
+                    ? emptyRow('No sweetener products found for this date.')
+                    : sweetenerItems.map(i => adhocRow(i, MdEco, 'rgba(5,150,105,0.1)', '#059669'))}
+                </DivCard>
+
+                {/* 5. GROCERY */}
+                <DivCard
+                  title="GROCERY DIVISION"
+                  subtitle="Appalam · Pickles · Dry goods and other grocery items"
+                  IconComp={MdShoppingCart}
+                  accentColor="#0ea5e9"
+                  accentBg="linear-gradient(135deg,rgba(14,165,233,0.06),rgba(6,182,212,0.02))"
+                  badgeCount={`${groceryItems.length} Products`}
+                  badgeClass="badge-blue"
+                >
+                  {groceryItems.length === 0
+                    ? emptyRow('No grocery products found for this date.')
+                    : groceryItems.map(i => adhocRow(i, MdShoppingCart, 'rgba(14,165,233,0.1)', '#0ea5e9'))}
+                </DivCard>
+              </>
+            );
+          })()}
         </div>
       )}
 
@@ -932,6 +1033,69 @@ export default function InventoryPage() {
         )}
       </AnimatePresence>
 
+      {/* Adhoc Stock Override Modal */}
+      <AnimatePresence>
+        {showAdhocOverrideModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setShowAdhocOverrideModal(null)}>
+            <motion.div className="modal" style={{ maxWidth: 520 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdEdit style={{ color: '#7c3aed' }} /> Stock Override — {showAdhocOverrideModal.name}
+                </h2>
+                <button className="icon-btn" onClick={() => setShowAdhocOverrideModal(null)}><MdClose /></button>
+              </div>
+              <form onSubmit={handleAdhocOverride}>
+                <div className="modal-body">
+                  <div style={{ background: 'rgba(124,58,237,0.06)', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 12.5, borderLeft: '3px solid #7c3aed' }}>
+                    <strong>Direct Override</strong> — overwrites all stock fields for this product on <strong>{selectedDate}</strong>.<br />
+                    Unit: <strong>{showAdhocOverrideModal.unit}</strong> · SKU: <strong>{showAdhocOverrideModal.sku || 'N/A'}</strong>
+                  </div>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                    <div className="form-group">
+                      <label className="form-label">Opening Stock ({showAdhocOverrideModal.unit})</label>
+                      <input type="number" step="any" min="0" className="form-input"
+                        value={adhocOverrideForm.openingStock}
+                        onChange={e => setAdhocOverrideForm(f => ({ ...f, openingStock: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Added Stock ({showAdhocOverrideModal.unit})</label>
+                      <input type="number" step="any" min="0" className="form-input"
+                        value={adhocOverrideForm.addedStock}
+                        onChange={e => setAdhocOverrideForm(f => ({ ...f, addedStock: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">DP Issued ({showAdhocOverrideModal.unit})</label>
+                      <input type="number" step="any" min="0" className="form-input"
+                        value={adhocOverrideForm.dpIssuedStock}
+                        onChange={e => setAdhocOverrideForm(f => ({ ...f, dpIssuedStock: e.target.value }))} />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label" style={{ color: '#7c3aed', fontWeight: 700 }}>Remaining Stock ({showAdhocOverrideModal.unit})</label>
+                      <input type="number" step="any" min="0" className="form-input"
+                        style={{ borderColor: '#7c3aed' }}
+                        value={adhocOverrideForm.remainingStock}
+                        onChange={e => setAdhocOverrideForm(f => ({ ...f, remainingStock: e.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Remarks (optional)</label>
+                    <input type="text" className="form-input" placeholder="Reason for override..."
+                      value={adhocOverrideForm.remarks}
+                      onChange={e => setAdhocOverrideForm(f => ({ ...f, remarks: e.target.value }))} />
+                  </div>
+                </div>
+                <div className="modal-footer">
+                  <button type="button" className="btn btn-secondary" onClick={() => setShowAdhocOverrideModal(null)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" style={{ background: '#7c3aed', borderColor: '#7c3aed' }} disabled={submitting}>
+                    {submitting ? 'Saving...' : 'Save Override'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Stock Addition & Correction Modals */}
       <AnimatePresence>
         {showAddModal && (
@@ -945,17 +1109,41 @@ export default function InventoryPage() {
               </div>
               <form onSubmit={triggerAddConfirmation} style={{ padding: 20 }}>
                 <div className="form-group" style={{ marginBottom: 14 }}>
-                  <label className="form-label">Select Product *</label>
-                  <select
-                    className="form-input"
-                    value={addForm.inventoryItemId}
-                    onChange={e => setAddForm(f => ({ ...f, inventoryItemId: e.target.value }))}
-                    required
-                  >
-                    {items.map(i => (
-                      <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock} {i.unit})</option>
-                    ))}
-                  </select>
+                  <label className="form-label">Product Name *</label>
+                  {selectedModalItem ? (
+                    <div className="form-input" style={{ background: 'var(--gray-100, #f1f5f9)', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 42, padding: '0 12px' }}>
+                      <span>{selectedModalItem.name}</span>
+                      <span className="badge badge-blue" style={{ fontSize: 11.5 }}>
+                        Available: {selectedModalItem.currentStock ?? selectedModalItem.remainingStock ?? 0} {selectedModalItem.unit}
+                      </span>
+                    </div>
+                  ) : (
+                    <select
+                      className="form-input"
+                      value={addForm.inventoryItemId}
+                      onChange={e => {
+                        const id = e.target.value;
+                        const found = allProductsForModal.find(p => p.id === id);
+                        setAddForm(f => ({
+                          ...f,
+                          inventoryItemId: id,
+                          unit: found ? (found.unit || 'Units') : f.unit
+                        }));
+                      }}
+                      required
+                    >
+                      <optgroup label="Milk Division">
+                        {items.map(i => (
+                          <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock} {i.unit})</option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="AdHoc & Other Products">
+                        {adhocItems.map(i => (
+                          <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock ?? i.remainingStock ?? 0} {i.unit})</option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  )}
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 14 }}>
                   <div className="form-group">

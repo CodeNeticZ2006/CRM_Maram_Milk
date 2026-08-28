@@ -87,7 +87,7 @@ export default function DashboardPage() {
         <StatCard label="Total Negative Wallet Amount" value={fmtCur(s.total_negative_wallet)} color="#ef4444" />
         <StatCard label="No. of Active Customers" value={fmt(s.active_customers)} color="#06b6d4" />
         <StatCard label="No. of Active Subscription" value={fmt(s.active_subscriptions)} color="#8b5cf6" />
-        <StatCard label="Total Milk Delivered (This Month)" value={`${fmt(s.total_milk_delivered_month || kpi.milk_inventory?.today_dispatch || 0)} L`} color="#3b82f6" />
+        <StatCard label="Total Milk Delivered (This Month)" value={`${fmt(s.total_milk_delivered_month || 0)} L`} color="#3b82f6" />
         <StatCard label="Total No. of Enquiry This Month" value={fmt(s.total_enquiries_this_month)} color="#f59e0b" />
         <StatCard label="No. of Customer Registered (Month)" value={fmt(s.registered_this_month)} color="#10b981" />
         <StatCard label="Customers Registered Today" value={fmt(s.registered_today)} color="#06b6d4" />
@@ -96,8 +96,8 @@ export default function DashboardPage() {
       {/* Hold & Change Requests */}
       <div className="request-widgets">
         {[
-          { title: `HOLD REQUEST`, subtitle: `This Month`, count: s.hold_requests_pending, color: '#f59e0b', bg: 'rgba(245,158,11,0.06)' },
-          { title: `CHANGES REQUEST`, subtitle: `This Month`, count: s.change_requests_pending, color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)' },
+          { title: `HOLD REQUEST`, subtitle: `Pending`, count: s.hold_requests_pending, color: '#f59e0b', bg: 'rgba(245,158,11,0.06)' },
+          { title: `CHANGES REQUEST`, subtitle: `Pending`, count: s.change_requests_pending, color: '#8b5cf6', bg: 'rgba(139,92,246,0.06)' },
         ].map((w) => (
           <motion.div
             key={w.title}

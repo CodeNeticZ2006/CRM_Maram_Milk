@@ -5,16 +5,22 @@ build/
 .env
 .env.*
 !.env.example
+*.env
+env
 *.log
 npm-debug.log*
 .cache/
 coverage/
 *.tsbuildinfo
-test_db.js
+test_*.js
+check_*.js
+inspect_*.js
 
-# Temporary utility scripts
+# Temporary utility & seed scripts
 src/utils/update_admin.js
 src/utils/inspect_db2.js
 src/seeds/temp_*.js
 src/seeds/check_*.js
+src/seeds/fix_*.js
 src/seeds/verify_*.js
+src/seeds/inspect_*.js
