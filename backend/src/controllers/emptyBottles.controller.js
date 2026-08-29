@@ -201,13 +201,13 @@ const getEmptyBottleLogs = async (req, res, next) => {
         if (!isBeforeDb2 && !isFuture && (dayLogs.length > 0 || dayAllocRows.length > 0)) {
           hasFlag = dayLogs.some(l => Boolean(l.flagIssue));
 
-          // 1. Sum up bottle collection & actual delivery counts from EmptyBottleLogItem rows
+          // 1. Sum up bottle collection & actual delivery counts from EmptyBottleLogItem rows (STRICTLY BOTTLE MATERIAL ONLY)
           for (const row of dayLogs) {
             const unit = (row.itemUnit || '').toLowerCase();
             const name = (row.itemName || '').toLowerCase();
             const mat  = (row.itemMaterial || '').toLowerCase();
 
-            if (mat === 'bottle' || name.includes('milk')) {
+            if (mat === 'bottle') {
               if (unit === '1l' || name.includes('1l')) {
                 issued1L   += parseInt(row.actualDelivered) || 0;
                 returned1L += parseInt(row.collected)       || 0;
@@ -218,14 +218,14 @@ const getEmptyBottleLogs = async (req, res, next) => {
             }
           }
 
-          // 2. If actualDelivered was 0 in empty bottle log, fallback to RouteAllocationItem
+          // 2. If actualDelivered was 0 in empty bottle log, fallback to RouteAllocationItem (STRICTLY BOTTLE MATERIAL ONLY)
           if (issued1L === 0 && issuedHalfL === 0 && dayAllocRows.length > 0) {
             for (const row of dayAllocRows) {
               const unit = (row.itemUnit || '').toLowerCase();
               const name = (row.itemName || '').toLowerCase();
               const mat  = (row.itemMaterial || '').toLowerCase();
 
-              if (mat === 'bottle' || name.includes('milk')) {
+              if (mat === 'bottle') {
                 if (unit === '1l' || name.includes('1l')) {
                   issued1L += parseInt(row.quantity) || 0;
                 } else if (unit === '500ml' || unit === '0.5l' || unit === '½l' || name.includes('500ml') || name.includes('0.5l')) {

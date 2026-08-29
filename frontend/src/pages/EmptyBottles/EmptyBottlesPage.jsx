@@ -394,9 +394,9 @@ export default function EmptyBottlesPage() {
                   <th style={{ minWidth: 160 }}>DELIVERY PERSON</th>
                   <th style={{ minWidth: 110 }}>VEHICLE NO</th>
                   <th style={{ minWidth: 130 }}>ASSIGNED ROUTE</th>
-                  <th>DISPATCHED (1L / ½L)</th>
-                  <th>COLLECTED (1L / ½L)</th>
-                  <th style={{ color: '#ef4444', minWidth: 130 }}>MISSING / BROKEN</th>
+                  <th>DISPATCHED (1L / ½L BOTTLES)</th>
+                  <th>COLLECTED (1L / ½L BOTTLES)</th>
+                  <th style={{ color: '#ef4444', minWidth: 140 }}>MISSING / BROKEN BOTTLES</th>
                   <th>RETURN RATE %</th>
                   <th style={{ minWidth: 130 }}>INCIDENT FLAGS</th>
                   <th style={{ minWidth: 130 }}>DATE AUDIT</th>
