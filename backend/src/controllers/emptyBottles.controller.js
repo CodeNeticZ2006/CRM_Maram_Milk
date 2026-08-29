@@ -42,15 +42,7 @@ const getEmptyBottleLogs = async (req, res, next) => {
       console.warn('⚠️ DB2 EmptyBottleLog query warning:', e.message);
     }
 
-    // Fallback DP list if DB2 returns empty
-    if (dpRows.length === 0) {
-      dpRows = [
-        { id: 'dp-1', name: 'Ansar Ali',      dpCode: 'DP-101', vehicleNumber: 'TN 39 AB 1024', zone: 'Zone A' },
-        { id: 'dp-2', name: 'Karthik Raja',   dpCode: 'DP-102', vehicleNumber: 'TN 39 CD 5678', zone: 'Zone A' },
-        { id: 'dp-3', name: 'Saravana Kumar', dpCode: 'DP-103', vehicleNumber: 'TN 39 EF 9012', zone: 'Zone B' },
-        { id: 'dp-4', name: 'Ramesh Babu',    dpCode: 'DP-104', vehicleNumber: 'TN 39 GH 3456', zone: 'Zone B' },
-      ];
-    }
+    // NO fallback mock array if DB2 returns 0 active delivery persons
 
     // ── Fetch CRM Incidents ───────────────────────────────────────────────────
     let crmIncidents = [];
@@ -198,8 +190,8 @@ const getEmptyBottleLogs = async (req, res, next) => {
 
       return {
         id: dp.id, dpName: dp.name, dpCode: dp.dpCode,
-        vehicleNumber: dp.vehicleNumber || 'TN 39 AB 1000',
-        routeName: dpAssignedRouteStr, zone: dp.zone || 'Zone A',
+        vehicleNumber: dp.vehicleNumber || 'Unassigned',
+        routeName: dpAssignedRouteStr, zone: dp.zone || '',
         issued1L: totalIssued1L, issuedHalfL: totalIssuedHalfL,
         returned1L: totalReturned1L, returnedHalfL: totalReturnedHalfL,
         missing1L: totalMissing1L, missingHalfL: totalMissingHalfL,

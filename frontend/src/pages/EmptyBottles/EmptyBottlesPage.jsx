@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MdWineBar, MdRefresh, MdWarning, MdCheckCircle,
@@ -46,6 +46,7 @@ export default function EmptyBottlesPage() {
   const [stats, setStats]       = useState({ totalIssued: 0, totalReturned: 0, returnRate: 0, pendingIncidents: 0 });
   const [isActiveDay, setIsActiveDay] = useState(false);
   const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(false);
   const [search, setSearch]     = useState('');
   const [selectedDpId, setSelectedDpId] = useState('');
   const [expandedDpId, setExpandedDpId] = useState(null);
@@ -80,6 +81,7 @@ export default function EmptyBottlesPage() {
     if (filterMode === 'custom'  && (!startDate || !endDate)) return;
 
     setLoading(true);
+    setError(false);
     try {
       const params = {
         mode:       filterMode,
@@ -97,7 +99,8 @@ export default function EmptyBottlesPage() {
       setIncidents(res.data.incidents || []);
       setIsActiveDay(Boolean(res.data.isActiveDay));
     } catch {
-      toast.error('Failed to load DB2 empty bottle logs.');
+      setError(true);
+      toast.error('Failed to load empty bottle audit logs.');
     } finally {
       setLoading(false);
     }
@@ -401,13 +404,33 @@ export default function EmptyBottlesPage() {
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 bottle collection records...</td></tr>
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>
+                      <div className="loading-spinner" style={{ margin: '0 auto 12px' }} />
+                      <div style={{ fontWeight: 600, color: 'var(--text-muted)' }}>Loading live delivery person bottle audit records...</div>
+                    </td>
+                  </tr>
+                ) : error ? (
+                  <tr>
+                    <td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>
+                      <div style={{ color: '#ef4444', fontSize: 32, marginBottom: 8 }}><MdWarning /></div>
+                      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, color: '#ef4444' }}>Failed to load delivery person audit data</div>
+                      <div style={{ fontSize: 13, color: 'var(--text-muted)', marginBottom: 16 }}>An error occurred while communicating with the Master Module database.</div>
+                      <button className="btn btn-primary btn-sm" onClick={fetchData}>
+                        <MdRefresh /> Retry Connection
+                      </button>
+                    </td>
+                  </tr>
                 ) : filteredLogs.length === 0 ? (
                   <tr>
                     <td colSpan={9} style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
-                      <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
-                      <div style={{ fontWeight: 700, marginBottom: 4 }}>No empty bottle records found</div>
-                      <div style={{ fontSize: 13 }}>for {periodLabel}{isActiveDay ? ' — no data recorded yet for this operational day.' : '.'}</div>
+                      <div style={{ fontSize: 36, marginBottom: 12 }}>📦</div>
+                      <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6, color: 'var(--text-main)' }}>
+                        No active delivery persons available for this operational day.
+                      </div>
+                      <div style={{ fontSize: 13, maxWidth: 450, margin: '0 auto' }}>
+                        Ensure delivery persons exist and are marked as active in the Master Module for {periodLabel}.
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -415,7 +438,7 @@ export default function EmptyBottlesPage() {
                     const isExpanded = expandedDpId === dp.id;
                     const totalMissing = dp.missing1L + dp.missingHalfL;
                     return (
-                      <>
+                      <Fragment key={dp.id}>
                         <tr
                           key={dp.id}
                           style={{ cursor: 'pointer', background: selectedDpId === dp.id ? 'rgba(59,130,246,0.05)' : 'transparent' }}
@@ -537,7 +560,7 @@ export default function EmptyBottlesPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })
                 )}
