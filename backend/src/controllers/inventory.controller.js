@@ -146,16 +146,21 @@ const getInventory = async (req, res, next) => {
       const material = (item?.material || '').toLowerCase();
       const unit = (item?.unit || '').toLowerCase();
 
+      const isMilk = name.includes('milk') || material === 'milk';
+      if (!isMilk) return 4;
+
       if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) return 1;
       if (
         name.includes('half litre bottle') ||
         name.includes('500ml bottle') ||
         name.includes('500 ml bottle') ||
+        name.includes('500ml (b)') ||
         (material.includes('bottle') && (name.includes('500') || name.includes('half') || unit.includes('500')))
       ) return 2;
       if (
         name.includes('500ml packet') ||
         name.includes('500 ml packet') ||
+        name.includes('500ml (p)') ||
         (material.includes('packet') && (name.includes('500') || name.includes('half') || unit.includes('500')))
       ) return 3;
 
@@ -1296,9 +1301,13 @@ const generateInventoryReport = async (req, res, next) => {
       const name = (item?.name || '').toLowerCase();
       const material = (item?.material || '').toLowerCase();
       const unit = (item?.unit || '').toLowerCase();
+
+      const isMilk = name.includes('milk') || material === 'milk';
+      if (!isMilk) return 4;
+
       if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) return 1;
-      if (name.includes('half litre bottle') || name.includes('500ml bottle') || name.includes('500 ml bottle') || (material.includes('bottle') && (name.includes('500') || name.includes('half')))) return 2;
-      if (name.includes('500ml packet') || name.includes('500 ml packet') || (material.includes('packet') && (name.includes('500') || name.includes('half')))) return 3;
+      if (name.includes('half litre bottle') || name.includes('500ml bottle') || name.includes('500 ml bottle') || name.includes('500ml (b)') || (material.includes('bottle') && (name.includes('500') || name.includes('half')))) return 2;
+      if (name.includes('500ml packet') || name.includes('500 ml packet') || name.includes('500ml (p)') || (material.includes('packet') && (name.includes('500') || name.includes('half')))) return 3;
       return 4;
     };
 

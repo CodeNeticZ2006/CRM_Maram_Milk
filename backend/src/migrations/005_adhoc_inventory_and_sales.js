@@ -107,6 +107,7 @@ const runAdhocMigrations = async () => {
     { name: 'Butter - 250gm',         category: 'AdHoc', unit: '250gm', price: 150.00, sku: 'ADH-BTR-250GM'  },
     { name: 'Honey - 350gm',          category: 'AdHoc', unit: '350gm', price: 220.00, sku: 'ADH-HNY-350GM'  },
     { name: 'Cane Sugar - 500gm',     category: 'AdHoc', unit: '500gm', price: 60.00,  sku: 'ADH-CSUG-500GM' },
+    { name: 'Karupatti - 500gm',      category: 'AdHoc', unit: '500gm', price: 180.00, sku: 'ADH-KARU-500GM' },
     { name: 'Appalam Packet - 200gm', category: 'AdHoc', unit: '200gm', price: 40.00,  sku: 'ADH-APPL-200GM' },
   ];
 

@@ -15,6 +15,9 @@ const getMilkProductCategory = (nameStr = '', materialStr = '', unitStr = '') =>
   const material = materialStr.toLowerCase();
   const unit = unitStr.toLowerCase();
 
+  const isMilk = name.includes('milk') || material === 'milk';
+  if (!isMilk) return null;
+
   if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) {
     return '1L Bottle';
   }
@@ -22,6 +25,7 @@ const getMilkProductCategory = (nameStr = '', materialStr = '', unitStr = '') =>
     name.includes('half litre bottle') ||
     name.includes('500ml bottle') ||
     name.includes('500 ml bottle') ||
+    name.includes('500ml (b)') ||
     (material.includes('bottle') && (name.includes('500') || name.includes('half') || unit.includes('500')))
   ) {
     return '500ml Bottle';
@@ -29,6 +33,7 @@ const getMilkProductCategory = (nameStr = '', materialStr = '', unitStr = '') =>
   if (
     name.includes('500ml packet') ||
     name.includes('500 ml packet') ||
+    name.includes('500ml (p)') ||
     (material.includes('packet') && (name.includes('500') || name.includes('half') || unit.includes('500')))
   ) {
     return '500ml Packet';

@@ -169,16 +169,21 @@ export default function InventoryPage() {
     const material = (item?.material || '').toLowerCase();
     const unit = (item?.unit || '').toLowerCase();
 
+    const isMilk = name.includes('milk') || material === 'milk';
+    if (!isMilk) return 4;
+
     if (name.includes('1l bottle') || (name.includes('1l') && (name.includes('bottle') || material.includes('bottle')))) return 1;
     if (
       name.includes('half litre bottle') ||
       name.includes('500ml bottle') ||
       name.includes('500 ml bottle') ||
+      name.includes('500ml (b)') ||
       (material.includes('bottle') && (name.includes('500') || name.includes('half') || unit.includes('500')))
     ) return 2;
     if (
       name.includes('500ml packet') ||
       name.includes('500 ml packet') ||
+      name.includes('500ml (p)') ||
       (material.includes('packet') && (name.includes('500') || name.includes('half') || unit.includes('500')))
     ) return 3;
 
@@ -697,9 +702,12 @@ export default function InventoryPage() {
               const n = (item?.name || '').toLowerCase();
               const m = (item?.material || '').toLowerCase();
               const u = (item?.unit || '').toLowerCase();
+              const isMilk = n.includes('milk') || m === 'milk';
+              if (!isMilk) return null;
+
               if (n.includes('1l bottle') || (n.includes('1l') && (n.includes('bottle') || m.includes('bottle')))) return '1L';
-              if (n.includes('half litre bottle') || n.includes('500ml bottle') || n.includes('500 ml bottle') || (m.includes('bottle') && (n.includes('500') || n.includes('half') || u.includes('500')))) return 'HLB';
-              if (n.includes('500ml packet') || n.includes('500 ml packet') || (m.includes('packet') && (n.includes('500') || n.includes('half') || u.includes('500')))) return 'HLP';
+              if (n.includes('half litre bottle') || n.includes('500ml bottle') || n.includes('500 ml bottle') || n.includes('500ml (b)') || (m.includes('bottle') && (n.includes('500') || n.includes('half') || u.includes('500')))) return 'HLB';
+              if (n.includes('500ml packet') || n.includes('500 ml packet') || n.includes('500ml (p)') || (m.includes('packet') && (n.includes('500') || n.includes('half') || u.includes('500')))) return 'HLP';
               return null;
             };
             const milkLabel = { '1L': 'Milk 1L Bottle', 'HLB': 'Milk ½L Bottle', 'HLP': 'Milk ½L Packet' };
@@ -710,7 +718,7 @@ export default function InventoryPage() {
               const n = (item?.name || '').toLowerCase();
               if (n.includes('butter') || n.includes('ghee') || n.includes('curd') || n.includes('paneer') || n.includes('cheese') || n.includes('cream') || n.includes('lassi')) return 'dairy';
               if (n.includes('oil')) return 'oils';
-              if (n.includes('sugar') || n.includes('honey') || n.includes('jaggery') || n.includes('sweet')) return 'sweeteners';
+              if (n.includes('sugar') || n.includes('honey') || n.includes('jaggery') || n.includes('sweet') || n.includes('karupatti')) return 'sweeteners';
               return 'grocery';
             };
             const dairyItems     = adhocItems.filter(i => classifyAdhoc(i) === 'dairy');
@@ -881,7 +889,7 @@ export default function InventoryPage() {
                 {/* 4. SWEETENERS */}
                 <DivCard
                   title="SWEETENERS DIVISION"
-                  subtitle="Honey · Cane Sugar · Jaggery and other sweeteners"
+                  subtitle="Honey · Cane Sugar · Karupatti · Jaggery and other sweeteners"
                   IconComp={MdEco}
                   accentColor="#059669"
                   accentBg="linear-gradient(135deg,rgba(5,150,105,0.06),rgba(16,185,129,0.02))"

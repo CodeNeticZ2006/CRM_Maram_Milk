@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, Component } from 'react';
+import React, { useState, useEffect, useCallback, Component } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MdRefresh, MdPerson, MdDirectionsBike,
@@ -86,6 +86,7 @@ function DeliveryPersonAuditContent() {
 
   // AdHoc DP Audit State & Modals
   const [adhocAuditData, setAdhocAuditData] = useState([]);
+  const [adhocRawRows, setAdhocRawRows] = useState([]);
   const [adhocProductsList, setAdhocProductsList] = useState([]);
   const [routesList, setRoutesList] = useState([]);
   const [adhocLoading, setAdhocLoading] = useState(false);
@@ -184,16 +185,113 @@ function DeliveryPersonAuditContent() {
       if (res?.data?.success) setDailyData(res.data);
       else setDailyData(null);
 
-      if (adhocRes?.data?.success) setAdhocAuditData(adhocRes.data.data || []);
-      else setAdhocAuditData([]);
+      if (adhocRes?.data?.success) {
+        setAdhocAuditData(adhocRes.data.data || []);
+        setAdhocRawRows(adhocRes.data.rawRows || []);
+      } else {
+        setAdhocAuditData([]);
+        setAdhocRawRows([]);
+      }
     } catch {
       setDailyData(null);
       setAdhocAuditData([]);
+      setAdhocRawRows([]);
     } finally {
       setDailyLoading(false);
       setAdhocLoading(false);
     }
   }, [dailyDate]);
+
+  // Build product-wise AdHoc Audit rows inheriting DP & Route from the Milk Operational Audit table above
+  const buildAdhocAuditRows = useCallback(() => {
+    const milkDps = dailyData?.items || deliveryPersons || [];
+    if (milkDps.length === 0) return [];
+
+    const adhocTxRows = (adhocRawRows && adhocRawRows.length > 0)
+      ? adhocRawRows
+      : (adhocAuditData.flatMap(dp => dp.routeDetails || []));
+
+    const resultRows = [];
+
+    milkDps.forEach(dp => {
+      const dpIdStr = String(dp.dpId || dp.id || dp.dpCode || '');
+      const dpCode = dp.dpCode || (dpIdStr.length <= 10 ? dpIdStr : 'DP-001');
+      const dpName = dp.name || dp.dpName || 'DP';
+      const assignedRouteStr = dp.assignedRoute || dp.zone || 'Unassigned';
+
+      // Match transactions for this DP by dpId/dpCode or dpName
+      const matchingTx = adhocTxRows.filter(r => {
+        const rDpId = String(r.dp_ref_id || r.dpRefId || r.dpId || '');
+        const rDpName = String(r.dp_name || r.dpName || '');
+        return (
+          (dpIdStr && rDpId && (rDpId === dpIdStr || rDpId === String(dp.id) || rDpId === String(dp.dpCode))) ||
+          (rDpName && dpName && rDpName.toLowerCase() === dpName.toLowerCase())
+        );
+      });
+
+      if (matchingTx.length === 0) {
+        resultRows.push({
+          id: `no-adhoc-${dpIdStr}`,
+          dpCode,
+          dpName,
+          routeName: assignedRouteStr,
+          itemTaken: null,
+          quantityTaken: '—',
+          quantityDelivered: '—',
+          quantityUndelivered: '—',
+          isEmpty: true,
+        });
+      } else {
+        const routeProdMap = new Map();
+
+        matchingTx.forEach(tx => {
+          const routeName = tx.route_name || tx.routeName || assignedRouteStr || 'General Route';
+          const productId = tx.product_id || tx.productId;
+          const productName = tx.product_name || tx.productName || 'AdHoc Product';
+          const key = `${routeName}_${productId}`;
+
+          if (!routeProdMap.has(key)) {
+            routeProdMap.set(key, {
+              routeName,
+              productId,
+              productName,
+              taken: 0,
+              sold: 0,
+              returned: 0,
+            });
+          }
+
+          const item = routeProdMap.get(key);
+          item.taken += parseFloat(tx.quantity_taken || tx.taken || 0);
+          item.sold += parseFloat(tx.quantity_sold || tx.sold || tx.delivered || 0);
+          item.returned += parseFloat(tx.quantity_returned || tx.returned || 0);
+        });
+
+        routeProdMap.forEach((val) => {
+          if (val.taken > 0 || val.sold > 0 || val.returned > 0) {
+            const taken = val.taken;
+            const delivered = val.sold;
+            const returned = val.returned;
+            const undelivered = Math.max(0, taken - delivered - returned);
+
+            resultRows.push({
+              id: `${dpIdStr}_${val.routeName}_${val.productId}`,
+              dpCode,
+              dpName,
+              routeName: val.routeName,
+              itemTaken: val.productName,
+              quantityTaken: taken,
+              quantityDelivered: delivered,
+              quantityUndelivered: undelivered,
+              isEmpty: false,
+            });
+          }
+        });
+      }
+    });
+
+    return resultRows;
+  }, [dailyData, deliveryPersons, adhocRawRows, adhocAuditData]);
 
   useEffect(() => {
     fetchDeliveryPersons();
@@ -1079,25 +1177,25 @@ function DeliveryPersonAuditContent() {
       )}
 
       {/* ========================================================================= */}
-      {/* ADHOC PRODUCT SALES AUDIT                                                 */}
+      {/* ADHOC PRODUCT AUDIT                                                       */}
       {/* ========================================================================= */}
       {activeTab === 'daily-audit' && (
-        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} style={{ marginTop: 24 }}>
-          <div className="card" style={{ marginBottom: 20 }}>
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.2 }} style={{ marginTop: 28 }}>
+          <div className="card">
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12, background: 'linear-gradient(135deg, rgba(217,119,6,0.06), rgba(245,158,11,0.02))' }}>
               <div>
                 <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#d97706', fontSize: 16 }}>
                   <MdAssignment style={{ fontSize: 22 }} />
-                  ADHOC PRODUCT SALES AUDIT
+                  ADHOC PRODUCT AUDIT
                 </span>
                 <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                  Complete DP-level AdHoc stock & sales reconciliation (Cumulative multi-route aggregation by DP + Day)
+                  Product-wise AdHoc dispatch, delivery and undelivered quantities
                 </div>
               </div>
 
               <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Operational Day:</label>
+                  <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Date:</label>
                   <input
                     type="date"
                     className="form-input"
@@ -1106,184 +1204,90 @@ function DeliveryPersonAuditContent() {
                     onChange={e => setDailyDate(e.target.value)}
                   />
                 </div>
-                <button
-                  className="btn btn-primary btn-sm"
-                  style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', border: 'none' }}
-                  onClick={() => {
-                    setIssueForm({ dpRefId: deliveryPersons[0]?.id || '', dpName: deliveryPersons[0]?.name || '', routeId: 'unassigned', routeName: 'General Route', productId: adhocProductsList[0]?.productId || adhocProductsList[0]?.id || '', quantity: '' });
-                    setShowIssueModal(true);
-                  }}
-                >
-                  <MdAdd /> Issue Stock to DP
-                </button>
-                <button
-                  className="btn btn-secondary btn-sm"
-                  onClick={() => {
-                    setSaleForm({ dpRefId: deliveryPersons[0]?.id || '', dpName: deliveryPersons[0]?.name || '', routeId: 'unassigned', routeName: 'General Route', productId: adhocProductsList[0]?.productId || adhocProductsList[0]?.id || '', quantitySold: '', quantityReturned: 0 });
-                    setShowRecordSaleModal(true);
-                  }}
-                >
-                  <MdEdit /> Record Sales / Returns
-                </button>
               </div>
             </div>
 
-            <div className="card-body" style={{ padding: '16px 20px' }}>
-              {/* AdHoc KPI Summary Grid */}
-              {(() => {
-                const totalTaken = adhocAuditData.reduce((a, b) => a + b.totalTaken, 0);
-                const totalSold = adhocAuditData.reduce((a, b) => a + b.totalSold, 0);
-                const totalReturned = adhocAuditData.reduce((a, b) => a + b.totalReturned, 0);
-                const totalRemaining = adhocAuditData.reduce((a, b) => a + b.totalRemaining, 0);
-                const totalRevenue = adhocAuditData.reduce((a, b) => a + b.totalRevenue, 0);
-
-                return (
-                  <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
-                    <div className="stat-card" style={{ '--card-accent': 'var(--primary)' }}>
-                      <div className="stat-value" style={{ color: 'var(--primary)' }}>{totalTaken}</div>
-                      <div className="stat-label">Stock Taken by DPs</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Across all active DPs</div>
-                    </div>
-                    <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
-                      <div className="stat-value" style={{ color: 'var(--success)' }}>{totalSold}</div>
-                      <div className="stat-label">Quantity Sold</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Total customer sales</div>
-                    </div>
-                    <div className="stat-card" style={{ '--card-accent': 'var(--warning)' }}>
-                      <div className="stat-value" style={{ color: 'var(--warning)' }}>{totalReturned}</div>
-                      <div className="stat-label">Quantity Returned</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Returned to stock</div>
-                    </div>
-                    <div className="stat-card" style={{ '--card-accent': '#d97706' }}>
-                      <div className="stat-value" style={{ color: '#d97706' }}>₹{totalRevenue.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</div>
-                      <div className="stat-label">Total AdHoc Revenue</div>
-                      <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Excludes Direct Shop Sales</div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* DP AdHoc Audit Table */}
+            <div className="card-body" style={{ padding: 0 }}>
               {adhocLoading ? (
                 <div style={{ textAlign: 'center', padding: 48 }}>Loading AdHoc DP Audit data...</div>
-              ) : adhocAuditData.length === 0 ? (
-                <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>
-                  <MdAssignment style={{ fontSize: 40, opacity: 0.3, marginBottom: 8 }} />
-                  <div>No DP AdHoc stock or sales records for <strong>{dailyDate}</strong>.</div>
-                  <p style={{ fontSize: 12, marginTop: 4 }}>Click "Issue Stock to DP" to dispatch central stock to a delivery person.</p>
-                </div>
               ) : (
-                <div className="table-wrapper">
-                  <table className="table">
-                    <thead>
-                      <tr>
-                        <th>DP NAME</th>
-                        <th>ROUTE(S)</th>
-                        <th>PRODUCT</th>
-                        <th style={{ color: 'var(--primary)' }}>TAKEN</th>
-                        <th style={{ color: 'var(--success)' }}>SOLD</th>
-                        <th style={{ color: 'var(--warning)' }}>RETURNED</th>
-                        <th style={{ color: '#7c3aed' }}>REMAINING</th>
-                        <th>AMOUNT (₹)</th>
-                        <th>DETAILS</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {adhocAuditData.map(dp => {
-                        const isExpanded = !!expandedDpMap[dp.dpRefId];
-                        return (
-                          <>
-                            {(dp.cumulativeProducts || []).map((prod, pIdx) => (
-                              <tr key={`${dp.dpRefId}_${prod.productId}`}>
-                                {pIdx === 0 && (
-                                  <td rowSpan={dp.cumulativeProducts.length} style={{ fontWeight: 700, verticalAlign: 'top', paddingTop: 14 }}>
-                                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'rgba(217,119,6,0.1)', color: '#d97706', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, fontWeight: 800 }}>
-                                        {dp.dpName ? dp.dpName[0].toUpperCase() : 'D'}
-                                      </div>
-                                      <div>
-                                        <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{dp.dpName}</div>
-                                        <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.date}</div>
-                                      </div>
-                                    </div>
-                                  </td>
-                                )}
-                                {pIdx === 0 && (
-                                  <td rowSpan={dp.cumulativeProducts.length} style={{ verticalAlign: 'top', paddingTop: 14 }}>
-                                    <span className="badge badge-gray" style={{ fontSize: 11, whiteSpace: 'normal', maxWidth: 160 }}>
-                                      {dp.routesList}
-                                    </span>
-                                  </td>
-                                )}
-                                <td style={{ fontWeight: 600 }}>{prod.productName}</td>
-                                <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{prod.taken}</td>
-                                <td style={{ fontWeight: 800, color: 'var(--success)', fontSize: 15 }}>{prod.sold}</td>
-                                <td style={{ fontWeight: 600, color: 'var(--warning)' }}>{prod.returned}</td>
-                                <td>
-                                  <span className="badge badge-blue" style={{ fontWeight: 700 }}>
-                                    {prod.remaining}
+                (() => {
+                  const auditRows = buildAdhocAuditRows();
+
+                  if (auditRows.length === 0) {
+                    return (
+                      <div style={{ textAlign: 'center', padding: '36px 0', color: 'var(--text-muted)', fontSize: 13.5 }}>
+                        <MdAssignment style={{ fontSize: 40, opacity: 0.3, marginBottom: 8 }} />
+                        <div>No DP operational records found for <strong>{dailyDate}</strong>.</div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="table-wrapper">
+                      <table className="table">
+                        <thead>
+                          <tr>
+                            <th>DP</th>
+                            <th>ROUTE</th>
+                            <th>ITEM TAKEN</th>
+                            <th style={{ color: 'var(--primary)', textAlign: 'center' }}>ITEM QUANTITY</th>
+                            <th style={{ color: 'var(--success)', textAlign: 'center' }}>ITEM DELIVERED</th>
+                            <th style={{ color: '#ef4444', textAlign: 'center' }}>ITEM UNDELIVERED</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {auditRows.map((row) => (
+                            <tr key={row.id}>
+                              {/* DP */}
+                              <td style={{ fontWeight: 700 }}>
+                                <div>{row.dpName}</div>
+                                <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--primary)' }}>
+                                  {row.dpCode}
+                                </span>
+                              </td>
+
+                              {/* ROUTE */}
+                              <td>
+                                <span className="badge badge-gray" style={{ fontSize: 11.5 }}>
+                                  {row.routeName}
+                                </span>
+                              </td>
+
+                              {/* ITEM TAKEN */}
+                              <td>
+                                {row.isEmpty ? (
+                                  <span style={{ color: 'var(--text-muted)', fontSize: 12, fontStyle: 'italic' }}>
+                                    No AdHoc products taken for this DP/route.
                                   </span>
-                                </td>
-                                <td style={{ fontWeight: 800, color: '#d97706' }}>₹{prod.amount.toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
-                                {pIdx === 0 && (
-                                  <td rowSpan={dp.cumulativeProducts.length} style={{ verticalAlign: 'top', paddingTop: 14 }}>
-                                    {dp.routeDetails && dp.routeDetails.length > 1 ? (
-                                      <button
-                                        className="btn btn-ghost btn-sm"
-                                        style={{ fontSize: 11, color: '#d97706', fontWeight: 700 }}
-                                        onClick={() => setExpandedDpMap(prev => ({ ...prev, [dp.dpRefId]: !prev[dp.dpRefId] }))}
-                                      >
-                                        {isExpanded ? 'Hide Routes' : `Breakdown (${dp.routeDetails.length} Routes)`}
-                                      </button>
-                                    ) : (
-                                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Single Route</span>
-                                    )}
-                                  </td>
+                                ) : (
+                                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                    {row.itemTaken}
+                                  </span>
                                 )}
-                              </tr>
-                            ))}
-                            {/* Expandable Route Breakdown Row */}
-                            {isExpanded && (
-                              <tr key={`${dp.dpRefId}_breakdown`}>
-                                <td colSpan={9} style={{ background: 'rgba(245,158,11,0.03)', padding: 12 }}>
-                                  <div style={{ fontSize: 12, fontWeight: 700, color: '#d97706', marginBottom: 6 }}>
-                                    📍 Detailed Per-Route Breakdown for {dp.dpName}:
-                                  </div>
-                                  <table className="table" style={{ fontSize: 12, background: '#fff' }}>
-                                    <thead>
-                                      <tr style={{ background: '#f8fafc' }}>
-                                        <th>Route Name</th>
-                                        <th>Product</th>
-                                        <th>Taken</th>
-                                        <th>Sold</th>
-                                        <th>Returned</th>
-                                        <th>Remaining</th>
-                                        <th>Revenue</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody>
-                                      {dp.routeDetails.map(rd => (
-                                        <tr key={rd.id}>
-                                          <td style={{ fontWeight: 600 }}>{rd.routeName}</td>
-                                          <td>{rd.productName}</td>
-                                          <td>{rd.taken}</td>
-                                          <td style={{ color: 'var(--success)', fontWeight: 700 }}>{rd.sold}</td>
-                                          <td style={{ color: 'var(--warning)' }}>{rd.returned}</td>
-                                          <td>{rd.remaining}</td>
-                                          <td style={{ fontWeight: 700, color: '#d97706' }}>₹{rd.amount}</td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </td>
-                              </tr>
-                            )}
-                          </>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                              </td>
+
+                              {/* ITEM QUANTITY */}
+                              <td style={{ textAlign: 'center', fontWeight: row.isEmpty ? 400 : 700, color: row.isEmpty ? 'var(--text-muted)' : 'var(--primary)' }}>
+                                {row.quantityTaken}
+                              </td>
+
+                              {/* ITEM DELIVERED */}
+                              <td style={{ textAlign: 'center', fontWeight: row.isEmpty ? 400 : 700, color: row.isEmpty ? 'var(--text-muted)' : 'var(--success)' }}>
+                                {row.quantityDelivered}
+                              </td>
+
+                              {/* ITEM UNDELIVERED */}
+                              <td style={{ textAlign: 'center', fontWeight: row.isEmpty ? 400 : 700, color: row.isEmpty ? 'var(--text-muted)' : row.quantityUndelivered > 0 ? '#ef4444' : 'var(--text-muted)' }}>
+                                {row.isEmpty ? '—' : row.quantityUndelivered}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  );
+                })()
               )}
             </div>
           </div>

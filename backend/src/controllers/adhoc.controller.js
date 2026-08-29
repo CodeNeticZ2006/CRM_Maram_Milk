@@ -96,6 +96,7 @@ const syncAdhocProductToDB2 = async (productName, targetDate, addedStock, remain
     const itemsRes = await readFromApp('SELECT id, name, unit, material FROM "InventoryItem"');
     if (!itemsRes.rows || itemsRes.rows.length === 0) return;
 
+    const db2Items = itemsRes.rows;
     let match = resolveDb2InventoryItem(productName, productMaterial, productCategory, db2Items);
 
     if (!match) {
@@ -707,7 +708,7 @@ const recordCustomerAdhocSale = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const getDpAdhocAudit = async (req, res, next) => {
   try {
-    const { date, dpRefId } = req.query;
+    const { date, dpRefId, routeId, search } = req.query;
     const targetDate = date || getISTDate();
 
     let dpWhere = [`date = $1`];
@@ -718,6 +719,16 @@ const getDpAdhocAudit = async (req, res, next) => {
       dpWhere.push(`dp_ref_id = $${params.length}`);
     }
 
+    if (routeId && routeId !== 'all') {
+      params.push(routeId);
+      dpWhere.push(`route_id = $${params.length}`);
+    }
+
+    if (search && search.trim()) {
+      params.push(`%${search.trim()}%`);
+      dpWhere.push(`(dp_name ILIKE $${params.length} OR dp_ref_id ILIKE $${params.length})`);
+    }
+
     const rowsRes = await readFromCRM(
       `SELECT * FROM adhoc_dp_stock WHERE ${dpWhere.join(' AND ')} ORDER BY dp_name ASC, product_name ASC`,
       params
@@ -725,14 +736,28 @@ const getDpAdhocAudit = async (req, res, next) => {
 
     const rows = rowsRes.rows || [];
 
+    // Fetch DP Codes from DB2 DeliveryPerson table to map dpCode to dpRefId
+    let db2DpMap = new Map();
+    try {
+      const db2Dps = await readFromApp('SELECT id, name, "dpCode" FROM "DeliveryPerson"');
+      if (db2Dps.rows) {
+        for (const d of db2Dps.rows) {
+          if (d.id) db2DpMap.set(String(d.id), d.dpCode);
+          if (d.dpCode) db2DpMap.set(String(d.dpCode), d.dpCode);
+        }
+      }
+    } catch (e) { /* silent */ }
+
     // Group & Aggregate by DP (DP + Name + Date) across multiple routes
     const dpMap = new Map();
 
     for (const r of rows) {
       const dpKey = `${r.dp_ref_id}_${r.date}`;
       if (!dpMap.has(dpKey)) {
+        const mappedDpCode = db2DpMap.get(String(r.dp_ref_id)) || (r.dp_ref_id.length <= 10 ? r.dp_ref_id : 'DP-001');
         dpMap.set(dpKey, {
           dpRefId: r.dp_ref_id,
+          dpCode: mappedDpCode,
           dpName: r.dp_name,
           date: r.date,
           routes: new Set(),
@@ -778,7 +803,6 @@ const getDpAdhocAudit = async (req, res, next) => {
 
     // Produce cumulative product summary per DP
     const dpAuditList = Array.from(dpMap.values()).map(dp => {
-      // Group products within DP cumulatively
       const prodMap = new Map();
       for (const rd of dp.routeDetails) {
         if (!prodMap.has(rd.productId)) {
@@ -801,17 +825,54 @@ const getDpAdhocAudit = async (req, res, next) => {
         p.amount += rd.amount;
       }
 
+      const cumulativeProducts = Array.from(prodMap.values())
+        .filter(p => p.taken > 0 || p.sold > 0 || p.returned > 0)
+        .map(p => {
+          const delivered = p.sold;
+          const undelivered = Math.max(0, p.taken - delivered - p.returned);
+          let prodStatus = 'NOT DELIVERED';
+          if (delivered >= p.taken && p.taken > 0) {
+            prodStatus = 'COMPLETED';
+          } else if (delivered > 0) {
+            prodStatus = 'PARTIALLY DELIVERED';
+          }
+          return {
+            ...p,
+            delivered,
+            undelivered,
+            status: prodStatus,
+          };
+        });
+
+      const totalDelivered = dp.totalSold;
+      const totalTaken = dp.totalTaken;
+      const totalReturned = dp.totalReturned;
+      const totalUndelivered = Math.max(0, totalTaken - totalDelivered - totalReturned);
+
+      let deliveryStatus = 'NOT DELIVERED';
+      if (totalDelivered >= totalTaken && totalTaken > 0) {
+        deliveryStatus = 'COMPLETED';
+      } else if (totalDelivered > 0) {
+        deliveryStatus = 'PARTIALLY DELIVERED';
+      } else if (totalTaken === 0) {
+        deliveryStatus = 'NO DISPATCH';
+      }
+
       return {
         dpRefId: dp.dpRefId,
+        dpCode: dp.dpCode,
         dpName: dp.dpName,
         date: dp.date,
         routesList: Array.from(dp.routes).join(', ') || 'General Route',
-        totalTaken: dp.totalTaken,
-        totalSold: dp.totalSold,
-        totalReturned: dp.totalReturned,
+        totalTaken,
+        totalSold: totalDelivered,
+        totalDelivered,
+        totalReturned,
         totalRemaining: dp.totalRemaining,
+        totalUndelivered,
         totalRevenue: dp.totalRevenue,
-        cumulativeProducts: Array.from(prodMap.values()),
+        deliveryStatus,
+        cumulativeProducts,
         routeDetails: dp.routeDetails,
       };
     });
