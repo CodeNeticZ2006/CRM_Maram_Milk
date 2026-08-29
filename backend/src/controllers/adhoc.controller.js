@@ -711,53 +711,217 @@ const getDpAdhocAudit = async (req, res, next) => {
     const { date, dpRefId, routeId, search } = req.query;
     const targetDate = date || getISTDate();
 
-    let dpWhere = [`date = $1`];
-    let params = [targetDate];
+    // 1. Fetch DB2 Dispatches (RouteAllocationItem) and Deliveries (EmptyBottleLogItem) for non-milk products
+    const [allocRes, logRes, crmRowsRes] = await Promise.all([
+      readFromApp(
+        `SELECT 
+          rai.id as "allocItemId",
+          rai.quantity as "quantityTaken",
+          rai."inventoryItemId",
+          ii.name as "itemName",
+          ii.unit,
+          ii.material,
+          ii.section,
+          ra."dpId",
+          ra."routeId",
+          ra.date,
+          ra.status,
+          dp.name as "dpName",
+          dp."dpCode",
+          COALESCE(r.name, 'General Route') as "routeName"
+         FROM "RouteAllocationItem" rai
+         JOIN "RouteAllocation" ra ON ra.id = rai."routeAllocationId"
+         JOIN "InventoryItem" ii ON ii.id = rai."inventoryItemId"
+         JOIN "DeliveryPerson" dp ON dp.id = ra."dpId"
+         LEFT JOIN "Route" r ON r.id = ra."routeId"
+         WHERE ra.date = $1 AND (ii.section != 'Milk' OR ii.section IS NULL)`,
+        [targetDate]
+      ).catch(() => ({ rows: [] })),
+      readFromApp(
+        `SELECT 
+          ebli.id as "logItemId",
+          ebli."actualDelivered",
+          ebli.expected,
+          ebli."inventoryItemId",
+          ii.name as "itemName",
+          ii.unit,
+          ii.material,
+          ii.section,
+          eb."dpId",
+          eb."routeId",
+          eb.date,
+          eb."deliveryCompleted",
+          eb."flagIssue",
+          eb.reason,
+          dp.name as "dpName",
+          dp."dpCode",
+          COALESCE(r.name, 'General Route') as "routeName"
+         FROM "EmptyBottleLogItem" ebli
+         JOIN "EmptyBottleLog" eb ON eb.id = ebli."emptyBottleLogId"
+         JOIN "InventoryItem" ii ON ii.id = ebli."inventoryItemId"
+         JOIN "DeliveryPerson" dp ON dp.id = eb."dpId"
+         LEFT JOIN "Route" r ON r.id = eb."routeId"
+         WHERE eb.date = $1 AND (ii.section != 'Milk' OR ii.section IS NULL)`,
+        [targetDate]
+      ).catch(() => ({ rows: [] })),
+      readFromCRM(
+        `SELECT * FROM adhoc_dp_stock WHERE date = $1`,
+        [targetDate]
+      ).catch(() => ({ rows: [] })),
+    ]);
 
-    if (dpRefId) {
-      params.push(dpRefId);
-      dpWhere.push(`dp_ref_id = $${params.length}`);
-    }
+    const allocItems = allocRes.rows || [];
+    const logItems = logRes.rows || [];
+    const crmRows = crmRowsRes.rows || [];
 
-    if (routeId && routeId !== 'all') {
-      params.push(routeId);
-      dpWhere.push(`route_id = $${params.length}`);
-    }
+    const keyMap = new Map();
 
-    if (search && search.trim()) {
-      params.push(`%${search.trim()}%`);
-      dpWhere.push(`(dp_name ILIKE $${params.length} OR dp_ref_id ILIKE $${params.length})`);
-    }
-
-    const rowsRes = await readFromCRM(
-      `SELECT * FROM adhoc_dp_stock WHERE ${dpWhere.join(' AND ')} ORDER BY dp_name ASC, product_name ASC`,
-      params
-    );
-
-    const rows = rowsRes.rows || [];
-
-    // Fetch DP Codes from DB2 DeliveryPerson table to map dpCode to dpRefId
-    let db2DpMap = new Map();
-    try {
-      const db2Dps = await readFromApp('SELECT id, name, "dpCode" FROM "DeliveryPerson"');
-      if (db2Dps.rows) {
-        for (const d of db2Dps.rows) {
-          if (d.id) db2DpMap.set(String(d.id), d.dpCode);
-          if (d.dpCode) db2DpMap.set(String(d.dpCode), d.dpCode);
-        }
+    // Map DB2 Dispatches
+    allocItems.forEach(ai => {
+      const key = `${ai.dpId}_${ai.routeId}_${ai.inventoryItemId}`;
+      let nameFormatted = ai.itemName;
+      if (ai.unit && !ai.itemName.toLowerCase().includes(ai.unit.toLowerCase())) {
+        nameFormatted = `${ai.itemName} - ${ai.unit}`;
       }
-    } catch (e) { /* silent */ }
+
+      keyMap.set(key, {
+        id: ai.allocItemId,
+        dpId: ai.dpId,
+        dpCode: ai.dpCode,
+        dpName: ai.dpName,
+        routeId: ai.routeId,
+        routeName: ai.routeName,
+        productId: ai.inventoryItemId,
+        productName: nameFormatted,
+        unit: ai.unit,
+        taken: parseFloat(ai.quantityTaken || 0),
+        delivered: 0,
+        status: ai.status,
+      });
+    });
+
+    // Map DB2 Deliveries
+    logItems.forEach(li => {
+      const key = `${li.dpId}_${li.routeId}_${li.inventoryItemId}`;
+      let item = keyMap.get(key);
+
+      let nameFormatted = li.itemName;
+      if (li.unit && !li.itemName.toLowerCase().includes(li.unit.toLowerCase())) {
+        nameFormatted = `${li.itemName} - ${li.unit}`;
+      }
+
+      if (!item) {
+        item = {
+          id: li.logItemId,
+          dpId: li.dpId,
+          dpCode: li.dpCode,
+          dpName: li.dpName,
+          routeId: li.routeId,
+          routeName: li.routeName,
+          productId: li.inventoryItemId,
+          productName: nameFormatted,
+          unit: li.unit,
+          taken: 0,
+          delivered: 0,
+          status: 'DELIVERED',
+        };
+        keyMap.set(key, item);
+      }
+
+      let del = parseFloat(li.actualDelivered || 0);
+      const isCompleted = li.deliveryCompleted === true || (!li.flagIssue && !li.reason);
+      if (del === 0 && isCompleted && parseFloat(li.expected || 0) > 0) {
+        del = parseFloat(li.expected);
+      } else if (del === 0 && isCompleted && item.taken > 0) {
+        del = item.taken;
+      }
+
+      item.delivered = Math.max(item.delivered, del);
+    });
+
+    // Handle COMPLETED allocations where logItem might not exist separately
+    keyMap.forEach(item => {
+      if (item.delivered === 0 && item.taken > 0 && item.status === 'COMPLETED') {
+        item.delivered = item.taken;
+      }
+      item.undelivered = Math.max(0, item.taken - item.delivered);
+    });
+
+    // Build rawRows array combining DB2 and any CRM manual records
+    let combinedRawRows = Array.from(keyMap.values()).map(item => ({
+      id: item.id,
+      dp_ref_id: item.dpId,
+      dp_code: item.dpCode,
+      dp_name: item.dpName,
+      route_id: item.routeId,
+      route_name: item.routeName,
+      product_id: item.productId,
+      product_name: item.productName,
+      unit: item.unit,
+      quantity_taken: item.taken,
+      quantity_sold: item.delivered,
+      quantity_delivered: item.delivered,
+      quantity_returned: 0,
+      quantity_remaining: item.undelivered,
+      quantity_undelivered: item.undelivered,
+      date: targetDate,
+    }));
+
+    // Add any CRM rows that are not duplicate
+    crmRows.forEach(cr => {
+      const exists = combinedRawRows.some(
+        r => String(r.dp_ref_id) === String(cr.dp_ref_id) && 
+             String(r.route_id) === String(cr.route_id) && 
+             String(r.product_id) === String(cr.product_id)
+      );
+      if (!exists) {
+        combinedRawRows.push({
+          id: cr.id,
+          dp_ref_id: cr.dp_ref_id,
+          dp_code: cr.dp_ref_id,
+          dp_name: cr.dp_name,
+          route_id: cr.route_id,
+          route_name: cr.route_name || 'General Route',
+          product_id: cr.product_id,
+          product_name: cr.product_name,
+          unit: cr.unit,
+          quantity_taken: parseFloat(cr.quantity_taken || 0),
+          quantity_sold: parseFloat(cr.quantity_sold || 0),
+          quantity_delivered: parseFloat(cr.quantity_sold || 0),
+          quantity_returned: parseFloat(cr.quantity_returned || 0),
+          quantity_remaining: parseFloat(cr.quantity_remaining || 0),
+          quantity_undelivered: parseFloat(cr.quantity_remaining || 0),
+          date: cr.date || targetDate,
+        });
+      }
+    });
+
+    // Apply filtering if dpRefId, routeId, or search parameters are provided
+    let filteredRows = combinedRawRows;
+    if (dpRefId) {
+      filteredRows = filteredRows.filter(r => String(r.dp_ref_id) === String(dpRefId) || String(r.dp_code) === String(dpRefId));
+    }
+    if (routeId && routeId !== 'all') {
+      filteredRows = filteredRows.filter(r => String(r.route_id) === String(routeId));
+    }
+    if (search && search.trim()) {
+      const q = search.trim().toLowerCase();
+      filteredRows = filteredRows.filter(r => 
+        (r.dp_name && r.dp_name.toLowerCase().includes(q)) || 
+        (r.dp_code && r.dp_code.toLowerCase().includes(q)) ||
+        (r.product_name && r.product_name.toLowerCase().includes(q))
+      );
+    }
 
     // Group & Aggregate by DP (DP + Name + Date) across multiple routes
     const dpMap = new Map();
 
-    for (const r of rows) {
+    for (const r of filteredRows) {
       const dpKey = `${r.dp_ref_id}_${r.date}`;
       if (!dpMap.has(dpKey)) {
-        const mappedDpCode = db2DpMap.get(String(r.dp_ref_id)) || (r.dp_ref_id.length <= 10 ? r.dp_ref_id : 'DP-001');
         dpMap.set(dpKey, {
           dpRefId: r.dp_ref_id,
-          dpCode: mappedDpCode,
+          dpCode: r.dp_code || r.dp_ref_id,
           dpName: r.dp_name,
           date: r.date,
           routes: new Set(),
@@ -775,10 +939,10 @@ const getDpAdhocAudit = async (req, res, next) => {
       if (r.route_name) dpItem.routes.add(r.route_name);
 
       const taken = parseFloat(r.quantity_taken || 0);
-      const sold = parseFloat(r.quantity_sold || 0);
+      const sold = parseFloat(r.quantity_sold || r.quantity_delivered || 0);
       const returned = parseFloat(r.quantity_returned || 0);
-      const remaining = parseFloat(r.quantity_remaining || (taken - sold - returned));
-      const amount = parseFloat(r.total_sales_amount || (sold * parseFloat(r.selling_price || 0)));
+      const remaining = parseFloat(r.quantity_remaining || r.quantity_undelivered || (taken - sold - returned));
+      const amount = parseFloat(r.total_sales_amount || 0);
 
       dpItem.totalTaken += taken;
       dpItem.totalSold += sold;
@@ -881,7 +1045,7 @@ const getDpAdhocAudit = async (req, res, next) => {
       success: true,
       date: targetDate,
       data: dpAuditList,
-      rawRows: rows,
+      rawRows: filteredRows,
     });
   } catch (err) { next(err); }
 };

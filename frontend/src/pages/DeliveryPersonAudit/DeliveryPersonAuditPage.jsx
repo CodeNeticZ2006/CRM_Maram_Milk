@@ -222,9 +222,11 @@ function DeliveryPersonAuditContent() {
       // Match transactions for this DP by dpId/dpCode or dpName
       const matchingTx = adhocTxRows.filter(r => {
         const rDpId = String(r.dp_ref_id || r.dpRefId || r.dpId || '');
+        const rDpCode = String(r.dp_code || r.dpCode || '');
         const rDpName = String(r.dp_name || r.dpName || '');
         return (
-          (dpIdStr && rDpId && (rDpId === dpIdStr || rDpId === String(dp.id) || rDpId === String(dp.dpCode))) ||
+          (dpIdStr && rDpId && (rDpId === dpIdStr || rDpId === String(dp.id) || rDpId === String(dp.dpId))) ||
+          (dpCode && rDpCode && (rDpCode === dpCode || rDpCode === String(dp.dpCode))) ||
           (rDpName && dpName && rDpName.toLowerCase() === dpName.toLowerCase())
         );
       });
@@ -235,58 +237,80 @@ function DeliveryPersonAuditContent() {
           dpCode,
           dpName,
           routeName: assignedRouteStr,
-          itemTaken: null,
-          quantityTaken: '—',
-          quantityDelivered: '—',
-          quantityUndelivered: '—',
+          products: [],
           isEmpty: true,
         });
       } else {
-        const routeProdMap = new Map();
+        // Group transactions by routeName first
+        const routeGroupMap = new Map();
 
         matchingTx.forEach(tx => {
           const routeName = tx.route_name || tx.routeName || assignedRouteStr || 'General Route';
-          const productId = tx.product_id || tx.productId;
-          const productName = tx.product_name || tx.productName || 'AdHoc Product';
-          const key = `${routeName}_${productId}`;
+          if (!routeGroupMap.has(routeName)) {
+            routeGroupMap.set(routeName, new Map());
+          }
 
-          if (!routeProdMap.has(key)) {
-            routeProdMap.set(key, {
-              routeName,
+          const prodMap = routeGroupMap.get(routeName);
+          const productId = tx.product_id || tx.productId || tx.id;
+          const productName = tx.product_name || tx.productName || 'AdHoc Product';
+
+          if (!prodMap.has(productId)) {
+            prodMap.set(productId, {
               productId,
               productName,
               taken: 0,
-              sold: 0,
+              delivered: 0,
               returned: 0,
             });
           }
 
-          const item = routeProdMap.get(key);
+          const item = prodMap.get(productId);
           item.taken += parseFloat(tx.quantity_taken || tx.taken || 0);
-          item.sold += parseFloat(tx.quantity_sold || tx.sold || tx.delivered || 0);
+          item.delivered += parseFloat(tx.quantity_sold || tx.quantity_delivered || tx.sold || tx.delivered || 0);
           item.returned += parseFloat(tx.quantity_returned || tx.returned || 0);
         });
 
-        routeProdMap.forEach((val) => {
-          if (val.taken > 0 || val.sold > 0 || val.returned > 0) {
-            const taken = val.taken;
-            const delivered = val.sold;
-            const returned = val.returned;
-            const undelivered = Math.max(0, taken - delivered - returned);
+        let dpHasProducts = false;
 
+        routeGroupMap.forEach((prodMap, routeName) => {
+          const products = [];
+
+          prodMap.forEach((val) => {
+            if (val.taken > 0 || val.delivered > 0 || val.returned > 0) {
+              const undelivered = Math.max(0, val.taken - val.delivered - val.returned);
+              products.push({
+                productId: val.productId,
+                productName: val.productName,
+                quantityTaken: val.taken,
+                quantityDelivered: val.delivered,
+                quantityUndelivered: undelivered,
+              });
+            }
+          });
+
+          if (products.length > 0) {
+            dpHasProducts = true;
             resultRows.push({
-              id: `${dpIdStr}_${val.routeName}_${val.productId}`,
+              id: `${dpIdStr}_${routeName}`,
               dpCode,
               dpName,
-              routeName: val.routeName,
-              itemTaken: val.productName,
-              quantityTaken: taken,
-              quantityDelivered: delivered,
-              quantityUndelivered: undelivered,
+              routeName,
+              products,
               isEmpty: false,
             });
           }
         });
+
+        if (!dpHasProducts) {
+          resultRows.push({
+            id: `no-adhoc-${dpIdStr}`,
+            dpCode,
+            dpName,
+            routeName: assignedRouteStr,
+            products: [],
+            isEmpty: true,
+          });
+        }
       }
     });
 
@@ -1132,10 +1156,10 @@ function DeliveryPersonAuditContent() {
                   <tbody>
                     {dailyLoading ? (
                       <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>Loading operational audit data for {dailyDate}...</td></tr>
-                    ) : (dailyData?.items?.length || safeDeliveryPersons.length) === 0 ? (
+                    ) : (dailyData?.items?.length || deliveryPersons.length) === 0 ? (
                       <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No DP operational records found for this date.</td></tr>
                     ) : (
-                      (dailyData?.items || safeDeliveryPersons).map(dp => {
+                      (dailyData?.items || deliveryPersons).map(dp => {
                         const paidVal = dp.paid !== undefined ? dp.paid : null;
                         const extraPaidVal = dp.extraPaid !== undefined ? dp.extraPaid : null;
                         const shortPaidVal = dp.shortPaid !== undefined ? dp.shortPaid : null;
@@ -1152,9 +1176,22 @@ function DeliveryPersonAuditContent() {
                                 {dp.status || (dp.isActive !== false ? 'Active' : 'Inactive')}
                               </span>
                             </td>
-                            <td style={{ fontWeight: 600 }}>{dp.quantityTaken !== null && dp.quantityTaken !== undefined ? `${dp.quantityTaken} L` : 'N/A'}</td>
-                            <td style={{ fontWeight: 600, color: 'var(--success)' }}>{dp.quantityDelivered !== null && dp.quantityDelivered !== undefined ? `${dp.quantityDelivered} L` : 'N/A'}</td>
-                            <td>{dp.undeliveredQuantity !== null && dp.undeliveredQuantity !== undefined ? `${dp.undeliveredQuantity} L` : 'N/A'}</td>
+
+                            {/* MILK TAKEN */}
+                            <td style={{ fontWeight: 600 }}>
+                              {dp.quantityTaken !== null && dp.quantityTaken !== undefined ? `${dp.quantityTaken} L` : 'N/A'}
+                            </td>
+
+                            {/* MILK DELIVERED */}
+                            <td style={{ fontWeight: 600, color: 'var(--success)' }}>
+                              {dp.quantityDelivered !== null && dp.quantityDelivered !== undefined ? `${dp.quantityDelivered} L` : 'N/A'}
+                            </td>
+
+                            {/* UNDELIVERED */}
+                            <td style={{ fontWeight: 600, color: dp.undeliveredQuantity > 0 ? '#ef4444' : 'inherit' }}>
+                              {dp.undeliveredQuantity !== null && dp.undeliveredQuantity !== undefined ? `${dp.undeliveredQuantity} L` : 'N/A'}
+                            </td>
+
                             <td style={{ fontWeight: 700, color: paidVal !== null ? '#10b981' : 'var(--text-muted)' }}>
                               {paidVal !== null ? `₹${paidVal}` : 'N/A'}
                             </td>
@@ -1240,7 +1277,7 @@ function DeliveryPersonAuditContent() {
                           {auditRows.map((row) => (
                             <tr key={row.id}>
                               {/* DP */}
-                              <td style={{ fontWeight: 700 }}>
+                              <td style={{ fontWeight: 700, verticalAlign: 'top', paddingTop: 14 }}>
                                 <div>{row.dpName}</div>
                                 <span style={{ fontSize: 11, fontFamily: 'monospace', color: 'var(--primary)' }}>
                                   {row.dpCode}
@@ -1248,39 +1285,70 @@ function DeliveryPersonAuditContent() {
                               </td>
 
                               {/* ROUTE */}
-                              <td>
+                              <td style={{ verticalAlign: 'top', paddingTop: 14 }}>
                                 <span className="badge badge-gray" style={{ fontSize: 11.5 }}>
                                   {row.routeName}
                                 </span>
                               </td>
 
-                              {/* ITEM TAKEN */}
-                              <td>
-                                {row.isEmpty ? (
-                                  <span style={{ color: 'var(--text-muted)', fontSize: 12, fontStyle: 'italic' }}>
-                                    No AdHoc products taken for this DP/route.
-                                  </span>
-                                ) : (
-                                  <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
-                                    {row.itemTaken}
-                                  </span>
-                                )}
-                              </td>
+                              {row.isEmpty || !row.products || row.products.length === 0 ? (
+                                <>
+                                  <td style={{ verticalAlign: 'top', paddingTop: 14 }}>
+                                    <span style={{ color: 'var(--text-muted)', fontSize: 12, fontStyle: 'italic' }}>
+                                      No AdHoc products taken for this DP/route.
+                                    </span>
+                                  </td>
+                                  <td style={{ textAlign: 'center', color: 'var(--text-muted)', verticalAlign: 'top', paddingTop: 14 }}>—</td>
+                                  <td style={{ textAlign: 'center', color: 'var(--text-muted)', verticalAlign: 'top', paddingTop: 14 }}>—</td>
+                                  <td style={{ textAlign: 'center', color: 'var(--text-muted)', verticalAlign: 'top', paddingTop: 14 }}>—</td>
+                                </>
+                              ) : (
+                                <>
+                                  {/* ITEM TAKEN */}
+                                  <td style={{ verticalAlign: 'top', paddingTop: 12, paddingBottom: 12 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      {row.products.map((p, idx) => (
+                                        <div key={p.productId || idx} style={{ fontWeight: 600, color: 'var(--text-primary)', height: 22, display: 'flex', alignItems: 'center' }}>
+                                          {p.productName}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
 
-                              {/* ITEM QUANTITY */}
-                              <td style={{ textAlign: 'center', fontWeight: row.isEmpty ? 400 : 700, color: row.isEmpty ? 'var(--text-muted)' : 'var(--primary)' }}>
-                                {row.quantityTaken}
-                              </td>
+                                  {/* ITEM QUANTITY */}
+                                  <td style={{ textAlign: 'center', verticalAlign: 'top', paddingTop: 12, paddingBottom: 12 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      {row.products.map((p, idx) => (
+                                        <div key={p.productId || idx} style={{ fontWeight: 700, color: 'var(--primary)', height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                          {p.quantityTaken}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
 
-                              {/* ITEM DELIVERED */}
-                              <td style={{ textAlign: 'center', fontWeight: row.isEmpty ? 400 : 700, color: row.isEmpty ? 'var(--text-muted)' : 'var(--success)' }}>
-                                {row.quantityDelivered}
-                              </td>
+                                  {/* ITEM DELIVERED */}
+                                  <td style={{ textAlign: 'center', verticalAlign: 'top', paddingTop: 12, paddingBottom: 12 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      {row.products.map((p, idx) => (
+                                        <div key={p.productId || idx} style={{ fontWeight: 700, color: 'var(--success)', height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                          {p.quantityDelivered}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
 
-                              {/* ITEM UNDELIVERED */}
-                              <td style={{ textAlign: 'center', fontWeight: row.isEmpty ? 400 : 700, color: row.isEmpty ? 'var(--text-muted)' : row.quantityUndelivered > 0 ? '#ef4444' : 'var(--text-muted)' }}>
-                                {row.isEmpty ? '—' : row.quantityUndelivered}
-                              </td>
+                                  {/* ITEM UNDELIVERED */}
+                                  <td style={{ textAlign: 'center', verticalAlign: 'top', paddingTop: 12, paddingBottom: 12 }}>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                      {row.products.map((p, idx) => (
+                                        <div key={p.productId || idx} style={{ fontWeight: 700, color: p.quantityUndelivered > 0 ? '#ef4444' : 'var(--text-muted)', height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                          {p.quantityUndelivered}
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                </>
+                              )}
                             </tr>
                           ))}
                         </tbody>

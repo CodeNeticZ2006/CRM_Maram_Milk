@@ -1018,12 +1018,28 @@ const getManagerInventory = async (req, res, next) => {
 
     try {
       const targetDateStr = date || istToday;
-      const [dpRes, rRes, allocRes, logRes, txRes] = await Promise.all([
+      const [dpRes, rRes, allocRes, logRes, txRes, allocItemsRes, logItemsRes] = await Promise.all([
         readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
-        readFromApp('SELECT id, date, "dpId", "routeId", "litresAllocated", "qty1LBottle", "qtyHalfLBottle", "qtyHalfLPacket", status FROM "RouteAllocation" WHERE date = $1', [targetDateStr]).catch(() => ({ rows: [] })),
-        readFromApp('SELECT id, date, "dpId", "routeId", "actualDelivered1L", "actualDeliveredHalfL", "actualDeliveredPacket", "deliveryCompleted", "flagIssue", reason FROM "EmptyBottleLog" WHERE date = $1', [targetDateStr]).catch(() => ({ rows: [] })),
+        readFromApp('SELECT id, date, "dpId", "routeId", "litresAllocated", status FROM "RouteAllocation" WHERE date = $1', [targetDateStr]).catch(() => ({ rows: [] })),
+        readFromApp('SELECT id, date, "dpId", "routeId", "deliveryCompleted", "flagIssue", reason FROM "EmptyBottleLog" WHERE date = $1', [targetDateStr]).catch(() => ({ rows: [] })),
         readFromApp('SELECT id, "dpId", "routeId", date, amount, note, type, "createdAt" FROM "LedgerTransaction" WHERE date = $1 ORDER BY "createdAt" DESC', [targetDateStr]).catch(() => ({ rows: [] })),
+        readFromApp(
+          `SELECT rai."routeAllocationId", rai.quantity, ii.id as "itemId", ii.name as "itemName", ii.unit, ii.material 
+           FROM "RouteAllocationItem" rai 
+           JOIN "RouteAllocation" ra ON ra.id = rai."routeAllocationId"
+           JOIN "InventoryItem" ii ON ii.id = rai."inventoryItemId"
+           WHERE ra.date = $1 AND ii.section = 'Milk'`,
+          [targetDateStr]
+        ).catch(() => ({ rows: [] })),
+        readFromApp(
+          `SELECT ebli."emptyBottleLogId", ebli."actualDelivered", ebli.expected, ii.id as "itemId", ii.name as "itemName", ii.unit, ii.material 
+           FROM "EmptyBottleLogItem" ebli 
+           JOIN "EmptyBottleLog" eb ON eb.id = ebli."emptyBottleLogId"
+           JOIN "InventoryItem" ii ON ii.id = ebli."inventoryItemId"
+           WHERE eb.date = $1 AND ii.section = 'Milk'`,
+          [targetDateStr]
+        ).catch(() => ({ rows: [] })),
       ]);
 
       const dps = dpRes.rows || [];
@@ -1031,6 +1047,8 @@ const getManagerInventory = async (req, res, next) => {
       const allocs = allocRes.rows || [];
       const logs = logRes.rows || [];
       const txs = txRes.rows || [];
+      const allocItems = allocItemsRes.rows || [];
+      const logItems = logItemsRes.rows || [];
 
       dpAuditItems = dps.map(dp => {
         // Find all matching route allocations, delivery logs, and transactions for this DP on target date
@@ -1065,9 +1083,16 @@ const getManagerInventory = async (req, res, next) => {
         const assignedRoutesStr = Array.from(routeNamesSet).join(', ') || 'Unassigned';
 
         // Aggregate Milk Taken, Delivered, and Undelivered across ALL route records for this DP
-        let totalTaken = 0;
-        let totalDelivered = 0;
-        let totalUndelivered = 0;
+        let qty1LBottleTaken = 0;
+        let qtyHalfLBottleTaken = 0;
+        let qtyHalfLPacketTaken = 0;
+        let totalTakenLitresAcc = 0;
+
+        let qty1LBottleDelivered = 0;
+        let qtyHalfLBottleDelivered = 0;
+        let qtyHalfLPacketDelivered = 0;
+        let totalDeliveredLitresAcc = 0;
+
         let hasDeliveryData = dpAllocs.length > 0 || dpLogs.length > 0;
 
         const routeIds = new Set([...dpAllocs.map(a => a.routeId), ...dpLogs.map(l => l.routeId)].filter(Boolean));
@@ -1077,43 +1102,85 @@ const getManagerInventory = async (req, res, next) => {
             const alloc = dpAllocs.find(a => a.routeId === rId);
             const ebLog = dpLogs.find(l => l.routeId === rId);
 
-            let taken = 0;
+            let r1LTaken = 0;
+            let rHalfLBottleTaken = 0;
+            let rHalfLPacketTaken = 0;
+            let rTakenLitres = 0;
+
             if (alloc) {
-              if (alloc.litresAllocated && parseFloat(alloc.litresAllocated) > 0) {
-                taken = parseFloat(alloc.litresAllocated);
-              } else {
-                taken = (parseFloat(alloc.qty1LBottle || 0) * 1) + 
-                        (parseFloat(alloc.qtyHalfLBottle || 0) * 0.5) + 
-                        (parseFloat(alloc.qtyHalfLPacket || 0) * 0.5);
+              const rAllocItems = allocItems.filter(i => String(i.routeAllocationId) === String(alloc.id));
+              if (rAllocItems.length > 0) {
+                rAllocItems.forEach(i => {
+                  const qty = parseFloat(i.quantity || 0);
+                  const is1L = i.unit === '1L' || (i.itemName && i.itemName.includes('1L'));
+                  const isBottle = i.material === 'Bottle';
+                  const isPacket = i.material === 'Packet';
+
+                  if (is1L) r1LTaken += qty;
+                  else if (isBottle) rHalfLBottleTaken += qty;
+                  else if (isPacket) rHalfLPacketTaken += qty;
+                });
+                rTakenLitres = (r1LTaken * 1) + (rHalfLBottleTaken * 0.5) + (rHalfLPacketTaken * 0.5);
+              } else if (alloc.litresAllocated && parseFloat(alloc.litresAllocated) > 0) {
+                rTakenLitres = parseFloat(alloc.litresAllocated);
               }
             }
 
-            let delivered = 0;
-            if (ebLog) {
-              delivered = (parseFloat(ebLog.actualDelivered1L || 0) * 1) + 
-                          (parseFloat(ebLog.actualDeliveredHalfL || 0) * 0.5) + 
-                          (parseFloat(ebLog.actualDeliveredPacket || 0) * 0.5);
-            } else if (alloc && alloc.status === 'COMPLETED') {
-              delivered = taken;
-            }
+            let r1LDelivered = 0;
+            let rHalfLBottleDelivered = 0;
+            let rHalfLPacketDelivered = 0;
+            let rDeliveredLitres = 0;
 
-            // COMPLETED delivery check: If status is COMPLETED or deliveryCompleted is true, undelivered is strictly 0 L
             let isCompleted = (alloc && alloc.status === 'COMPLETED') || 
                               (ebLog && ebLog.deliveryCompleted === true) || 
                               (ebLog && !ebLog.flagIssue && !ebLog.reason);
-            
-            let undelivered = 0;
-            if (isCompleted) {
-              undelivered = 0;
-            } else {
-              undelivered = Math.max(0, taken - delivered);
+
+            if (ebLog) {
+              const rLogItems = logItems.filter(i => String(i.emptyBottleLogId) === String(ebLog.id));
+              if (rLogItems.length > 0) {
+                rLogItems.forEach(i => {
+                  let del = parseFloat(i.actualDelivered || 0);
+                  if (del === 0 && isCompleted && parseFloat(i.expected || 0) > 0) {
+                    del = parseFloat(i.expected);
+                  }
+                  const is1L = i.unit === '1L' || (i.itemName && i.itemName.includes('1L'));
+                  const isBottle = i.material === 'Bottle';
+                  const isPacket = i.material === 'Packet';
+
+                  if (is1L) r1LDelivered += del;
+                  else if (isBottle) rHalfLBottleDelivered += del;
+                  else if (isPacket) rHalfLPacketDelivered += del;
+                });
+                rDeliveredLitres = (r1LDelivered * 1) + (rHalfLBottleDelivered * 0.5) + (rHalfLPacketDelivered * 0.5);
+              } else if (isCompleted || ebLog.deliveryCompleted) {
+                rDeliveredLitres = rTakenLitres;
+              }
+            } else if (isCompleted || (alloc && (alloc.status === 'COMPLETED' || alloc.status === 'ASSIGNED'))) {
+              rDeliveredLitres = rTakenLitres;
             }
 
-            totalTaken += taken;
-            totalDelivered += delivered;
-            totalUndelivered += undelivered;
+            qty1LBottleTaken += r1LTaken;
+            qtyHalfLBottleTaken += rHalfLBottleTaken;
+            qtyHalfLPacketTaken += rHalfLPacketTaken;
+            totalTakenLitresAcc += rTakenLitres;
+
+            qty1LBottleDelivered += r1LDelivered;
+            qtyHalfLBottleDelivered += rHalfLBottleDelivered;
+            qtyHalfLPacketDelivered += rHalfLPacketDelivered;
+            totalDeliveredLitresAcc += rDeliveredLitres;
           });
         }
+
+        const qty1LBottleUndelivered = Math.max(0, qty1LBottleTaken - qty1LBottleDelivered);
+        const qtyHalfLBottleUndelivered = Math.max(0, qtyHalfLBottleTaken - qtyHalfLBottleDelivered);
+        const qtyHalfLPacketUndelivered = Math.max(0, qtyHalfLPacketTaken - qtyHalfLPacketDelivered);
+
+        const calculatedItemTakenLitres = (qty1LBottleTaken * 1) + (qtyHalfLBottleTaken * 0.5) + (qtyHalfLPacketTaken * 0.5);
+        const calculatedItemDeliveredLitres = (qty1LBottleDelivered * 1) + (qtyHalfLBottleDelivered * 0.5) + (qtyHalfLPacketDelivered * 0.5);
+
+        const totalTaken = Math.max(totalTakenLitresAcc, calculatedItemTakenLitres);
+        const totalDelivered = Math.max(totalDeliveredLitresAcc, calculatedItemDeliveredLitres);
+        const totalUndelivered = Math.max(0, totalTaken - totalDelivered);
 
         // Aggregate Petrol / Payment Transactions (Paid, Extra Paid, Short Paid)
         let paid = null;
@@ -1151,6 +1218,24 @@ const getManagerInventory = async (req, res, next) => {
           vehicleNumber: dp.vehicleNumber || '—',
           assignedRoute: assignedRoutesStr,
           status: dp.isActive !== false ? 'Active' : 'Inactive',
+          milkTakenBreakdown: {
+            qty1LBottle: qty1LBottleTaken,
+            qtyHalfLBottle: qtyHalfLBottleTaken,
+            qtyHalfLPacket: qtyHalfLPacketTaken,
+            totalLitres: totalTaken,
+          },
+          milkDeliveredBreakdown: {
+            qty1LBottle: qty1LBottleDelivered,
+            qtyHalfLBottle: qtyHalfLBottleDelivered,
+            qtyHalfLPacket: qtyHalfLPacketDelivered,
+            totalLitres: totalDelivered,
+          },
+          milkUndeliveredBreakdown: {
+            qty1LBottle: qty1LBottleUndelivered,
+            qtyHalfLBottle: qtyHalfLBottleUndelivered,
+            qtyHalfLPacket: qtyHalfLPacketUndelivered,
+            totalLitres: totalUndelivered,
+          },
           quantityTaken: hasDeliveryData ? totalTaken : null,
           quantityDelivered: hasDeliveryData ? totalDelivered : null,
           undeliveredQuantity: hasDeliveryData ? totalUndelivered : null,
