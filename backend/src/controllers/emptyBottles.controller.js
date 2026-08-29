@@ -31,8 +31,50 @@ const getEmptyBottleLogs = async (req, res, next) => {
       const [dpRes, rRes, aRes, lRes] = await Promise.all([
         readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
-        readFromApp('SELECT id, date, "routeId", "dpId", "qty1LBottle", "qtyHalfLBottle" FROM "RouteAllocation" ORDER BY "createdAt" DESC'),
-        readFromApp('SELECT id, date, "routeId", "dpId", "oneLBottlesCollected", "halfLBottlesCollected", "actualDelivered1L", "actualDeliveredHalfL", "deliveryCompleted", "flagIssue", notes, reason FROM "EmptyBottleLog" ORDER BY "createdAt" DESC'),
+        readFromApp(`
+          SELECT 
+            ra.id AS "allocId",
+            ra.date,
+            ra."routeId",
+            ra."dpId",
+            ra."litresAllocated",
+            rai.id AS "itemId",
+            rai."inventoryItemId",
+            rai.quantity,
+            inv.name AS "itemName",
+            inv.unit AS "itemUnit",
+            inv.material AS "itemMaterial"
+          FROM "RouteAllocation" ra
+          LEFT JOIN "RouteAllocationItem" rai ON rai."routeAllocationId" = ra.id
+          LEFT JOIN "InventoryItem" inv ON inv.id = rai."inventoryItemId"
+          ORDER BY ra."createdAt" DESC
+        `),
+        readFromApp(`
+          SELECT 
+            eb.id AS "logId",
+            eb.date,
+            eb."routeId",
+            eb."dpId",
+            eb."deliveryCompleted",
+            eb."flagIssue",
+            eb.notes,
+            eb.reason,
+            ebi.id AS "itemId",
+            ebi."inventoryItemId",
+            ebi.expected,
+            ebi."actualDelivered",
+            ebi.collected,
+            ebi.broken,
+            ebi.outstanding,
+            ebi."carriedOver",
+            inv.name AS "itemName",
+            inv.unit AS "itemUnit",
+            inv.material AS "itemMaterial"
+          FROM "EmptyBottleLog" eb
+          LEFT JOIN "EmptyBottleLogItem" ebi ON ebi."emptyBottleLogId" = eb.id
+          LEFT JOIN "InventoryItem" inv ON inv.id = ebi."inventoryItemId"
+          ORDER BY eb."createdAt" DESC
+        `),
       ]);
       dpRows    = dpRes.rows;
       routeRows = rRes.rows;
@@ -147,22 +189,54 @@ const getEmptyBottleLogs = async (req, res, next) => {
         const isFuture   = dStr > opDay;
         const isBeforeDb2 = dStr < DB2_START_DATE;
 
-        const alloc   = allocRows.find(a => matchDp(a, dp) && String(a.date || '').slice(0, 10) === dStr);
-        const dayLogs = logRows.filter(l => matchDp(l, dp) && String(l.date || '').slice(0, 10) === dStr);
-        const log     = dayLogs[0] || null;
+        const dayAllocRows = allocRows.filter(a => matchDp(a, dp) && String(a.date || '').slice(0, 10) === dStr);
+        const dayLogs      = logRows.filter(l => matchDp(l, dp) && String(l.date || '').slice(0, 10) === dStr);
+        const log          = dayLogs[0] || null;
+        const alloc        = dayAllocRows[0] || null;
 
         let issued1L = 0, issuedHalfL = 0, returned1L = 0, returnedHalfL = 0;
         let missing1L = 0, missingHalfL = 0, hasFlag = false;
 
         // Only count if actual records exist — never carry forward previous-day values
-        if (!isBeforeDb2 && !isFuture && dayLogs.length > 0) {
-          issued1L      = dayLogs.reduce((s, l) => s + (parseInt(l.actualDelivered1L)    || 0), 0);
-          issuedHalfL   = dayLogs.reduce((s, l) => s + (parseInt(l.actualDeliveredHalfL) || 0), 0);
-          returned1L    = dayLogs.reduce((s, l) => s + (parseInt(l.oneLBottlesCollected)  || 0), 0);
-          returnedHalfL = dayLogs.reduce((s, l) => s + (parseInt(l.halfLBottlesCollected) || 0), 0);
-          hasFlag       = dayLogs.some(l => Boolean(l.flagIssue));
-          missing1L     = Math.max(0, issued1L    - returned1L);
-          missingHalfL  = Math.max(0, issuedHalfL - returnedHalfL);
+        if (!isBeforeDb2 && !isFuture && (dayLogs.length > 0 || dayAllocRows.length > 0)) {
+          hasFlag = dayLogs.some(l => Boolean(l.flagIssue));
+
+          // 1. Sum up bottle collection & actual delivery counts from EmptyBottleLogItem rows
+          for (const row of dayLogs) {
+            const unit = (row.itemUnit || '').toLowerCase();
+            const name = (row.itemName || '').toLowerCase();
+            const mat  = (row.itemMaterial || '').toLowerCase();
+
+            if (mat === 'bottle' || name.includes('milk')) {
+              if (unit === '1l' || name.includes('1l')) {
+                issued1L   += parseInt(row.actualDelivered) || 0;
+                returned1L += parseInt(row.collected)       || 0;
+              } else if (unit === '500ml' || unit === '0.5l' || unit === '½l' || name.includes('500ml') || name.includes('0.5l')) {
+                issuedHalfL   += parseInt(row.actualDelivered) || 0;
+                returnedHalfL += parseInt(row.collected)       || 0;
+              }
+            }
+          }
+
+          // 2. If actualDelivered was 0 in empty bottle log, fallback to RouteAllocationItem
+          if (issued1L === 0 && issuedHalfL === 0 && dayAllocRows.length > 0) {
+            for (const row of dayAllocRows) {
+              const unit = (row.itemUnit || '').toLowerCase();
+              const name = (row.itemName || '').toLowerCase();
+              const mat  = (row.itemMaterial || '').toLowerCase();
+
+              if (mat === 'bottle' || name.includes('milk')) {
+                if (unit === '1l' || name.includes('1l')) {
+                  issued1L += parseInt(row.quantity) || 0;
+                } else if (unit === '500ml' || unit === '0.5l' || unit === '½l' || name.includes('500ml') || name.includes('0.5l')) {
+                  issuedHalfL += parseInt(row.quantity) || 0;
+                }
+              }
+            }
+          }
+
+          missing1L    = Math.max(0, issued1L    - returned1L);
+          missingHalfL = Math.max(0, issuedHalfL - returnedHalfL);
 
           totalIssued1L      += issued1L;      totalReturned1L     += returned1L;
           totalMissing1L     += missing1L;     totalIssuedHalfL    += issuedHalfL;
@@ -181,7 +255,7 @@ const getEmptyBottleLogs = async (req, res, next) => {
           hasFlag,
           notes: log?.notes || (hasFlag ? `${missing1L + missingHalfL} bottles unreturned` : null),
           routeName: routeRows.find(r => String(r.id) === String(alloc?.routeId || log?.routeId))?.name || dpAssignedRouteStr,
-          hasRecords: dayLogs.length > 0,
+          hasRecords: dayLogs.length > 0 || dayAllocRows.length > 0,
         };
       });
 
