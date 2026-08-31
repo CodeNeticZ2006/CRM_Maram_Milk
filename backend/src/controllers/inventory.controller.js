@@ -990,17 +990,78 @@ const getManagerInventory = async (req, res, next) => {
       milParams = [targetDate];
     }
 
-    // 1. Fetch ShopSale rows
+    // 1. Fetch ShopSale rows joined with ShopSaleItem & InventoryItem
     let shopSaleRows = [];
     try {
+      const ssWhere = shopSaleWhere.replace(/\bdate\b/g, 'ss.date');
       const ssRes = await readFromApp(
-        `SELECT id, date, "qty1LBottle", "qtyHalfLBottle", "qtyHalfLPacket", "createdAt"
-         FROM "ShopSale"
-         ${shopSaleWhere}
-         ORDER BY date DESC, "createdAt" DESC`,
+        `SELECT 
+           ss.id AS "shopSaleId",
+           ss.date,
+           ss."createdAt",
+           ssi.id AS "itemId",
+           ssi."inventoryItemId",
+           ssi.quantity,
+           inv.name AS "itemName",
+           inv.unit AS "itemUnit",
+           inv.material AS "itemMaterial"
+         FROM "ShopSale" ss
+         LEFT JOIN "ShopSaleItem" ssi ON ssi."shopSaleId" = ss.id
+         LEFT JOIN "InventoryItem" inv ON inv.id = ssi."inventoryItemId"
+         ${ssWhere}
+         ORDER BY ss.date DESC, ss."createdAt" DESC`,
         shopSaleParams
       );
-      shopSaleRows = ssRes.rows;
+
+      const rawRows = ssRes.rows || [];
+      const salesMap = {};
+
+      rawRows.forEach(row => {
+        const sid = row.shopSaleId;
+        if (!salesMap[sid]) {
+          salesMap[sid] = {
+            id: sid,
+            date: row.date,
+            createdAt: row.createdAt,
+            qty1LBottle: 0,
+            qtyHalfLBottle: 0,
+            qtyHalfLPacket: 0,
+            totalUnits: 0,
+            items: [],
+          };
+        }
+
+        if (row.itemId) {
+          const qty = parseInt(row.quantity, 10) || 0;
+          const name = (row.itemName || '').toLowerCase();
+          const unit = (row.itemUnit || '').toLowerCase();
+          const mat  = (row.itemMaterial || '').toLowerCase();
+          const item = row.inventoryItemId;
+
+          if (item === '04cca8e6-0c08-4245-bb9d-d1c562df30e9' || unit === '1l' || name.includes('1l')) {
+            salesMap[sid].qty1LBottle += qty;
+          } else if (item === 'ec1714a6-6653-4c62-8b27-5c4c4c71223a' || ((unit === '500ml' || unit === '0.5l' || name.includes('500ml')) && mat === 'bottle')) {
+            salesMap[sid].qtyHalfLBottle += qty;
+          } else if (mat === 'packet' || name.includes('packet')) {
+            salesMap[sid].qtyHalfLPacket += qty;
+          } else {
+            if (name.includes('1l')) salesMap[sid].qty1LBottle += qty;
+            else salesMap[sid].qtyHalfLBottle += qty;
+          }
+
+          salesMap[sid].totalUnits += qty;
+          salesMap[sid].items.push({
+            id: row.itemId,
+            inventoryItemId: row.inventoryItemId,
+            name: row.itemName || 'Item',
+            unit: row.itemUnit || '',
+            material: row.itemMaterial || '',
+            quantity: qty,
+          });
+        }
+      });
+
+      shopSaleRows = Object.values(salesMap);
     } catch (e) {
       console.warn('⚠️ DB2 ShopSale query warning:', e.message);
     }
@@ -1032,13 +1093,14 @@ const getManagerInventory = async (req, res, next) => {
     // 3. Aggregate ShopSale totals
     const shopSaleSummary = shopSaleRows.reduce(
       (acc, row) => {
-        acc.total1LBottle    += parseInt(row.qty1LBottle    || 0);
-        acc.totalHalfLBottle += parseInt(row.qtyHalfLBottle || 0);
-        acc.totalHalfLPacket += parseInt(row.qtyHalfLPacket || 0);
+        acc.total1LBottle    += row.qty1LBottle || 0;
+        acc.totalHalfLBottle += row.qtyHalfLBottle || 0;
+        acc.totalHalfLPacket += row.qtyHalfLPacket || 0;
+        acc.totalUnits       += row.totalUnits || 0;
         acc.totalEntries     += 1;
         return acc;
       },
-      { total1LBottle: 0, totalHalfLBottle: 0, totalHalfLPacket: 0, totalEntries: 0 }
+      { total1LBottle: 0, totalHalfLBottle: 0, totalHalfLPacket: 0, totalUnits: 0, totalEntries: 0 }
     );
 
     // 4. Aggregate ManagerInventoryLog totals by product & standard categories (1L B, 500ml B, 500ml P)
@@ -1485,16 +1547,77 @@ const generateInventoryReport = async (req, res, next) => {
     // ── 2. SHEET 2 DATA: Shop Sale — Daily Stock Sold ─────────────────────────
     let shopSaleRows = [];
     try {
+      const ssWhere = shopSaleWhere.replace(/\bdate\b/g, 'ss.date');
       const ssRes = await readFromApp(
-        `SELECT id, date, "qty1LBottle", "qtyHalfLBottle", "qtyHalfLPacket", "createdAt"
-         FROM "ShopSale"
-         ${shopSaleWhere}
-         ORDER BY date DESC, "createdAt" DESC`,
+        `SELECT 
+           ss.id AS "shopSaleId",
+           ss.date,
+           ss."createdAt",
+           ssi.id AS "itemId",
+           ssi."inventoryItemId",
+           ssi.quantity,
+           inv.name AS "itemName",
+           inv.unit AS "itemUnit",
+           inv.material AS "itemMaterial"
+         FROM "ShopSale" ss
+         LEFT JOIN "ShopSaleItem" ssi ON ssi."shopSaleId" = ss.id
+         LEFT JOIN "InventoryItem" inv ON inv.id = ssi."inventoryItemId"
+         ${ssWhere}
+         ORDER BY ss.date DESC, ss."createdAt" DESC`,
         shopSaleParams
       );
-      shopSaleRows = ssRes.rows;
+
+      const rawRows = ssRes.rows || [];
+      const salesMap = {};
+
+      rawRows.forEach(row => {
+        const sid = row.shopSaleId;
+        if (!salesMap[sid]) {
+          salesMap[sid] = {
+            id: sid,
+            date: row.date,
+            createdAt: row.createdAt,
+            qty1LBottle: 0,
+            qtyHalfLBottle: 0,
+            qtyHalfLPacket: 0,
+            totalUnits: 0,
+            items: [],
+          };
+        }
+
+        if (row.itemId) {
+          const qty = parseInt(row.quantity, 10) || 0;
+          const name = (row.itemName || '').toLowerCase();
+          const unit = (row.itemUnit || '').toLowerCase();
+          const mat  = (row.itemMaterial || '').toLowerCase();
+          const item = row.inventoryItemId;
+
+          if (item === '04cca8e6-0c08-4245-bb9d-d1c562df30e9' || unit === '1l' || name.includes('1l')) {
+            salesMap[sid].qty1LBottle += qty;
+          } else if (item === 'ec1714a6-6653-4c62-8b27-5c4c4c71223a' || ((unit === '500ml' || unit === '0.5l' || name.includes('500ml')) && mat === 'bottle')) {
+            salesMap[sid].qtyHalfLBottle += qty;
+          } else if (mat === 'packet' || name.includes('packet')) {
+            salesMap[sid].qtyHalfLPacket += qty;
+          } else {
+            if (name.includes('1l')) salesMap[sid].qty1LBottle += qty;
+            else salesMap[sid].qtyHalfLBottle += qty;
+          }
+
+          salesMap[sid].totalUnits += qty;
+          salesMap[sid].items.push({
+            id: row.itemId,
+            inventoryItemId: row.inventoryItemId,
+            name: row.itemName || 'Item',
+            unit: row.itemUnit || '',
+            material: row.itemMaterial || '',
+            quantity: qty,
+          });
+        }
+      });
+
+      shopSaleRows = Object.values(salesMap);
     } catch (e) {
-      console.warn('⚠️ DB2 ShopSale query warning:', e.message);
+      console.warn('⚠️ DB2 ShopSale report query warning:', e.message);
     }
 
     // ── 3. SHEET 3 DATA: Manager Inventory Log — Per Product ─────────────────
