@@ -1834,7 +1834,7 @@ export default function InventoryPage() {
                 <MdFactCheck style={{ color: '#10b981', fontSize: 22 }} /> Stock Correctness
               </div>
               <div style={{ fontSize: 12.5, color: 'var(--text-secondary)', marginTop: 3 }}>
-                Daily milk stock reconciliation between Inventory Expected Stock and Manager Inventory Log.
+                Daily stock reconciliation between Inventory Expected Stock and Manager Inventory Log for all products.
               </div>
             </div>
 
@@ -1885,7 +1885,7 @@ export default function InventoryPage() {
                     <div style={{ padding: 8, borderRadius: 8, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', fontSize: 20 }}><MdFactCheck /></div>
                   </div>
                   <div className="stat-label">Products Checked</div>
-                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>Milk products evaluated today</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>All products (Milk & AdHoc) evaluated today</div>
                 </div>
 
                 <div className="stat-card" style={{ '--card-accent': 'var(--success)' }}>
@@ -1930,14 +1930,14 @@ export default function InventoryPage() {
                   <div>
                     <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#10b981' }}>
                       <MdFactCheck style={{ fontSize: 20 }} />
-                      DAILY MILK STOCK RECONCILIATION TABLE
+                      DAILY STOCK RECONCILIATION TABLE
                     </span>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-                      Compares Expected Milk Stock vs Manager Inventory Logged Stock for {scData?.operationalDay || selectedDate} (Milk Products Only)
+                      Compares Expected Stock vs Manager Inventory Logged Stock for {scData?.operationalDay || selectedDate} (All Products)
                     </div>
                   </div>
                   <span className="badge badge-success" style={{ fontWeight: 700 }}>
-                    Milk Products Only
+                    All Products (Milk & AdHoc)
                   </span>
                 </div>
 

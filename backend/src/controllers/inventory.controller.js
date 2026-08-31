@@ -256,7 +256,7 @@ const updateInventory = async (req, res, next) => {
     const newAdded = parseFloat(newStockAdded || 0);
     const currStock = parseFloat(currentStock || 0);
 
-    const { db2ItemId } = await resolveTargetDb2ItemId(inventoryItemId);
+    const { db2ItemId, itemName, itemUnit, category } = await resolveTargetDb2ItemId(inventoryItemId);
 
     // Check if record exists in DB2
     let existingId = null;
@@ -300,9 +300,34 @@ const updateInventory = async (req, res, next) => {
       );
     }
 
+    // Synchronize to adhoc_central_inventory if item is AdHoc / Non-milk product
+    if (category === 'adhoc' || category === 'AdHoc' || (!itemName.toLowerCase().includes('milk'))) {
+      try {
+        const prodRes = await readFromCRM(
+          'SELECT id FROM products WHERE id = $1 OR LOWER(name) = $2 LIMIT 1',
+          [inventoryItemId, itemName.toLowerCase()]
+        ).catch(() => ({ rows: [] }));
+        const targetProdId = prodRes.rows.length > 0 ? prodRes.rows[0].id : inventoryItemId;
+
+        await writeToCRM(
+          `INSERT INTO adhoc_central_inventory (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_by, updated_at)
+           VALUES ($1, $2, $3, $4, $5, 0, $6, 'Super Admin Override', NOW())
+           ON CONFLICT (product_id, date) DO UPDATE SET
+             opening_stock = EXCLUDED.opening_stock,
+             added_stock = EXCLUDED.added_stock,
+             remaining_stock = EXCLUDED.remaining_stock,
+             updated_by = EXCLUDED.updated_by,
+             updated_at = NOW()`,
+          [randomUUID(), targetProdId, targetDate, carriedOver, newAdded, currStock]
+        );
+      } catch (adhocErr) {
+        console.warn('⚠️ adhoc_central_inventory sync warning in updateInventory:', adhocErr.message);
+      }
+    }
+
     res.json({
       success: true,
-      message: `Stock updated in DB2 for target date ${targetDate}`,
+      message: `Stock updated in DB2 and CRM DB for target date ${targetDate}`,
     });
   } catch (err) { next(err); }
 };

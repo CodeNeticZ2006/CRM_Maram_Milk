@@ -221,7 +221,7 @@ const getAdhocInventory = async (req, res, next) => {
     } catch (e) { /* silent */ }
 
     // Combine products with central inventory data
-    const items = adhocProducts.map(p => {
+    const items = await Promise.all(adhocProducts.map(async p => {
       const rec = centralRecs.find(r => r.product_id === p.id);
       const prev = prevRecs.find(r => r.product_id === p.id);
 
@@ -240,7 +240,36 @@ const getAdhocInventory = async (req, res, next) => {
       let dpIssuedStock = 0;
       let remainingStock = 0;
 
-      if (rec) {
+      if (rec && db2Rec) {
+        const recTime = rec.updated_at ? new Date(rec.updated_at).getTime() : 0;
+        const db2Time = db2Rec.updatedAt ? new Date(db2Rec.updatedAt).getTime() : 0;
+
+        // If DB2 stock has been updated (e.g. via stock correction / update / direct DB update)
+        if (db2Rec.currentStock !== undefined && (db2Time >= recTime || parseFloat(db2Rec.currentStock) !== parseFloat(rec.remaining_stock))) {
+          remainingStock = parseFloat(db2Rec.currentStock || 0);
+          addedStock = parseFloat(db2Rec.newStockAdded || rec.added_stock || 0);
+          openingStock = parseFloat(db2Rec.carriedOverStock || rec.opening_stock || 0);
+          dpIssuedStock = Math.max(0, openingStock + addedStock - remainingStock);
+
+          // Synchronously sync DB1 adhoc_central_inventory so it reflects the updated DB2 stock
+          await writeToCRM(
+            `INSERT INTO adhoc_central_inventory (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_by, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, 'DB2Sync', NOW())
+             ON CONFLICT (product_id, date) DO UPDATE SET
+               opening_stock = EXCLUDED.opening_stock,
+               added_stock = EXCLUDED.added_stock,
+               dp_issued_stock = EXCLUDED.dp_issued_stock,
+               remaining_stock = EXCLUDED.remaining_stock,
+               updated_at = NOW()`,
+            [randomUUID(), p.id, targetDate, openingStock, addedStock, dpIssuedStock, remainingStock]
+          ).catch((e) => console.warn('⚠️ adhoc_central_inventory sync warning:', e.message));
+        } else {
+          openingStock = parseFloat(rec.opening_stock || 0);
+          addedStock = parseFloat(rec.added_stock || 0);
+          dpIssuedStock = parseFloat(rec.dp_issued_stock || 0);
+          remainingStock = parseFloat(rec.remaining_stock || (openingStock + addedStock - dpIssuedStock));
+        }
+      } else if (rec) {
         openingStock = parseFloat(rec.opening_stock || 0);
         addedStock = parseFloat(rec.added_stock || 0);
         dpIssuedStock = parseFloat(rec.dp_issued_stock || 0);
@@ -259,7 +288,7 @@ const getAdhocInventory = async (req, res, next) => {
 
         // Auto-backfill adhoc_central_inventory so it's persisted permanently
         try {
-          writeToCRM(
+          await writeToCRM(
             `INSERT INTO adhoc_central_inventory (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_by, updated_at)
              VALUES ($1, $2, $3, $4, $5, 0, $6, 'AutoSync', NOW())
              ON CONFLICT (product_id, date) DO UPDATE SET
@@ -295,7 +324,7 @@ const getAdhocInventory = async (req, res, next) => {
         date: targetDate,
         updatedAt: rec ? rec.updated_at : (prev ? prev.updated_at : null),
       };
-    });
+    }));
 
     const totalOpening = items.reduce((a, b) => a + b.openingStock, 0);
     const totalAdded = items.reduce((a, b) => a + b.addedStock, 0);

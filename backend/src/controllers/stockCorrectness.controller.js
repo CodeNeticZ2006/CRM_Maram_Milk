@@ -51,37 +51,69 @@ const getStockCorrectnessToday = async (req, res) => {
     const istToday = getISTDate();
     const targetDate = req.query.date || istToday;
 
-    // 1. Fetch DB2 Milk InventoryItems
-    let items = [];
+    // 1. Fetch DB2 InventoryItems and CRM DB Products
+    let db2Items = [];
     try {
       const itemsRes = await readFromApp(
-        'SELECT id, name, unit, material FROM "InventoryItem" ORDER BY name ASC, unit ASC'
+        'SELECT id, name, unit, material, section FROM "InventoryItem" ORDER BY name ASC, unit ASC'
       );
-      items = itemsRes.rows;
+      db2Items = itemsRes.rows;
     } catch (e) {
       console.warn('⚠️ DB2 InventoryItem query warning:', e.message);
     }
 
-    if (items.length === 0) {
-      items = [
-        { id: 'inv-item-1', name: 'Cow Milk (1 Litre)', unit: 'Litres', material: 'Milk' },
-        { id: 'inv-item-2', name: 'Cow Milk (500 ml)', unit: 'Packets', material: 'Milk' },
-        { id: 'inv-item-3', name: 'Buffalo Milk (1 Litre)', unit: 'Litres', material: 'Milk' },
-      ];
+    let crmProducts = [];
+    try {
+      const cRes = await readFromCRM('SELECT id, name, category, unit FROM products ORDER BY name ASC');
+      crmProducts = cRes.rows;
+    } catch (e) {
+      console.warn('⚠️ CRM products query warning:', e.message);
     }
 
-    // Filter ONLY Milk products (strictly exclude AdHoc products)
-    const milkItems = items.filter(item => {
-      const cat = (item.material || '').toLowerCase();
-      const n = (item.name || '').toLowerCase();
-      // Exclude AdHoc products
-      if (cat === 'adhoc' || n.includes('ghee') || n.includes('curd') || n.includes('oil') || n.includes('paneer') || n.includes('butter') || n.includes('sugar') || n.includes('appalam') || n.includes('honey')) {
-        return false;
-      }
-      return true;
+    // Build unified item list (combining DB2 InventoryItems and CRM products without duplicates)
+    const allItemsMap = new Map();
+
+    db2Items.forEach(i => {
+      allItemsMap.set(i.id, {
+        id: i.id,
+        db2Id: i.id,
+        crmId: null,
+        name: i.name,
+        unit: i.unit || 'Units',
+        material: i.material || 'Milk',
+        section: i.section || 'Milk',
+      });
     });
 
-    // 2. Fetch daily records for target date from DB2
+    crmProducts.forEach(p => {
+      const existing = allItemsMap.get(p.id);
+      if (existing) {
+        existing.crmId = p.id;
+      } else {
+        const matchedDb2 = Array.from(allItemsMap.values()).find(
+          i => i.name.toLowerCase() === p.name.toLowerCase() ||
+               i.name.toLowerCase().includes(p.name.toLowerCase()) ||
+               p.name.toLowerCase().includes(i.name.toLowerCase())
+        );
+        if (matchedDb2) {
+          matchedDb2.crmId = p.id;
+        } else {
+          allItemsMap.set(p.id, {
+            id: p.id,
+            db2Id: null,
+            crmId: p.id,
+            name: p.name,
+            unit: p.unit || 'Units',
+            material: p.category || 'AdHoc',
+            section: p.category || 'AdHoc',
+          });
+        }
+      }
+    });
+
+    const items = Array.from(allItemsMap.values());
+
+    // 2. Fetch daily records for target date from DB2 and CRM DB
     let dailyRecords = [];
     try {
       const recordsRes = await readFromApp(
@@ -93,6 +125,17 @@ const getStockCorrectnessToday = async (req, res) => {
       dailyRecords = recordsRes.rows;
     } catch (e) {
       console.warn('⚠️ DB2 InventoryDailyRecord query warning:', e.message);
+    }
+
+    let crmAdhocRecords = [];
+    try {
+      const crmAdhocRes = await readFromCRM(
+        `SELECT * FROM adhoc_central_inventory WHERE date = $1`,
+        [targetDate]
+      );
+      crmAdhocRecords = crmAdhocRes.rows;
+    } catch (e) {
+      console.warn('⚠️ CRM adhoc_central_inventory query warning:', e.message);
     }
 
     let prevRecords = [];
@@ -109,43 +152,6 @@ const getStockCorrectnessToday = async (req, res) => {
       console.warn('⚠️ DB2 preceding InventoryDailyRecord query warning:', e.message);
     }
 
-    // Calculate Expected Stock per Milk product
-    const milkExpectedMap = {};
-    milkItems.forEach(item => {
-      const rec = dailyRecords.find(r => r.inventoryItemId === item.id);
-      const prevRec = prevRecords.find(r => r.inventoryItemId === item.id);
-
-      let carriedOver = 0;
-      if (rec && parseFloat(rec.carriedOverStock || 0) > 0) {
-        carriedOver = parseFloat(rec.carriedOverStock);
-      } else if (prevRec) {
-        carriedOver = parseFloat(prevRec.currentStock || 0);
-      }
-
-      const addedToday = rec ? parseFloat(rec.newStockAdded || 0) : 0;
-      let expStock = 0;
-
-      if (rec) {
-        const recCurr = parseFloat(rec.currentStock || 0);
-        const recExp = parseFloat(rec.expectedStock || 0);
-        if (recCurr === 0 && rec.newStockAdded === 0 && carriedOver > 0) {
-          expStock = carriedOver;
-        } else {
-          expStock = recExp > 0 ? recExp : (carriedOver + addedToday);
-        }
-      } else {
-        expStock = carriedOver + addedToday;
-      }
-
-      milkExpectedMap[item.id] = {
-        id: item.id,
-        name: item.name,
-        unit: item.unit || 'Litres',
-        material: item.material || 'Milk',
-        expectedStock: expStock,
-      };
-    });
-
     // 3. Fetch DB2 ManagerInventoryLog for targetDate
     let milRows = [];
     try {
@@ -161,47 +167,44 @@ const getStockCorrectnessToday = async (req, res) => {
       console.warn('⚠️ DB2 ManagerInventoryLog query warning:', e.message);
     }
 
-    // Aggregate Manager Logged Stock by product
-    const managerLogMap = {};
-    let mil1LBottle = 0, milHalfLBottle = 0, milHalfLPacket = 0;
-
-    milRows.forEach(row => {
-      const pKey = row.product;
-      const q = parseFloat(row.quantity || 0);
-      managerLogMap[pKey] = (managerLogMap[pKey] || 0) + q;
-
-      const pName = (row.product || '').toLowerCase();
-      if (pName.includes('milk')) {
-        if (pName.includes('1l') || pName.includes('1 l') || (pName.includes('bottle') && (pName.includes('1') || pName.includes('litre')))) {
-          mil1LBottle += q;
-        } else if (pName.includes('packet') || pName.includes('pack') || pName.includes('(p)')) {
-          milHalfLPacket += q;
-        } else if (pName.includes('500') || pName.includes('half') || pName.includes('bottle') || pName.includes('(b)')) {
-          milHalfLBottle += q;
-        }
-      }
-    });
-
-    // 4. Compare Expected Stock vs Manager Inventory Log per Milk product
+    // 4. Compare Expected Stock vs Manager Inventory Log for ALL items (Milk & AdHoc)
     const correctnessResults = [];
 
-    for (const item of milkItems) {
-      const itemExpObj = milkExpectedMap[item.id];
-      const expectedStock = itemExpObj ? itemExpObj.expectedStock : 0;
+    for (const item of items) {
+      const sName = item.name.toLowerCase();
+
+      // Find Expected Stock
+      let expectedStock = 0;
+      const db2Rec = dailyRecords.find(r => r.inventoryItemId === item.db2Id || r.inventoryItemId === item.id);
+      const crmAdhocRec = crmAdhocRecords.find(r => r.product_id === item.crmId || r.product_id === item.id);
+      const prevRec = prevRecords.find(r => r.inventoryItemId === item.db2Id || r.inventoryItemId === item.id);
+
+      if (db2Rec && parseFloat(db2Rec.currentStock ?? 0) > 0) {
+        expectedStock = parseFloat(db2Rec.currentStock);
+      } else if (crmAdhocRec && parseFloat(crmAdhocRec.remaining_stock ?? 0) > 0) {
+        expectedStock = parseFloat(crmAdhocRec.remaining_stock);
+      } else if (db2Rec) {
+        expectedStock = parseFloat(db2Rec.currentStock ?? db2Rec.expectedStock ?? 0);
+      } else if (crmAdhocRec) {
+        expectedStock = parseFloat(crmAdhocRec.remaining_stock ?? 0);
+      } else if (prevRec) {
+        expectedStock = parseFloat(prevRec.currentStock ?? 0);
+      }
 
       // Determine Manager Logged Stock for this item
       let managerLogged = null;
-      const directLog = managerLogMap[item.id] !== undefined ? managerLogMap[item.id] : managerLogMap[item.name];
+      const matchedLogs = milRows.filter(r => {
+        if (item.db2Id && String(r.product) === String(item.db2Id)) return true;
+        if (item.crmId && String(r.product) === String(item.crmId)) return true;
+        if (String(r.product) === String(item.id)) return true;
+        const pVal = String(r.product || '').toLowerCase();
+        if (pVal === sName) return true;
+        if (pVal.length > 3 && (sName.includes(pVal) || pVal.includes(sName))) return true;
+        return false;
+      });
 
-      if (directLog !== undefined) {
-        managerLogged = directLog;
-      } else {
-        // Match by category
-        const catLabel = getMilkProductCategory(item.name, item.material, item.unit);
-        if (catLabel === '1L Bottle' && mil1LBottle > 0) managerLogged = mil1LBottle;
-        else if (catLabel === '500ml Bottle' && milHalfLBottle > 0) managerLogged = milHalfLBottle;
-        else if (catLabel === '500ml Packet' && milHalfLPacket > 0) managerLogged = milHalfLPacket;
-        else if (milRows.length > 0) managerLogged = null; // No log found for this specific milk product
+      if (matchedLogs.length > 0) {
+        managerLogged = matchedLogs.reduce((sum, r) => sum + parseFloat(r.quantity || 0), 0);
       }
 
       let status = 'Correct';
@@ -244,20 +247,20 @@ const getStockCorrectnessToday = async (req, res) => {
         const dedupKey = `${targetDate}_${item.id}_${status}`;
         try {
           const title = status === 'Mismatch'
-            ? '🔴 Milk Stock Mismatch Detected'
-            : '⚠️ Manager Inventory Log Missing';
+            ? `🔴 Stock Mismatch: ${item.name}`
+            : `⚠️ Manager Inventory Log Missing: ${item.name}`;
 
           const diffText = difference > 0 ? `+${difference}` : `${difference}`;
           const message = status === 'Mismatch'
-            ? `${item.name}: Expected Stock is ${expectedStock} units, but Manager Logged ${managerLogged} units (Difference: ${diffText} units) for Operational Day ${targetDate}.`
-            : `${item.name}: Expected Stock is ${expectedStock} units, but no Manager Inventory Log has been submitted for Operational Day ${targetDate}.`;
+            ? `${item.name}: Expected Stock is ${expectedStock} ${item.unit}, but Manager Logged ${managerLogged} ${item.unit} (Difference: ${diffText} ${item.unit}) for Operational Day ${targetDate}.`
+            : `${item.name}: Expected Stock is ${expectedStock} ${item.unit}, but no Manager Inventory Log has been submitted for Operational Day ${targetDate}.`;
 
           const notifRes = await writeToCRM(
             `INSERT INTO notifications (title, message, type, entity_type, entity_id, link_url, dedup_key, is_read, created_at)
              VALUES ($1, $2, $3, $4, $5, $6, $7, false, NOW())
              ON CONFLICT (dedup_key) DO NOTHING
              RETURNING id`,
-            [title, message, status, 'Stock Correctness', item.id, '/inventory', dedupKey]
+            [title, message, status, 'Stock Correctness', item.id, '/inventory?tab=stock-correctness', dedupKey]
           );
 
           if (notifRes.rows.length > 0) {
@@ -287,6 +290,7 @@ const getStockCorrectnessToday = async (req, res) => {
         productId: item.id,
         productName: item.name,
         unit: item.unit || 'Units',
+        material: item.material,
         expectedStock,
         managerLoggedStock: managerLogged,
         difference,
@@ -298,16 +302,13 @@ const getStockCorrectnessToday = async (req, res) => {
       });
     }
 
-    // Sort results by Milk category priority (1L Bottle, 500ml Bottle, 500ml Packet)
+    // Sort results: Mismatch first (highest priority), then Missing Log, then Correct
     correctnessResults.sort((a, b) => {
-      const getPrio = (name) => {
-        const n = name.toLowerCase();
-        if (n.includes('1l')) return 1;
-        if (n.includes('500') && n.includes('bottle')) return 2;
-        if (n.includes('500') || n.includes('packet')) return 3;
-        return 4;
-      };
-      return getPrio(a.productName) - getPrio(b.productName);
+      const order = { 'Mismatch': 1, 'Missing Log': 2, 'Correct': 3 };
+      if ((order[a.status] || 4) !== (order[b.status] || 4)) {
+        return (order[a.status] || 4) - (order[b.status] || 4);
+      }
+      return a.productName.localeCompare(b.productName);
     });
 
     // KPI Aggregations
