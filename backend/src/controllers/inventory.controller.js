@@ -1190,8 +1190,7 @@ const getManagerInventory = async (req, res, next) => {
             let rDeliveredLitres = 0;
 
             let isCompleted = (alloc && alloc.status === 'COMPLETED') || 
-                              (ebLog && ebLog.deliveryCompleted === true) || 
-                              (ebLog && !ebLog.flagIssue && !ebLog.reason);
+                              (ebLog && ebLog.deliveryCompleted === true);
 
             if (ebLog) {
               const rLogItems = logItems.filter(i => String(i.emptyBottleLogId) === String(ebLog.id));
@@ -1210,10 +1209,10 @@ const getManagerInventory = async (req, res, next) => {
                   else if (isPacket) rHalfLPacketDelivered += del;
                 });
                 rDeliveredLitres = (r1LDelivered * 1) + (rHalfLBottleDelivered * 0.5) + (rHalfLPacketDelivered * 0.5);
-              } else if (isCompleted || ebLog.deliveryCompleted) {
+              } else if (isCompleted) {
                 rDeliveredLitres = rTakenLitres;
               }
-            } else if (isCompleted || (alloc && (alloc.status === 'COMPLETED' || alloc.status === 'ASSIGNED'))) {
+            } else if (isCompleted) {
               rDeliveredLitres = rTakenLitres;
             }
 
