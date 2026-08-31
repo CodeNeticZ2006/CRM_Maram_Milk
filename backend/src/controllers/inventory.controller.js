@@ -935,8 +935,6 @@ const getDpAttendanceAudit = async (req, res, next) => {
         dpName: dp.name,
         dpCode: dp.dpCode,
         mobileNumber: dp.mobileNumber,
-        vehicleNumber: dp.vehicleNumber || '—',
-        assignedRoute: dpAssignedRouteStr,
         totalDays,
         presentDays,
         absentDays,
@@ -961,7 +959,6 @@ const getDpAttendanceAudit = async (req, res, next) => {
     });
   } catch (err) { next(err); }
 };
-
 
 // ─────────────────────────────────────────────
 // GET /api/inventory/manager-inventory — ShopSale + ManagerInventoryLog from DB2
@@ -992,6 +989,7 @@ const getManagerInventory = async (req, res, next) => {
 
     // 1. Fetch ShopSale rows joined with ShopSaleItem & InventoryItem
     let shopSaleRows = [];
+    let adhocShopSaleRows = [];
     try {
       const ssWhere = shopSaleWhere.replace(/\bdate\b/g, 'ss.date');
       const ssRes = await readFromApp(
@@ -1004,7 +1002,8 @@ const getManagerInventory = async (req, res, next) => {
            ssi.quantity,
            inv.name AS "itemName",
            inv.unit AS "itemUnit",
-           inv.material AS "itemMaterial"
+           inv.material AS "itemMaterial",
+           inv.section AS "itemSection"
          FROM "ShopSale" ss
          LEFT JOIN "ShopSaleItem" ssi ON ssi."shopSaleId" = ss.id
          LEFT JOIN "InventoryItem" inv ON inv.id = ssi."inventoryItemId"
@@ -1015,69 +1014,91 @@ const getManagerInventory = async (req, res, next) => {
 
       const rawRows = ssRes.rows || [];
       const salesMap = {};
+      const adhocSalesList = [];
 
       rawRows.forEach(row => {
         const sid = row.shopSaleId;
-        if (!salesMap[sid]) {
-          salesMap[sid] = {
-            id: sid,
-            date: row.date,
-            createdAt: row.createdAt,
-            qty1LBottle: 0,
-            qtyHalfLBottle: 0,
-            qtyHalfLPacket: 0,
-            totalUnits: 0,
-            items: [],
-          };
-        }
+        const itemName = (row.itemName || '').toLowerCase();
+        const itemSec  = (row.itemSection || '').toLowerCase();
+        const itemMat  = (row.itemMaterial || '').toLowerCase();
+        const isMilk   = itemSec === 'milk' || itemName.includes('milk');
 
-        if (row.itemId) {
-          const qty = parseInt(row.quantity, 10) || 0;
-          const name = (row.itemName || '').toLowerCase();
-          const unit = (row.itemUnit || '').toLowerCase();
-          const mat  = (row.itemMaterial || '').toLowerCase();
-          const item = row.inventoryItemId;
-
-          if (item === '04cca8e6-0c08-4245-bb9d-d1c562df30e9' || unit === '1l' || name.includes('1l')) {
-            salesMap[sid].qty1LBottle += qty;
-          } else if (item === 'ec1714a6-6653-4c62-8b27-5c4c4c71223a' || ((unit === '500ml' || unit === '0.5l' || name.includes('500ml')) && mat === 'bottle')) {
-            salesMap[sid].qtyHalfLBottle += qty;
-          } else if (mat === 'packet' || name.includes('packet')) {
-            salesMap[sid].qtyHalfLPacket += qty;
-          } else {
-            if (name.includes('1l')) salesMap[sid].qty1LBottle += qty;
-            else salesMap[sid].qtyHalfLBottle += qty;
+        if (isMilk) {
+          if (!salesMap[sid]) {
+            salesMap[sid] = {
+              id: sid,
+              date: row.date,
+              createdAt: row.createdAt,
+              qty1LBottle: 0,
+              qtyHalfLBottle: 0,
+              qtyHalfLPacket: 0,
+              totalUnits: 0,
+              items: [],
+            };
           }
 
-          salesMap[sid].totalUnits += qty;
-          salesMap[sid].items.push({
+          if (row.itemId) {
+            const qty = parseInt(row.quantity, 10) || 0;
+            const unit = (row.itemUnit || '').toLowerCase();
+            const item = row.inventoryItemId;
+
+            if (item === '04cca8e6-0c08-4245-bb9d-d1c562df30e9' || unit === '1l' || itemName.includes('1l')) {
+              salesMap[sid].qty1LBottle += qty;
+            } else if (item === 'ec1714a6-6653-4c62-8b27-5c4c4c71223a' || ((unit === '500ml' || unit === '0.5l' || itemName.includes('500ml')) && itemMat === 'bottle')) {
+              salesMap[sid].qtyHalfLBottle += qty;
+            } else {
+              salesMap[sid].qtyHalfLPacket += qty;
+            }
+
+            salesMap[sid].totalUnits += qty;
+            salesMap[sid].items.push({
+              id: row.itemId,
+              inventoryItemId: row.inventoryItemId,
+              name: row.itemName || 'Milk Item',
+              unit: row.itemUnit || '',
+              material: row.itemMaterial || '',
+              quantity: qty,
+            });
+          }
+        } else if (row.itemId) {
+          const qty = parseInt(row.quantity, 10) || 0;
+          adhocSalesList.push({
             id: row.itemId,
-            inventoryItemId: row.inventoryItemId,
-            name: row.itemName || 'Item',
-            unit: row.itemUnit || '',
-            material: row.itemMaterial || '',
-            quantity: qty,
+            shopSaleId: sid,
+            date: row.date,
+            productId: row.inventoryItemId,
+            productName: row.itemName || 'AdHoc Product',
+            unit: row.itemUnit || 'Units',
+            material: row.itemMaterial || 'AdHoc',
+            section: row.itemSection || 'AdHoc',
+            quantitySold: qty,
+            createdAt: row.createdAt,
           });
         }
       });
 
       shopSaleRows = Object.values(salesMap);
+      adhocShopSaleRows = adhocSalesList;
     } catch (e) {
       console.warn('⚠️ DB2 ShopSale query warning:', e.message);
     }
 
-    // 2. Fetch ManagerInventoryLog rows joined with Manager & InventoryItem names
+    // 2. Fetch ManagerInventoryLog rows joined with Manager & InventoryItem details
     let managerInventoryRows = [];
+    let adhocManagerInventoryRows = [];
     try {
       const milRes = await readFromApp(
         `SELECT mil.id, mil.date, mil.product, mil.quantity, mil."managerId", mil."createdAt",
                 m.name AS "managerName",
+                ii.id AS "productId",
                 COALESCE(ii.name, mil.product) AS "productName",
                 COALESCE(ii.unit, CASE
                   WHEN mil.product ILIKE '%1l%' THEN '1L'
                   WHEN mil.product ILIKE '%500%' THEN '500ml'
                   ELSE 'Units'
-                END) AS "productUnit"
+                END) AS "productUnit",
+                ii.material AS "productMaterial",
+                ii.section AS "productSection"
          FROM "ManagerInventoryLog" mil
          LEFT JOIN "Manager" m ON m.id = mil."managerId"
          LEFT JOIN "InventoryItem" ii ON (ii.id = mil.product OR ii.name = mil.product)
@@ -1085,7 +1106,28 @@ const getManagerInventory = async (req, res, next) => {
          ORDER BY mil.date DESC, mil."createdAt" DESC`,
         milParams
       );
-      managerInventoryRows = milRes.rows;
+      const allMilRows = milRes.rows || [];
+
+      allMilRows.forEach(row => {
+        const pName = (row.productName || row.product || '').toLowerCase();
+        const pSec = (row.productSection || '').toLowerCase();
+        const isMilk = pSec === 'milk' || pName.includes('milk');
+
+        if (isMilk) {
+          managerInventoryRows.push(row);
+        } else {
+          adhocManagerInventoryRows.push({
+            id: row.id,
+            date: row.date,
+            productId: row.productId || row.product,
+            productName: row.productName,
+            unit: row.productUnit || 'Units',
+            quantity: parseInt(row.quantity, 10) || 0,
+            manager: row.managerName || 'Manager App',
+            createdAt: row.createdAt,
+          });
+        }
+      });
     } catch (e) {
       console.warn('⚠️ DB2 ManagerInventoryLog query warning:', e.message);
     }
@@ -1102,6 +1144,11 @@ const getManagerInventory = async (req, res, next) => {
       },
       { total1LBottle: 0, totalHalfLBottle: 0, totalHalfLPacket: 0, totalUnits: 0, totalEntries: 0 }
     );
+
+    const adhocShopSaleSummary = {
+      totalAdHocUnitsSold: adhocShopSaleRows.reduce((acc, r) => acc + (r.quantitySold || 0), 0),
+      totalAdHocEntries: adhocShopSaleRows.length,
+    };
 
     // 4. Aggregate ManagerInventoryLog totals by product & standard categories (1L B, 500ml B, 500ml P)
     let mil1LBottle = 0;
@@ -1132,7 +1179,24 @@ const getManagerInventory = async (req, res, next) => {
       return acc;
     }, {});
 
-    // 5. Fetch DP Operational Audit & Petrol Allowance Transactions from DB2 (LedgerTransaction)
+    const adhocManagerSummary = {
+      totalAdHocUnitsLogged: adhocManagerInventoryRows.reduce((acc, r) => acc + (r.quantity || 0), 0),
+      totalAdHocEntries: adhocManagerInventoryRows.length,
+    };
+
+    // 5. Fetch AdHoc Products Master List dynamically from DB2
+    let adhocMasterProducts = [];
+    try {
+      const adhocMasterRes = await readFromApp(
+        `SELECT id, name, unit, material, section
+         FROM "InventoryItem"
+         WHERE LOWER(section) != 'milk' AND LOWER(name) NOT LIKE '%milk%'
+         ORDER BY name ASC`
+      );
+      adhocMasterProducts = adhocMasterRes.rows || [];
+    } catch (e) { /* silent */ }
+
+    // 6. Fetch DP Operational Audit & Petrol Allowance Transactions from DB2 (LedgerTransaction)
     let dpAuditItems = [];
     let petrolSummary = { totalPaid: 0, totalExtraPaid: 0, totalShortPaid: 0, hasAnyTransaction: false };
 
@@ -1171,38 +1235,26 @@ const getManagerInventory = async (req, res, next) => {
       const logItems = logItemsRes.rows || [];
 
       dpAuditItems = dps.map(dp => {
-        // Find all matching route allocations, delivery logs, and transactions for this DP on target date
         const dpAllocs = allocs.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
         const dpLogs = logs.filter(l => String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode));
         const dpTxs = txs.filter(t => String(t.dpId) === String(dp.id) || String(t.dpId) === String(dp.dpCode));
 
-        // Collect distinct assigned routes
         const routeNamesSet = new Set();
-        const defaultRoute = routes.find(r => String(r.assignedDpId) === String(dp.id));
-        
         dpAllocs.forEach(a => {
-          const rObj = routes.find(r => String(r.id) === String(a.routeId));
-          if (rObj) routeNamesSet.add(rObj.name);
+          const r = routes.find(rt => String(rt.id) === String(a.routeId));
+          if (r?.name) routeNamesSet.add(r.name);
         });
         dpLogs.forEach(l => {
-          const rObj = routes.find(r => String(r.id) === String(l.routeId));
-          if (rObj) routeNamesSet.add(rObj.name);
+          const r = routes.find(rt => String(rt.id) === String(l.routeId));
+          if (r?.name) routeNamesSet.add(r.name);
         });
-        dpTxs.forEach(t => {
-          const rObj = routes.find(r => String(r.id) === String(t.routeId));
-          if (rObj) routeNamesSet.add(rObj.name);
-        });
-
-        if (routeNamesSet.size === 0 && defaultRoute) {
-          routeNamesSet.add(defaultRoute.name);
-        }
-        if (routeNamesSet.size === 0 && dp.zone) {
-          routeNamesSet.add(dp.zone);
+        if (routeNamesSet.size === 0) {
+          const masterRoute = routes.find(r => String(r.assignedDpId) === String(dp.id));
+          if (masterRoute?.name) routeNamesSet.add(masterRoute.name);
         }
 
         const assignedRoutesStr = Array.from(routeNamesSet).join(', ') || 'Unassigned';
 
-        // Aggregate Milk Taken, Delivered, and Undelivered across ALL route records for this DP
         let qty1LBottleTaken = 0;
         let qtyHalfLBottleTaken = 0;
         let qtyHalfLPacketTaken = 0;
@@ -1301,7 +1353,6 @@ const getManagerInventory = async (req, res, next) => {
         const totalDelivered = Math.max(totalDeliveredLitresAcc, calculatedItemDeliveredLitres);
         const totalUndelivered = Math.max(0, totalTaken - totalDelivered);
 
-        // Aggregate Petrol / Payment Transactions (Paid, Extra Paid, Short Paid)
         let paid = null;
         let extraPaid = null;
         let shortPaid = null;
@@ -1365,7 +1416,6 @@ const getManagerInventory = async (req, res, next) => {
         };
       });
 
-      // Compute aggregate totals for petrol summary
       const validPaid = dpAuditItems.filter(i => i.paid !== null);
       petrolSummary = {
         totalPaid: validPaid.reduce((acc, i) => acc + (i.paid || 0), 0),
@@ -1377,7 +1427,6 @@ const getManagerInventory = async (req, res, next) => {
       console.warn('⚠️ DP Audit records query warning:', e.message);
     }
 
-    // Sort manager inventory by product priority: 1L Bottle → Half Litre Bottle (500ml B) → 500ml Packet
     const getProductPriority = (name) => {
       const n = (name || '').toLowerCase();
       if (n.includes('1l') || n.includes('1 l') || (n.includes('bottle') && n.includes('1'))) return 1;
@@ -1400,6 +1449,10 @@ const getManagerInventory = async (req, res, next) => {
       shopSale: {
         rows: shopSaleRows,
         summary: shopSaleSummary,
+        adhoc: {
+          rows: adhocShopSaleRows,
+          summary: adhocShopSaleSummary,
+        },
       },
       managerInventory: {
         rows: sortedRows,
@@ -1410,8 +1463,13 @@ const getManagerInventory = async (req, res, next) => {
           totalHalfLPacket: milHalfLPacket,
           totalUnits: milTotalUnits,
         },
+        adhoc: {
+          rows: adhocManagerInventoryRows,
+          summary: adhocManagerSummary,
+        },
         totalEntries: sortedRows.length,
       },
+      adhocProductsMaster: adhocMasterProducts,
     });
   } catch (err) { next(err); }
 };

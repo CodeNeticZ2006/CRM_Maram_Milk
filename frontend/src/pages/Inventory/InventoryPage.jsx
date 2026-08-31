@@ -10,7 +10,8 @@ import {
   MdVerified, MdWarning, MdSave, MdBusiness,
   MdInventory2, MdFlashOn, MdStorefront, MdDateRange,
   MdDownload, MdFileDownload, MdFactCheck,
-  MdLocalDrink, MdKitchen, MdOpacity, MdEco, MdShoppingCart
+  MdLocalDrink, MdKitchen, MdOpacity, MdEco, MdShoppingCart,
+  MdShoppingBag, MdAssignment
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -1435,6 +1436,108 @@ export default function InventoryPage() {
                 </div>
               </div>
 
+              {/* ── Section 1B: AdHoc Products — Daily Stock Sold ── */}
+              <div className="card" style={{ marginBottom: 20 }}>
+                <div className="card-header">
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#9333ea' }}>
+                      <MdShoppingBag style={{ color: '#9333ea', fontSize: 20 }} />
+                      AdHoc Products — Daily Stock Sold
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Product-wise AdHoc daily stock sold dynamically from Product Master & ShopSale
+                    </div>
+                  </div>
+                  <span className="badge" style={{ background: 'rgba(147,51,234,0.12)', color: '#9333ea', fontWeight: 700 }}>
+                    Total AdHoc Units Sold: {managerInvData?.shopSale?.adhoc?.summary?.totalAdHocUnitsSold || 0}
+                  </span>
+                </div>
+
+                <div style={{ padding: '16px 20px' }}>
+                  <div className="table-wrapper">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>DATE</th>
+                          <th>PRODUCT</th>
+                          <th>UNIT</th>
+                          <th>QUANTITY SOLD</th>
+                          <th>CREATED AT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const masterList = managerInvData?.adhocProductsMaster || [];
+                          const saleRows   = managerInvData?.shopSale?.adhoc?.rows || [];
+
+                          if (masterList.length === 0 && saleRows.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={5} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                                  No AdHoc products master records found.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return masterList.map(master => {
+                            const matchedSales = saleRows.filter(s => 
+                              String(s.productId) === String(master.id) || 
+                              (s.productName || '').toLowerCase() === (master.name || '').toLowerCase()
+                            );
+                            const qtySold = matchedSales.reduce((acc, s) => acc + (s.quantitySold || 0), 0);
+                            const latestSale = matchedSales[0];
+
+                            return (
+                              <tr key={master.id}>
+                                <td>
+                                  <span className="badge badge-gray" style={{ fontFamily: 'monospace' }}>
+                                    {miDate || managerInvData.date}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  {master.name}
+                                </td>
+                                <td>
+                                  <span className="badge badge-secondary" style={{ fontSize: 11 }}>
+                                    {master.unit || 'Units'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span
+                                    style={{
+                                      fontWeight: 800,
+                                      fontSize: 14,
+                                      color: qtySold > 0 ? '#9333ea' : 'var(--text-muted)'
+                                    }}
+                                  >
+                                    {qtySold > 0 ? `${qtySold} sold` : '0'}
+                                  </span>
+                                </td>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                  {latestSale?.createdAt 
+                                    ? new Date(latestSale.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true }) 
+                                    : '—'}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background: 'rgba(147,51,234,0.05)', fontWeight: 800 }}>
+                          <td colSpan={3} style={{ fontSize: 13, color: 'var(--text-secondary)' }}>TOTAL ADHOC UNITS SOLD</td>
+                          <td style={{ fontSize: 15, color: '#9333ea', fontWeight: 900 }}>
+                            {managerInvData?.shopSale?.adhoc?.summary?.totalAdHocUnitsSold || 0} units
+                          </td>
+                          <td />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
               {/* ── Section 2: ManagerInventoryLog ── */}
               <div className="card">
                 <div className="card-header">
@@ -1594,6 +1697,112 @@ export default function InventoryPage() {
                       </table>
                     </div>
                   )}
+                </div>
+              </div>
+
+              {/* ── Section 2B: AdHoc Products — Manager Inventory Log ── */}
+              <div className="card" style={{ marginTop: 20, marginBottom: 20 }}>
+                <div className="card-header">
+                  <div>
+                    <span className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#0284c7' }}>
+                      <MdAssignment style={{ color: '#0284c7', fontSize: 20 }} />
+                      AdHoc Products — Manager Inventory Log
+                    </span>
+                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      Product-wise AdHoc manager inventory log dynamically from Product Master & ManagerInventoryLog
+                    </div>
+                  </div>
+                  <span className="badge badge-blue">
+                    Total AdHoc Logged: {managerInvData?.managerInventory?.adhoc?.summary?.totalAdHocUnitsLogged || 0} units
+                  </span>
+                </div>
+
+                <div style={{ padding: '16px 20px' }}>
+                  <div className="table-wrapper">
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>DATE</th>
+                          <th>PRODUCT</th>
+                          <th>UNIT</th>
+                          <th>QUANTITY</th>
+                          <th>MANAGER</th>
+                          <th>LOGGED AT</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {(() => {
+                          const masterList = managerInvData?.adhocProductsMaster || [];
+                          const logRows    = managerInvData?.managerInventory?.adhoc?.rows || [];
+
+                          if (masterList.length === 0 && logRows.length === 0) {
+                            return (
+                              <tr>
+                                <td colSpan={6} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                                  No AdHoc manager inventory logs found.
+                                </td>
+                              </tr>
+                            );
+                          }
+
+                          return masterList.map(master => {
+                            const matchedLogs = logRows.filter(l => 
+                              String(l.productId) === String(master.id) || 
+                              (l.productName || '').toLowerCase() === (master.name || '').toLowerCase()
+                            );
+                            const qtyLogged = matchedLogs.reduce((acc, l) => acc + (parseInt(l.quantity || 0)), 0);
+                            const latestLog = matchedLogs[0];
+
+                            return (
+                              <tr key={master.id}>
+                                <td>
+                                  <span className="badge badge-gray" style={{ fontFamily: 'monospace' }}>
+                                    {miDate || managerInvData.date}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>
+                                  {master.name}
+                                </td>
+                                <td>
+                                  <span className="badge badge-secondary" style={{ fontSize: 11 }}>
+                                    {master.unit || 'Units'}
+                                  </span>
+                                </td>
+                                <td>
+                                  <span
+                                    style={{
+                                      fontWeight: 800,
+                                      fontSize: 14,
+                                      color: qtyLogged > 0 ? '#0284c7' : 'var(--text-muted)'
+                                    }}
+                                  >
+                                    {qtyLogged}
+                                  </span>
+                                </td>
+                                <td style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                                  {latestLog?.manager || 'Imran'}
+                                </td>
+                                <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
+                                  {latestLog?.createdAt 
+                                    ? new Date(latestLog.createdAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true }) 
+                                    : '—'}
+                                </td>
+                              </tr>
+                            );
+                          });
+                        })()}
+                      </tbody>
+                      <tfoot>
+                        <tr style={{ background: 'rgba(2,132,199,0.05)', fontWeight: 800 }}>
+                          <td colSpan={3} style={{ fontSize: 13, color: 'var(--text-secondary)' }}>TOTAL ADHOC UNITS LOGGED</td>
+                          <td style={{ fontSize: 15, color: '#0284c7', fontWeight: 900 }}>
+                            {managerInvData?.managerInventory?.adhoc?.summary?.totalAdHocUnitsLogged || 0} units
+                          </td>
+                          <td colSpan={2} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
                 </div>
               </div>
 
