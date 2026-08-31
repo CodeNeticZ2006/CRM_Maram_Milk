@@ -1820,19 +1820,36 @@ export default function InventoryPage() {
                     <tbody>
                       {scLoading ? (
                         <tr><td colSpan={7} style={{ textAlign: 'center', padding: 48 }}>Calculating Stock Correctness...</td></tr>
-                      ) : (!scData?.reconciliation || scData.reconciliation.length === 0) ? (
-                        <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No Milk inventory records found for reconciliation.</td></tr>
-                      ) : (
-                        scData.reconciliation.map(item => {
-                          const isCorrect = item.status === 'Correct';
-                          const isMismatch = item.status === 'Mismatch';
-                          const isMissing = item.status === 'Missing Log';
+                      ) : (() => {
+                        const mismatchItems = (scData?.reconciliation || []).filter(
+                          item => item.status === 'Mismatch' || (item.difference !== undefined && item.difference !== 0)
+                        );
 
+                        if (mismatchItems.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={7} style={{ textAlign: 'center', padding: 48 }}>
+                                <div style={{ fontSize: 36, marginBottom: 8, color: '#10b981' }}>
+                                  <MdCheckCircle />
+                                </div>
+                                <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 4, color: '#059669' }}>
+                                  All Product Quantities Match!
+                                </div>
+                                <div style={{ fontSize: 13, color: 'var(--text-muted)' }}>
+                                  No quantity mismatches found for {scData?.operationalDay || selectedDate}.
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        }
+
+                        return mismatchItems.map(item => {
+                          const isMismatch = item.status === 'Mismatch' || item.difference !== 0;
                           const diffValue = item.difference;
                           const diffDisplay = diffValue > 0 ? `+${diffValue}` : `${diffValue}`;
 
                           return (
-                            <tr key={item.productId} style={{ background: isMismatch ? 'rgba(239,68,68,0.02)' : isMissing ? 'rgba(245,158,11,0.02)' : 'transparent' }}>
+                            <tr key={item.productId} style={{ background: 'rgba(239,68,68,0.03)' }}>
                               <td style={{ fontWeight: 700 }}>
                                 <div style={{ fontSize: 14, color: 'var(--text-primary)' }}>{item.productName}</div>
                                 <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{item.unit}</div>
@@ -1847,27 +1864,15 @@ export default function InventoryPage() {
                                 <span style={{
                                   fontSize: 14,
                                   fontWeight: 800,
-                                  color: diffValue < 0 ? '#ef4444' : diffValue > 0 ? '#10b981' : 'var(--text-muted)'
+                                  color: diffValue < 0 ? '#ef4444' : '#10b981'
                                 }}>
-                                  {isMissing ? '—' : `${diffDisplay} ${item.unit}`}
+                                  {diffDisplay} {item.unit}
                                 </span>
                               </td>
                               <td>
-                                {isCorrect && (
-                                  <span className="badge badge-success" style={{ fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    <MdCheckCircle /> ✅ Correct
-                                  </span>
-                                )}
-                                {isMismatch && (
-                                  <span className="badge badge-danger" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    <MdCancel /> 🔴 Mismatch ({diffDisplay})
-                                  </span>
-                                )}
-                                {isMissing && (
-                                  <span className="badge badge-warning" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                    <MdWarningAmber /> ⚠️ Missing Log
-                                  </span>
-                                )}
+                                <span className="badge badge-danger" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                  <MdCancel /> 🔴 Quantity Mismatch ({diffDisplay})
+                                </span>
                               </td>
                               <td>
                                 <span className={`badge ${item.reviewStatus === 'Resolved' ? 'badge-success' : item.reviewStatus === 'Reviewed' ? 'badge-warning' : 'badge-danger'}`} style={{ fontWeight: 700 }}>
@@ -1875,24 +1880,22 @@ export default function InventoryPage() {
                                 </span>
                               </td>
                               <td>
-                                {!isCorrect && (
-                                  <button
-                                    className="btn btn-secondary btn-sm"
-                                    style={{ fontSize: 11.5, padding: '4px 10px' }}
-                                    onClick={() => {
-                                      setReviewItem(item);
-                                      setReviewForm({ reviewStatus: item.reviewStatus === 'Pending Review' ? 'Reviewed' : item.reviewStatus, remarks: item.remarks || '' });
-                                      setShowReviewModal(true);
-                                    }}
-                                  >
-                                    <MdEdit /> Review / Resolve
-                                  </button>
-                                )}
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  style={{ fontSize: 11.5, padding: '4px 10px' }}
+                                  onClick={() => {
+                                    setReviewItem(item);
+                                    setReviewForm({ reviewStatus: item.reviewStatus === 'Pending Review' ? 'Reviewed' : item.reviewStatus, remarks: item.remarks || '' });
+                                    setShowReviewModal(true);
+                                  }}
+                                >
+                                  <MdEdit /> Review / Resolve
+                                </button>
                               </td>
                             </tr>
                           );
-                        })
-                      )}
+                        });
+                      })()}
                     </tbody>
                   </table>
                 </div>

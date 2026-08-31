@@ -80,6 +80,46 @@ export default function Topbar({ onToggleMobileSidebar }) {
     return () => clearInterval(interval);
   }, []);
 
+  // One-time Admin Login Notification for Quantity Mismatch
+  useEffect(() => {
+    if (!opDayData) return;
+    const opDate = opDayData.date || new Date().toISOString().slice(0, 10);
+    const sessionKey = `inventory_mismatch_alert_${opDate}`;
+
+    // Skip if notification has already been triggered in this browser session
+    if (sessionStorage.getItem(sessionKey)) return;
+
+    const checkStockMismatchOnLogin = async () => {
+      try {
+        const res = await api.get('/stock-correctness/today');
+        if (res.data?.success && Array.isArray(res.data.data?.reconciliation)) {
+          const mismatches = res.data.data.reconciliation.filter(
+            item => item.status === 'Mismatch' || (item.difference !== undefined && item.difference !== 0)
+          );
+
+          if (mismatches.length > 0) {
+            // Set sessionStorage flag so it ONLY appears ONCE per login session
+            sessionStorage.setItem(sessionKey, 'true');
+
+            const mismatchNames = mismatches.map(m => `${m.productName} (${m.difference > 0 ? '+' : ''}${m.difference} ${m.unit})`).join(', ');
+
+            toast.error(
+              `⚠️ Stock Mismatch Alert: ${mismatches.length} product(s) have a quantity mismatch (${mismatchNames}). Check Inventory > Stock Correctness.`,
+              {
+                duration: 10000,
+                id: 'mismatch-login-toast',
+              }
+            );
+          }
+        }
+      } catch {
+        /* silent */
+      }
+    };
+
+    checkStockMismatchOnLogin();
+  }, [opDayData]);
+
   const handleMarkRead = async (notifId = null, markAll = false) => {
     try {
       await api.post('/notifications/mark-read', { notificationId: notifId, markAll });
