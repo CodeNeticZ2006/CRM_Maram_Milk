@@ -281,14 +281,7 @@ const getDpsByRoute = async (req, res, next) => {
         dps = dpRes.rows;
       }
     } catch (e) {
-      console.warn('⚠️ DB2 getDpsByRoute warning:', e.message);
-      // Fallback static DPs if DB2 is unavailable
-      dps = [
-        { id: 'dp-1', name: 'Ansar Ali',      dpCode: 'DP-101', mobileNumber: '', vehicleNumber: 'TN 39 AB 1024', zone: 'Zone A' },
-        { id: 'dp-2', name: 'Karthik Raja',   dpCode: 'DP-102', mobileNumber: '', vehicleNumber: 'TN 39 CD 5678', zone: 'Zone A' },
-        { id: 'dp-3', name: 'Saravana Kumar', dpCode: 'DP-103', mobileNumber: '', vehicleNumber: 'TN 39 EF 9012', zone: 'Zone B' },
-        { id: 'dp-4', name: 'Ramesh Babu',    dpCode: 'DP-104', mobileNumber: '', vehicleNumber: 'TN 39 GH 3456', zone: 'Zone B' },
-      ];
+      dps = [];
     }
 
     res.json({

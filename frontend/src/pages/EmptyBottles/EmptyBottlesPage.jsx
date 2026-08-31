@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MdWineBar, MdRefresh, MdWarning, MdCheckCircle,
@@ -46,6 +46,7 @@ export default function EmptyBottlesPage() {
   const [stats, setStats]       = useState({ totalIssued: 0, totalReturned: 0, returnRate: 0, pendingIncidents: 0 });
   const [isActiveDay, setIsActiveDay] = useState(false);
   const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(false);
   const [search, setSearch]     = useState('');
   const [selectedDpId, setSelectedDpId] = useState('');
   const [expandedDpId, setExpandedDpId] = useState(null);
@@ -80,6 +81,7 @@ export default function EmptyBottlesPage() {
     if (filterMode === 'custom'  && (!startDate || !endDate)) return;
 
     setLoading(true);
+    setError(false);
     try {
       const params = {
         mode:       filterMode,
@@ -97,7 +99,8 @@ export default function EmptyBottlesPage() {
       setIncidents(res.data.incidents || []);
       setIsActiveDay(Boolean(res.data.isActiveDay));
     } catch {
-      toast.error('Failed to load DB2 empty bottle logs.');
+      setError(true);
+      toast.error('Failed to load empty bottle audit logs.');
     } finally {
       setLoading(false);
     }
@@ -414,7 +417,7 @@ export default function EmptyBottlesPage() {
                     const isExpanded = expandedDpId === dp.id;
                     const totalMissing = dp.missing1L + dp.missingHalfL;
                     return (
-                      <>
+                      <Fragment key={dp.id}>
                         <tr
                           key={dp.id}
                           style={{ cursor: 'pointer', background: selectedDpId === dp.id ? 'rgba(59,130,246,0.05)' : 'transparent' }}
@@ -519,7 +522,7 @@ export default function EmptyBottlesPage() {
                             </td>
                           </tr>
                         )}
-                      </>
+                      </Fragment>
                     );
                   })
                 )}
