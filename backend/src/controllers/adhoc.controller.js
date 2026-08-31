@@ -1243,4 +1243,7 @@ module.exports = {
   getDpAdhocAudit,
   getAdhocReportData,
   overrideAdhocStock,
+  resolveDb2InventoryItem,
+  syncAdhocProductToDB2,
 };
+

@@ -3,13 +3,14 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
-const { testConnections } = require('./config/database');
+const { testConnections, getDatabaseHealth } = require('./config/database');
 const { runMigrations } = require('./migrations/001_create_tables');
 const { runMigration002 } = require('./migrations/002_add_maps_url');
 const { runMigration003 } = require('./migrations/003_alter_assigned_route_id');
 const { runMigration004 } = require('./migrations/004_create_operational_days');
 const { runAdhocMigrations } = require('./migrations/005_adhoc_inventory_and_sales');
 const runMigration006 = require('./migrations/006_stock_correctness');
+const { runMigration007 } = require('./migrations/007_seed_missing_inventory_items');
 const { seedSuperAdmin } = require('./utils/seed');
 const { errorHandler } = require('./middleware/errorHandler');
 const { checkAndTriggerRollover } = require('./services/operationalDay.service');
@@ -78,9 +79,19 @@ app.use((req, res, next) => {
 });
 
 // ── Health Check ─────────────────────────────────────────────────────────────
-app.get('/health', (req, res) => {
-  res.json({ status: 'ok', service: 'Maram Milk CRM API', timestamp: new Date().toISOString() });
-});
+const healthHandler = async (req, res) => {
+  const dbHealth = await getDatabaseHealth();
+  res.json({
+    status: 'ok',
+    service: 'Maram Milk CRM API',
+    timestamp: new Date().toISOString(),
+    databases: dbHealth,
+  });
+};
+
+app.get('/health', healthHandler);
+app.get('/api/health', healthHandler);
+
 
 // ── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api/auth',          authLimiter, authRoutes);
@@ -125,6 +136,7 @@ const start = async () => {
       await runMigration004();
       await runAdhocMigrations();
       await runMigration006();
+      await runMigration007();
       await seedSuperAdmin();
       // Initialize/verify active operational day on boot
       await checkAndTriggerRollover();

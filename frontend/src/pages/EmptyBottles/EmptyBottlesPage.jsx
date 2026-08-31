@@ -170,7 +170,7 @@ export default function EmptyBottlesPage() {
         {[
           { label: 'Total Bottles Dispatched', value: stats.totalIssued,      suffix: 'Bottles',  icon: <MdLocalShipping />, color: 'rgba(59,130,246,0.1)',  iconColor: 'var(--primary)' },
           { label: 'Empty Bottles Collected',  value: stats.totalReturned,    suffix: 'Bottles',  icon: <MdCheckCircle />,   color: 'rgba(16,185,129,0.1)', iconColor: '#10b981'        },
-          { label: 'Overall Collection Rate',  value: `${stats.returnRate}%`, suffix: null,       icon: <MdFactCheck />,     color: 'rgba(139,92,246,0.1)', iconColor: 'var(--primary)' },
+          { label: 'Active Delivery Persons',  value: allDps.length || logs.length, suffix: 'DPs', icon: <MdPerson />,       color: 'rgba(139,92,246,0.1)', iconColor: 'var(--primary)' },
           { label: 'Manager Incident Flags',   value: stats.pendingIncidents, suffix: 'Pending',  icon: <MdWarning />,       color: 'rgba(239,68,68,0.1)',  iconColor: '#ef4444',
             borderColor: stats.pendingIncidents > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border)' },
         ].map(({ label, value, suffix, icon, color, iconColor, borderColor }) => (
@@ -394,17 +394,16 @@ export default function EmptyBottlesPage() {
                   <th>DISPATCHED (1L / ½L)</th>
                   <th>COLLECTED (1L / ½L)</th>
                   <th style={{ color: '#ef4444', minWidth: 130 }}>MISSING / BROKEN</th>
-                  <th>RETURN RATE %</th>
                   <th style={{ minWidth: 130 }}>INCIDENT FLAGS</th>
                   <th style={{ minWidth: 130 }}>DATE AUDIT</th>
                 </tr>
               </thead>
               <tbody>
                 {loading ? (
-                  <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 bottle collection records...</td></tr>
+                  <tr><td colSpan={8} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 bottle collection records...</td></tr>
                 ) : filteredLogs.length === 0 ? (
                   <tr>
-                    <td colSpan={9} style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
                       <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
                       <div style={{ fontWeight: 700, marginBottom: 4 }}>No empty bottle records found</div>
                       <div style={{ fontSize: 13 }}>for {periodLabel}{isActiveDay ? ' — no data recorded yet for this operational day.' : '.'}</div>
@@ -450,11 +449,6 @@ export default function EmptyBottlesPage() {
                             </span>
                           </td>
                           <td>
-                            <span className={`badge ${dp.returnRate >= 95 ? 'badge-success' : dp.returnRate >= 85 ? 'badge-warning' : 'badge-danger'}`} style={{ fontWeight: 800 }}>
-                              {dp.returnRate}%
-                            </span>
-                          </td>
-                          <td>
                             {dp.hasFlag ? (
                               <span className="badge badge-danger" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <MdWarning /> {dp.flagCount || 1} Incidents
@@ -476,7 +470,7 @@ export default function EmptyBottlesPage() {
                         {/* Expandable Date-Wise Sub-Table */}
                         {isExpanded && dp.dateLogs && (
                           <tr key={`sub-${dp.id}`}>
-                            <td colSpan={9} style={{ background: 'rgba(15,23,42,0.025)', padding: '16px 24px' }}>
+                            <td colSpan={8} style={{ background: 'rgba(15,23,42,0.025)', padding: '16px 24px' }}>
                               <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--primary)', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 6 }}>
                                 <MdCalendarToday /> Date-Wise Bottle Return Audit: <strong>{dp.dpName}</strong>
                                 <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 400 }}>({dp.dateLogs.length} day{dp.dateLogs.length !== 1 ? 's' : ''} audited)</span>
@@ -492,7 +486,6 @@ export default function EmptyBottlesPage() {
                                       <th>½L DISPATCHED</th>
                                       <th>½L RETURNED</th>
                                       <th>MISSING / BROKEN</th>
-                                      <th>COLLECTION %</th>
                                       <th>AUDIT NOTES</th>
                                     </tr>
                                   </thead>
@@ -513,17 +506,6 @@ export default function EmptyBottlesPage() {
                                           <td style={{ color: '#10b981', fontWeight: 700 }}>{dLog.returnedHalfL}</td>
                                           <td style={{ color: dayMissing > 0 ? '#ef4444' : 'var(--text-muted)', fontWeight: 800 }}>
                                             {dLog.isFuture || dLog.isBeforeDb2 ? '—' : dayMissing > 0 ? `${dLog.missing1L} (1L) / ${dLog.missingHalfL} (½L)` : '0'}
-                                          </td>
-                                          <td>
-                                            {dLog.isFuture || dLog.isBeforeDb2 ? (
-                                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>{dLog.isFuture ? 'Upcoming' : 'Pre-DB2'}</span>
-                                            ) : !dLog.hasRecords ? (
-                                              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>No record</span>
-                                            ) : (
-                                              <span className={`badge ${dLog.returnRate >= 95 ? 'badge-success' : dLog.returnRate >= 85 ? 'badge-warning' : 'badge-danger'}`} style={{ fontSize: 11 }}>
-                                                {dLog.returnRate}%
-                                              </span>
-                                            )}
                                           </td>
                                           <td style={{ fontSize: 12, color: dLog.hasFlag ? '#ef4444' : 'var(--text-muted)', fontStyle: 'italic' }}>
                                             {dLog.isFuture ? '—' : dLog.notes || (!dLog.hasRecords ? 'No record yet' : 'Normal return')}

@@ -2,12 +2,62 @@ const { readFromApp, writeToApp, readFromCRM, writeToCRM } = require('../config/
 const { randomUUID } = require('crypto');
 const ExcelJS = require('exceljs');
 const { getExpectedOperationalDate } = require('../services/operationalDay.service');
+const { resolveDb2InventoryItem } = require('./adhoc.controller');
 
 // Get active operational date string in IST (7:00 PM IST boundary)
 const getISTDate = () => getExpectedOperationalDate();
 
 // Low stock threshold default (e.g. 20 units)
 const LOW_STOCK_THRESHOLD = 20;
+
+/** Helper: Resolves DB1 Product ID to DB2 InventoryItem ID, Name, and Unit */
+const resolveTargetDb2ItemId = async (inventoryItemId) => {
+  let db2ItemId = inventoryItemId;
+  let itemName = 'Inventory Item';
+  let itemUnit = 'Litres';
+  let category = '';
+
+  try {
+    const itemRes = await readFromApp(
+      'SELECT id, name, unit, material FROM "InventoryItem" WHERE id = $1',
+      [inventoryItemId]
+    );
+    if (itemRes.rows.length > 0) {
+      return {
+        db2ItemId: itemRes.rows[0].id,
+        itemName: itemRes.rows[0].name,
+        itemUnit: itemRes.rows[0].unit || 'Litres',
+        category: itemRes.rows[0].material || '',
+      };
+    }
+
+    // Fallback: If inventoryItemId is a DB1 product ID, resolve via CRM DB products
+    const db1ProdRes = await readFromCRM(
+      'SELECT name, unit, category FROM products WHERE id = $1',
+      [inventoryItemId]
+    ).catch(() => ({ rows: [] }));
+
+    if (db1ProdRes.rows.length > 0) {
+      const prod = db1ProdRes.rows[0];
+      itemName = prod.name;
+      itemUnit = prod.unit || 'Litres';
+      category = prod.category || '';
+
+      const db2ItemsRes = await readFromApp('SELECT id, name, unit, material FROM "InventoryItem"').catch(() => ({ rows: [] }));
+      const db2Items = db2ItemsRes.rows || [];
+
+      const match = resolveDb2InventoryItem(prod.name, prod.unit || '', category, db2Items);
+      if (match) {
+        db2ItemId = match.id;
+        itemName = match.name;
+        itemUnit = match.unit || itemUnit;
+      }
+    }
+  } catch (e) { /* silent */ }
+
+  return { db2ItemId, itemName, itemUnit, category };
+};
+
 
 // ─────────────────────────────────────────────
 // GET /api/inventory — Live Stock & Summary KPIs
@@ -206,13 +256,15 @@ const updateInventory = async (req, res, next) => {
     const newAdded = parseFloat(newStockAdded || 0);
     const currStock = parseFloat(currentStock || 0);
 
+    const { db2ItemId } = await resolveTargetDb2ItemId(inventoryItemId);
+
     // Check if record exists in DB2
     let existingId = null;
     let carriedOver = 0;
     try {
       const rec = await readFromApp(
         'SELECT id, "carriedOverStock" FROM "InventoryDailyRecord" WHERE "inventoryItemId" = $1 AND date = $2',
-        [inventoryItemId, targetDate]
+        [db2ItemId, targetDate]
       );
       if (rec.rows.length > 0) {
         existingId = rec.rows[0].id;
@@ -233,7 +285,7 @@ const updateInventory = async (req, res, next) => {
         `SELECT "currentStock" FROM "InventoryDailyRecord"
          WHERE "inventoryItemId" = $1 AND date < $2
          ORDER BY date DESC LIMIT 1`,
-        [inventoryItemId, targetDate]
+        [db2ItemId, targetDate]
       );
       if (prevRes.rows.length > 0) {
         carriedOver = parseFloat(prevRes.rows[0].currentStock || 0);
@@ -244,7 +296,7 @@ const updateInventory = async (req, res, next) => {
         `INSERT INTO "InventoryDailyRecord"
            (id, date, "inventoryItemId", "currentStock", "carriedOverStock", "newStockAdded", "expectedStock", "createdAt", "updatedAt")
          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW())`,
-        [newId, targetDate, inventoryItemId, currStock, carriedOver, newAdded, carriedOver + newAdded]
+        [newId, targetDate, db2ItemId, currStock, carriedOver, newAdded, carriedOver + newAdded]
       );
     }
 
@@ -254,6 +306,7 @@ const updateInventory = async (req, res, next) => {
     });
   } catch (err) { next(err); }
 };
+
 
 // ─────────────────────────────────────────────
 // POST /api/inventory/add-stock — Super Admin Add Stock with Audit History & DB2 Sync
@@ -544,26 +597,15 @@ const correctStock = async (req, res, next) => {
     const dateStr = getISTDate();
     const addedBy = req.admin?.name || req.admin?.email || 'Super Admin';
 
-    // Fetch current item info
-    let itemName = 'Inventory Item';
-    let itemUnit = 'Litres';
-    try {
-      const itemRes = await readFromApp(
-        'SELECT name, unit FROM "InventoryItem" WHERE id = $1',
-        [inventoryItemId]
-      );
-      if (itemRes.rows.length > 0) {
-        itemName = itemRes.rows[0].name;
-        itemUnit = itemRes.rows[0].unit || 'Litres';
-      }
-    } catch (e) { /* silent */ }
+    // Resolve target DB2 InventoryItem ID and details
+    const { db2ItemId, itemName, itemUnit, category } = await resolveTargetDb2ItemId(inventoryItemId);
 
     let previousStock = 0;
     let existingRecordId = null;
     try {
       const currentRes = await readFromApp(
         'SELECT id, "currentStock" FROM "InventoryDailyRecord" WHERE "inventoryItemId" = $1 AND date = $2',
-        [inventoryItemId, dateStr]
+        [db2ItemId, dateStr]
       );
       if (currentRes.rows.length > 0) {
         existingRecordId = currentRes.rows[0].id;
@@ -583,7 +625,22 @@ const correctStock = async (req, res, next) => {
       );
     } catch (e) { /* silent */ }
 
-    // 2. DB2 update
+    // If adhoc product / non-milk, also update adhoc_central_inventory in DB1 CRM DB
+    if (category === 'adhoc' || category === 'AdHoc' || (!itemName.toLowerCase().includes('milk'))) {
+      try {
+        await writeToCRM(
+          `INSERT INTO adhoc_central_inventory (id, product_id, date, opening_stock, added_stock, dp_issued_stock, remaining_stock, updated_by, updated_at)
+           VALUES ($1, $2, $3, 0, $4, 0, $4, $5, NOW())
+           ON CONFLICT (product_id, date) DO UPDATE SET
+             remaining_stock = EXCLUDED.remaining_stock,
+             updated_by = EXCLUDED.updated_by,
+             updated_at = NOW()`,
+          [randomUUID(), inventoryItemId, dateStr, newStock, addedBy]
+        );
+      } catch (adhocErr) { /* silent */ }
+    }
+
+    // 2. DB2 update targeting resolved db2ItemId
     try {
       if (existingRecordId) {
         await writeToApp(
@@ -598,10 +655,11 @@ const correctStock = async (req, res, next) => {
           `INSERT INTO "InventoryDailyRecord"
              (id, date, "inventoryItemId", "currentStock", "carriedOverStock", "newStockAdded", "expectedStock", "createdAt", "updatedAt")
            VALUES ($1, $2, $3, $4, $5, 0, $4, NOW(), NOW())`,
-          [newRecordId, dateStr, inventoryItemId, newStock, previousStock]
+          [newRecordId, dateStr, db2ItemId, newStock, previousStock]
         );
       }
     } catch (e) { /* silent */ }
+
 
     res.json({
       success: true,

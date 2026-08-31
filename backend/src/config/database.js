@@ -7,9 +7,10 @@ types.setTypeParser(1082, (val) => val);
 // ================================================
 // DB1 — Super Admin CRM (Singapore) — READ + WRITE
 // ================================================
+const crmDbUrl = process.env.CRM_DB_URL || process.env.CRM_DATABASE_URL || process.env.DATABASE_URL;
 const crmPool = new Pool({
-  connectionString: process.env.CRM_DB_URL,
-  ssl: process.env.CRM_DB_URL && (process.env.CRM_DB_URL.includes('localhost') || process.env.CRM_DB_URL.includes('127.0.0.1'))
+  connectionString: crmDbUrl,
+  ssl: crmDbUrl && (crmDbUrl.includes('localhost') || crmDbUrl.includes('127.0.0.1'))
     ? false
     : { rejectUnauthorized: false },
   max: 20,
@@ -23,11 +24,12 @@ crmPool.on('error', (err) => {
 });
 
 // ================================================
-// DB2 — Manager App DB (Oregon) — READ-ONLY
+// DB2 — Manager App DB (Oregon) — READ-ONLY / SYNC
 // ================================================
+const appDbUrl = process.env.APP_DB_URL || process.env.MANAGER_DB_URL || process.env.APP_DATABASE_URL;
 const appPool = new Pool({
-  connectionString: process.env.APP_DB_URL,
-  ssl: process.env.APP_DB_URL && (process.env.APP_DB_URL.includes('localhost') || process.env.APP_DB_URL.includes('127.0.0.1'))
+  connectionString: appDbUrl,
+  ssl: appDbUrl && (appDbUrl.includes('localhost') || appDbUrl.includes('127.0.0.1'))
     ? false
     : { rejectUnauthorized: false },
   max: 10,
@@ -42,18 +44,43 @@ appPool.on('error', (err) => {
 // Test connections on startup
 const testConnections = async () => {
   try {
-    const crmRes = await crmPool.query('SELECT NOW()');
-    console.log('✅ DB1 (CRM - Singapore) connected:', crmRes.rows[0].now);
+    const crmRes = await crmPool.query('SELECT NOW(), current_database() as db');
+    console.log(`✅ DB1 (CRM - Singapore) connected: DB "${crmRes.rows[0].db}" at ${crmRes.rows[0].now}`);
   } catch (err) {
     console.error('⚠️  DB1 (CRM) connection failed (will retry on requests):', err.message);
   }
 
   try {
-    const appRes = await appPool.query('SELECT NOW()');
-    console.log('✅ DB2 (App - Oregon) connected [READ-ONLY]:', appRes.rows[0].now);
+    const appRes = await appPool.query('SELECT NOW(), current_database() as db');
+    console.log(`✅ DB2 (App - Oregon) connected: DB "${appRes.rows[0].db}" at ${appRes.rows[0].now}`);
   } catch (err) {
     console.error('⚠️  DB2 (App) connection failed (will retry on requests):', err.message);
   }
+};
+
+/** Safe Database Health Diagnostics (No passwords or full URLs exposed) */
+const getDatabaseHealth = async () => {
+  let db1Status = { status: 'Disconnected', database: null, schema: 'public', error: null };
+  let db2Status = { status: 'Disconnected', database: null, schema: 'public', error: null };
+
+  try {
+    const res1 = await crmPool.query('SELECT current_database() as db');
+    db1Status = { status: 'Connected', database: res1.rows[0].db, schema: 'public' };
+  } catch (err) {
+    db1Status.error = err.message;
+  }
+
+  try {
+    const res2 = await appPool.query('SELECT current_database() as db');
+    db2Status = { status: 'Connected', database: res2.rows[0].db, schema: 'public' };
+  } catch (err) {
+    db2Status.error = err.message;
+  }
+
+  return {
+    crmStorageDB: db1Status,
+    managerAppDB: db2Status,
+  };
 };
 
 // ================================================
@@ -72,4 +99,5 @@ const readFromApp = (query, params) => appPool.query(query, params);
 /** Write to DB2 (Manager App - Inventory updates by Super Admin) */
 const writeToApp = (query, params) => appPool.query(query, params);
 
-module.exports = { crmPool, appPool, writeToCRM, readFromCRM, readFromApp, writeToApp, testConnections };
+module.exports = { crmPool, appPool, writeToCRM, readFromCRM, readFromApp, writeToApp, testConnections, getDatabaseHealth };
+
