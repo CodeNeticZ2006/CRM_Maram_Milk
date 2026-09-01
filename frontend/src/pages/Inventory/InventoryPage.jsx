@@ -553,9 +553,11 @@ export default function InventoryPage() {
           <button className="btn btn-secondary btn-sm" onClick={fetchInventory} disabled={loading}>
             <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
           </button>
-          <button className="btn btn-primary" id="inventory-add-stock-btn" onClick={() => openAddModal()}>
-            <MdAdd style={{ fontSize: 18 }} /> Add Stock
-          </button>
+          {activeTab === 'inventory' && (
+            <button className="btn btn-primary" id="inventory-add-stock-btn" onClick={() => openAddModal()}>
+              <MdAdd style={{ fontSize: 18 }} /> Add Stock
+            </button>
+          )}
         </div>
       </div>
 

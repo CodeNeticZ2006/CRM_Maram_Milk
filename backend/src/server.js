@@ -137,7 +137,8 @@ const start = async () => {
       await runMigration004();
       await runAdhocMigrations();
       await runMigration006();
-      await runMigration007();
+      await runMigration007RouteCustomers();
+      await runMigration007InventoryItems();
       await seedSuperAdmin();
       // Initialize/verify active operational day on boot
       await checkAndTriggerRollover();

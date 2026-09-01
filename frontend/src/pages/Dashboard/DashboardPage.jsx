@@ -41,8 +41,8 @@ export default function DashboardPage() {
           api.get('/dashboard/stats'),
           api.get('/dashboard/monthly-trends'),
         ]);
-        setStats(statsRes.data.data);
-        setTrends(trendsRes.data.data);
+        setStats(statsRes.data?.data || {});
+        setTrends(trendsRes.data?.data || { customer_growth: [], revenue_trends: [] });
       } catch {
         toast.error('Failed to load dashboard');
       } finally {
@@ -180,7 +180,7 @@ export default function DashboardPage() {
           </div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={trends.customer_growth}>
+              <AreaChart data={trends?.customer_growth || []}>
                 <defs>
                   <linearGradient id="custGrad" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3b82f6" stopOpacity={0.3} />
@@ -204,7 +204,7 @@ export default function DashboardPage() {
           </div>
           <div className="card-body">
             <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={trends.revenue_trends}>
+              <BarChart data={trends?.revenue_trends || []}>
                 <CartesianGrid strokeDasharray="3 3" stroke="var(--border)" />
                 <XAxis dataKey="month" tick={{ fontSize: 10 }} />
                 <YAxis tick={{ fontSize: 10 }} tickFormatter={(v) => `₹${(v/1000).toFixed(0)}k`} />

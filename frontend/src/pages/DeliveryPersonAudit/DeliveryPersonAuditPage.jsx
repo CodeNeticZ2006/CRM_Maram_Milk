@@ -5,11 +5,13 @@ import {
   MdCalendarToday, MdFilterList, MdCheckCircle, MdCancel,
   MdEventNote, MdChevronLeft, MdChevronRight, MdClose,
   MdSearch, MdAssignment, MdDateRange, MdInfoOutline,
-  MdAdd, MdEdit
+  MdAdd, MdEdit, MdDownload
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useOperationalDay from '../../hooks/useOperationalDay';
+import useAuthStore from '../../store/authStore';
+import DpAuditReportModal from './components/DpAuditReportModal';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
@@ -47,8 +49,10 @@ class DPErrorBoundary extends Component {
 }
 
 function DeliveryPersonAuditContent() {
+  const { admin } = useAuthStore();
   // Main Tab State: 'attendance-route' | 'daily-audit' | 'monthly-audit' | 'dp-overview'
   const [activeTab, setActiveTab] = useState('attendance-route');
+  const [showReportModal, setShowReportModal] = useState(false);
 
   // Active operational day (7:00 PM IST boundary — backend is source of truth)
   const { operationalDate, loading: opDayLoading } = useOperationalDay();
@@ -503,13 +507,23 @@ function DeliveryPersonAuditContent() {
           <h1 className="page-title">Delivery Person Audit</h1>
           <p className="page-subtitle">Delivery Partner (DP) profiles, attendance, daily dispatches, and monthly calendar audit synced live from DB2</p>
         </div>
-        <button
-          className="btn btn-secondary btn-sm"
-          onClick={handleRefreshAll}
-          disabled={attendanceLoad || dpLoading || dailyLoading}
-        >
-          <MdRefresh className={(attendanceLoad || dpLoading || dailyLoading) ? 'spin' : ''} /> Refresh
-        </button>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            className="btn btn-success"
+            id="dp-audit-generate-report-btn"
+            onClick={() => setShowReportModal(true)}
+            style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#fff', border: 'none', display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+          >
+            <MdDownload style={{ fontSize: 18 }} /> Generate Report
+          </button>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={handleRefreshAll}
+            disabled={attendanceLoad || dpLoading || dailyLoading}
+          >
+            <MdRefresh className={(attendanceLoad || dpLoading || dailyLoading) ? 'spin' : ''} /> Refresh
+          </button>
+        </div>
       </div>
 
       {/* DB2 Manager App Sync Banner */}
@@ -1657,6 +1671,17 @@ function DeliveryPersonAuditContent() {
           </div>
         )}
       </AnimatePresence>
+
+      {/* ── DP AUDIT EXCEL REPORT GENERATOR MODAL ── */}
+      <DpAuditReportModal
+        isOpen={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        activeTab={activeTab}
+        deliveryPersons={deliveryPersons}
+        selectedDpId={selectedDpId}
+        operationalDate={operationalDate}
+        admin={admin}
+      />
     </motion.div>
   );
 }

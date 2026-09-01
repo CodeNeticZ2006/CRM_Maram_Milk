@@ -1,9 +1,25 @@
 import { create } from 'zustand';
 import api from '../services/api';
 
+const getStoredToken = () => {
+  const t = localStorage.getItem('crm_token');
+  if (!t || t === 'undefined' || t === 'null') return null;
+  return t;
+};
+
+const getStoredAdmin = () => {
+  try {
+    const a = localStorage.getItem('crm_admin');
+    if (!a || a === 'undefined' || a === 'null') return null;
+    return JSON.parse(a);
+  } catch {
+    return null;
+  }
+};
+
 const useAuthStore = create((set) => ({
-  admin: JSON.parse(localStorage.getItem('crm_admin') || 'null'),
-  token: localStorage.getItem('crm_token') || null,
+  admin: getStoredAdmin(),
+  token: getStoredToken(),
   loading: false,
   error: null,
 

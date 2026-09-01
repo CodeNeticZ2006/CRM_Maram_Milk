@@ -1,4 +1,4 @@
-const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
+const { readFromCRM, writeToCRM, readFromApp, writeToApp } = require('../config/database');
 
 // ── PRODUCTS ──────────────────────────────────────────────
 
@@ -18,7 +18,23 @@ const createProduct = async (req, res, next) => {
       'INSERT INTO products (name, category, unit, price_per_unit, sku, image_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
       [name, category || 'Milk', unit, price_per_unit, generatedSku, image_url || null, status]
     );
-    res.status(201).json({ success: true, data: result.rows[0] });
+
+    const newProd = result.rows[0];
+
+    // Synchronize newly created product into DB2 (Manager App maram_test) "InventoryItem" table
+    try {
+      const material = (unit || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
+      const section = category || 'AdHoc';
+      await writeToApp(
+        'INSERT INTO "InventoryItem" (id, name, unit, material, section) VALUES ($1, $2, $3, $4, $5)',
+        [newProd.id, name, unit, material, section]
+      );
+      console.log(`✅ Synced new product "${name}" to DB2 (maram_test) "InventoryItem" table.`);
+    } catch (db2Err) {
+      console.warn('⚠️ DB2 InventoryItem sync warning:', db2Err.message);
+    }
+
+    res.status(201).json({ success: true, data: newProd });
   } catch (err) { next(err); }
 };
 
@@ -30,6 +46,25 @@ const updateProduct = async (req, res, next) => {
       'UPDATE products SET name=$1, category=$2, unit=$3, price_per_unit=$4, sku=$5, image_url=$6, status=$7 WHERE id=$8',
       [name, category, unit, price_per_unit, sku, image_url, status, id]
     );
+
+    // Synchronize update to DB2 "InventoryItem"
+    try {
+      const material = (unit || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
+      const section = category || 'AdHoc';
+      const updatedInApp = await writeToApp(
+        'UPDATE "InventoryItem" SET name=$1, unit=$2, material=$3, section=$4 WHERE id=$5 OR LOWER(name)=$6',
+        [name, unit, material, section, id, (name || '').toLowerCase()]
+      );
+      if (updatedInApp.rowCount === 0 && name) {
+        await writeToApp(
+          'INSERT INTO "InventoryItem" (id, name, unit, material, section) VALUES ($1, $2, $3, $4, $5)',
+          [id, name, unit, material, section]
+        );
+      }
+    } catch (e) {
+      console.warn('⚠️ DB2 InventoryItem update sync warning:', e.message);
+    }
+
     res.json({ success: true, message: 'Product updated.' });
   } catch (err) { next(err); }
 };

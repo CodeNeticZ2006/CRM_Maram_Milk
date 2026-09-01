@@ -1,4 +1,4 @@
-import { Suspense, lazy } from 'react';
+import React, { Component, Suspense, lazy } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
@@ -49,6 +49,41 @@ function PageLoader() {
   );
 }
 
+class ErrorBoundary extends Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+
+  componentDidCatch(error, errorInfo) {
+    console.error('Unhandled UI Error:', error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '60vh', flexDirection: 'column', gap: 16, padding: 24, textAlign: 'center' }}>
+          <h2 style={{ fontSize: 20, color: 'var(--text-primary, #1e293b)' }}>Something went wrong loading this page</h2>
+          <p style={{ color: 'var(--text-muted, #64748b)', fontSize: 14, maxWidth: 500 }}>
+            {this.state.error?.message || 'An unexpected error occurred.'}
+          </p>
+          <button
+            onClick={() => { this.setState({ hasError: false }); window.location.href = '/dashboard'; }}
+            style={{ padding: '8px 18px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: 6, cursor: 'pointer', fontWeight: 600 }}
+          >
+            Reload Dashboard
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 export default function App() {
   return (
     <BrowserRouter>
@@ -59,102 +94,104 @@ export default function App() {
           style: { fontSize: 13.5, fontWeight: 500 },
         }}
       />
-      <Routes>
-        {/* Public routes */}
-        <Route path="/login" element={<LoginPage />} />
-        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <ErrorBoundary>
+        <Routes>
+          {/* Public routes */}
+          <Route path="/login" element={<LoginPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
 
-        {/* Protected CRM routes */}
-        <Route element={<AppLayout />}>
-          <Route index element={<Navigate to="/dashboard" replace />} />
-          <Route path="/dashboard" element={
-            <Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>
-          } />
-          <Route path="/customers" element={
-            <Suspense fallback={<PageLoader />}><CustomersPage /></Suspense>
-          } />
-          <Route path="/masters" element={
-            <Suspense fallback={<PageLoader />}><MastersPage /></Suspense>
-          } />
-          <Route path="/inventory" element={
-            <Suspense fallback={<PageLoader />}><InventoryPage /></Suspense>
-          } />
-          <Route path="/subscriptions" element={
-            <Suspense fallback={<PageLoader />}><SubscriptionsPage /></Suspense>
-          } />
-          <Route path="/pause" element={
-            <Suspense fallback={<PageLoader />}><PausePage /></Suspense>
-          } />
-          <Route path="/delivery-person-audit" element={
-            <Suspense fallback={<PageLoader />}><DeliveryPersonAuditPage /></Suspense>
-          } />
-          <Route path="/route" element={
-            <Suspense fallback={<PageLoader />}><LogisticsPage /></Suspense>
-          } />
-          <Route path="/logistics" element={
-            <Suspense fallback={<PageLoader />}><LogisticsPage /></Suspense>
-          } />
-          <Route path="/ecom-orders" element={
-            <Suspense fallback={<PageLoader />}><EcomOrdersPage /></Suspense>
-          } />
-          <Route path="/empty-bottles" element={
-            <Suspense fallback={<PageLoader />}><EmptyBottlesPage /></Suspense>
-          } />
-          <Route path="/wallet" element={
-            <Suspense fallback={<PageLoader />}><WalletPage /></Suspense>
-          } />
-          <Route path="/payments" element={
-            <Suspense fallback={<PageLoader />}><PaymentsPage /></Suspense>
-          } />
-          <Route path="/whatsapp" element={
-            <Suspense fallback={<PageLoader />}><WhatsAppPage /></Suspense>
-          } />
-          <Route path="/reports" element={
-            <Suspense fallback={<PageLoader />}><ReportsPage /></Suspense>
-          } />
-          <Route path="/revenue" element={
-            <Suspense fallback={<PageLoader />}><RevenuePage /></Suspense>
-          } />
-          <Route path="/feedback" element={
-            <Suspense fallback={<PageLoader />}><FeedbackPage /></Suspense>
-          } />
-          <Route path="/sms" element={
-            <Suspense fallback={<PageLoader />}><SmsPage /></Suspense>
-          } />
-          <Route path="/access-control" element={
-            <Suspense fallback={<PageLoader />}><AccessControlPage /></Suspense>
-          } />
-          <Route path="/settings" element={
-            <Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>
-          } />
+          {/* Protected CRM routes */}
+          <Route element={<AppLayout />}>
+            <Route index element={<Navigate to="/dashboard" replace />} />
+            <Route path="/dashboard" element={
+              <Suspense fallback={<PageLoader />}><DashboardPage /></Suspense>
+            } />
+            <Route path="/customers" element={
+              <Suspense fallback={<PageLoader />}><CustomersPage /></Suspense>
+            } />
+            <Route path="/masters" element={
+              <Suspense fallback={<PageLoader />}><MastersPage /></Suspense>
+            } />
+            <Route path="/inventory" element={
+              <Suspense fallback={<PageLoader />}><InventoryPage /></Suspense>
+            } />
+            <Route path="/subscriptions" element={
+              <Suspense fallback={<PageLoader />}><SubscriptionsPage /></Suspense>
+            } />
+            <Route path="/pause" element={
+              <Suspense fallback={<PageLoader />}><PausePage /></Suspense>
+            } />
+            <Route path="/delivery-person-audit" element={
+              <Suspense fallback={<PageLoader />}><DeliveryPersonAuditPage /></Suspense>
+            } />
+            <Route path="/route" element={
+              <Suspense fallback={<PageLoader />}><LogisticsPage /></Suspense>
+            } />
+            <Route path="/logistics" element={
+              <Suspense fallback={<PageLoader />}><LogisticsPage /></Suspense>
+            } />
+            <Route path="/ecom-orders" element={
+              <Suspense fallback={<PageLoader />}><EcomOrdersPage /></Suspense>
+            } />
+            <Route path="/empty-bottles" element={
+              <Suspense fallback={<PageLoader />}><EmptyBottlesPage /></Suspense>
+            } />
+            <Route path="/wallet" element={
+              <Suspense fallback={<PageLoader />}><WalletPage /></Suspense>
+            } />
+            <Route path="/payments" element={
+              <Suspense fallback={<PageLoader />}><PaymentsPage /></Suspense>
+            } />
+            <Route path="/whatsapp" element={
+              <Suspense fallback={<PageLoader />}><WhatsAppPage /></Suspense>
+            } />
+            <Route path="/reports" element={
+              <Suspense fallback={<PageLoader />}><ReportsPage /></Suspense>
+            } />
+            <Route path="/revenue" element={
+              <Suspense fallback={<PageLoader />}><RevenuePage /></Suspense>
+            } />
+            <Route path="/feedback" element={
+              <Suspense fallback={<PageLoader />}><FeedbackPage /></Suspense>
+            } />
+            <Route path="/sms" element={
+              <Suspense fallback={<PageLoader />}><SmsPage /></Suspense>
+            } />
+            <Route path="/access-control" element={
+              <Suspense fallback={<PageLoader />}><AccessControlPage /></Suspense>
+            } />
+            <Route path="/settings" element={
+              <Suspense fallback={<PageLoader />}><SettingsPage /></Suspense>
+            } />
 
-          {/* ── Route Intelligence Module ─────────────────────────── */}
-          <Route path="/route-intelligence/live" element={
-            <Suspense fallback={<PageLoader />}><LiveOperationsPage /></Suspense>
-          } />
-          <Route path="/route-intelligence/territories" element={
-            <Suspense fallback={<PageLoader />}><TerritoryMonitoringPage /></Suspense>
-          } />
-          <Route path="/route-intelligence/geofencing" element={
-            <Suspense fallback={<PageLoader />}><GeofencingPage /></Suspense>
-          } />
-          <Route path="/route-intelligence/compliance" element={
-            <Suspense fallback={<PageLoader />}><RouteCompliancePage /></Suspense>
-          } />
-          <Route path="/route-intelligence/replay" element={
-            <Suspense fallback={<PageLoader />}><RouteReplayPage /></Suspense>
-          } />
-          <Route path="/route-intelligence/analytics" element={
-            <Suspense fallback={<PageLoader />}><RIAnalyticsPage /></Suspense>
-          } />
-          <Route path="/route-intelligence/settings" element={
-            <Suspense fallback={<PageLoader />}><RouteIntelligenceSettingsPage /></Suspense>
-          } />
-        </Route>
+            {/* ── Route Intelligence Module ─────────────────────────── */}
+            <Route path="/route-intelligence/live" element={
+              <Suspense fallback={<PageLoader />}><LiveOperationsPage /></Suspense>
+            } />
+            <Route path="/route-intelligence/territories" element={
+              <Suspense fallback={<PageLoader />}><TerritoryMonitoringPage /></Suspense>
+            } />
+            <Route path="/route-intelligence/geofencing" element={
+              <Suspense fallback={<PageLoader />}><GeofencingPage /></Suspense>
+            } />
+            <Route path="/route-intelligence/compliance" element={
+              <Suspense fallback={<PageLoader />}><RouteCompliancePage /></Suspense>
+            } />
+            <Route path="/route-intelligence/replay" element={
+              <Suspense fallback={<PageLoader />}><RouteReplayPage /></Suspense>
+            } />
+            <Route path="/route-intelligence/analytics" element={
+              <Suspense fallback={<PageLoader />}><RIAnalyticsPage /></Suspense>
+            } />
+            <Route path="/route-intelligence/settings" element={
+              <Suspense fallback={<PageLoader />}><RouteIntelligenceSettingsPage /></Suspense>
+            } />
+          </Route>
 
-        {/* Catch-all */}
-        <Route path="*" element={<Navigate to="/dashboard" replace />} />
-      </Routes>
+          {/* Catch-all */}
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </ErrorBoundary>
     </BrowserRouter>
   );
 }

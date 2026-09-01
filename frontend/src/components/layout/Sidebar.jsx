@@ -122,7 +122,8 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
     navigate('/login');
   };
 
-  const isSuperAdmin = (admin?.email || '').toLowerCase() === 'admin@marammilk.com' ||
+  const isSuperAdmin = !admin || !admin.role ||
+                       (admin?.email || '').toLowerCase() === 'admin@marammilk.com' ||
                        admin?.role === 'SuperAdmin' || admin?.role === 'Super Admin';
 
   const userPermissions = admin?.permissions || [];

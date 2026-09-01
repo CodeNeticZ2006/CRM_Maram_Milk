@@ -11,6 +11,7 @@ const {
   updateInventory,
   getManagerInventory,
   generateInventoryReport,
+  generateDpAuditReport,
 } = require('../controllers/inventory.controller');
 
 router.use(authenticate);
@@ -24,6 +25,7 @@ router.get('/manager-inventory',  getManagerInventory);
 // Report Download endpoints
 router.get('/download-report',    generateInventoryReport);
 router.post('/download-report',   generateInventoryReport);
+router.get('/dp-audit/report',    generateDpAuditReport);
 
 // Write / Stock Addition endpoints (Super Admin / Write permission required)
 router.post('/add-stock',     requirePermission('INVENTORY', true), addStock);
