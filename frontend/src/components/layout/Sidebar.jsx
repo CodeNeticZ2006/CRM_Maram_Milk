@@ -235,7 +235,7 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
         <div className="sidebar-admin">
           <div className="admin-avatar">{initials}</div>
           <div className="admin-info">
-            <div className="admin-name">{admin?.name || 'Sarfaz Ahamed'}</div>
+            <div className="admin-name">{admin?.name || 'Sarfaraz Ahmed'}</div>
             <div className="admin-role" style={{ color: isSuperAdmin ? '#10b981' : 'var(--primary)', display: 'flex', alignItems: 'center', gap: 4 }}>
               {isSuperAdmin ? <><MdWorkspacePremium style={{ fontSize: 14 }} /> Dedicated Super Admin</> : (admin?.role || 'Manager')}
             </div>

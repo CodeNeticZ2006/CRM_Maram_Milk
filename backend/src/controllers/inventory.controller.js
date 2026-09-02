@@ -879,11 +879,15 @@ const getDpAttendanceAudit = async (req, res, next) => {
     // Process attendance per DP
     const attendanceAudit = dpRows.map((dp, idx) => {
       const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+      const recentAlloc = allocRows.find(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode)) && a.routeId);
+      const allocRouteObj = recentAlloc ? routeRows.find(r => String(r.id) === String(recentAlloc.routeId)) : null;
+
       const dpAllocRouteIds  = allocRows.filter(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode))).map(a => a.routeId);
       const dpLogRouteIds    = logRows.filter(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode))).map(l => l.routeId);
-      const allDpRouteIds    = Array.from(new Set([...(assignedRouteObj ? [assignedRouteObj.id] : []), ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
+      const primaryRouteName = allocRouteObj ? allocRouteObj.name : (assignedRouteObj ? assignedRouteObj.name : null);
+      const allDpRouteIds    = Array.from(new Set([...(allocRouteObj ? [allocRouteObj.id] : []), ...(assignedRouteObj ? [assignedRouteObj.id] : []), ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
       const assignedRouteNames = allDpRouteIds.map(rid => routeRows.find(r => String(r.id) === String(rid))?.name).filter(Boolean);
-      const dpAssignedRouteStr = assignedRouteNames.length > 0 ? assignedRouteNames.join(', ') : (assignedRouteObj ? assignedRouteObj.name : 'Standby / Unassigned');
+      const dpAssignedRouteStr = primaryRouteName || (assignedRouteNames.length > 0 ? assignedRouteNames.join(', ') : (dp.zone || 'Unassigned'));
 
       let presentDays = 0;
       let absentDays = 0;
@@ -976,6 +980,7 @@ const getDpAttendanceAudit = async (req, res, next) => {
         dpName: dp.name,
         dpCode: dp.dpCode,
         mobileNumber: dp.mobileNumber,
+        assignedRoute: dpAssignedRouteStr,
         totalDays,
         presentDays,
         absentDays,
@@ -1525,7 +1530,7 @@ const generateInventoryReport = async (req, res, next) => {
     const date = queryOrBody.date;
     const startDate = queryOrBody.startDate;
     const endDate = queryOrBody.endDate;
-    const generatedBy = queryOrBody.generatedBy || req.user?.name || 'Super Admin';
+    const generatedBy = queryOrBody.generatedBy || req.admin?.name || req.user?.name || 'Sarfaraz Ahmed';
 
     const istToday = getISTDate();
     const isRange = mode === 'custom' && startDate && endDate;
@@ -2305,7 +2310,7 @@ const generateInventoryReport = async (req, res, next) => {
 // ─────────────────────────────────────────────
 const generateDpAuditReport = async (req, res, next) => {
   try {
-    const { section = 'attendance', period = 'today', dpId = 'all', date, startDate, endDate, generatedBy = 'Super Admin' } = req.query;
+    const { section = 'attendance', period = 'today', dpId = 'all', date, startDate, endDate, generatedBy = req.admin?.name || req.user?.name || 'Sarfaraz Ahmed' } = req.query;
 
     const istToday = getISTDate();
     let targetStartDate = date || istToday;

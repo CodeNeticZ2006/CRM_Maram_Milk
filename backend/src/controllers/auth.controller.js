@@ -20,8 +20,8 @@ const login = async (req, res, next) => {
     console.log(`🔑 Login attempt for: "${cleanEmail}"`);
 
     // 🔑 Flexible Hardcoded Super Admin Credentials Check
-    const validEmails = ['admin@marammilk.com', 'sarfaz@marammilk.com', 'sarfaz'];
-    const validPasswords = ['Sarfaz@marammilk', 'MaramMilk@2026', 'Sarfaz@'];
+    const validEmails = ['admin@marammilk.com', 'sarfaraz@marammilk.com', 'sarfaz@marammilk.com', 'sarfaraz', 'sarfaz'];
+    const validPasswords = ['Sarfaraz@marammilk', 'Sarfaz@marammilk', 'MaramMilk@2026', 'Sarfaraz@', 'Sarfaz@'];
 
     const isMatchEmail = validEmails.includes(cleanEmail);
     const isMatchPassword = validPasswords.includes(cleanPassword);
@@ -29,7 +29,7 @@ const login = async (req, res, next) => {
     if (isMatchEmail && isMatchPassword) {
       console.log('✅ Super Admin login successful via master credentials.');
       let adminId = 1;
-      let adminName = 'Sarfaz Ahamed';
+      let adminName = 'Sarfaraz Ahmed';
       let phone = '+919999999999';
 
       try {

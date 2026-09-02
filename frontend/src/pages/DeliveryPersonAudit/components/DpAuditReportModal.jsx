@@ -112,7 +112,7 @@ export default function DpAuditReportModal({
         date: singleDate,
         startDate: period === 'custom' ? startDate : undefined,
         endDate: period === 'custom' ? endDate : undefined,
-        generatedBy: admin?.name || 'Super Admin',
+        generatedBy: admin?.name || 'Sarfaraz Ahmed',
       };
 
       const res = await api.get('/inventory/dp-audit/report', {

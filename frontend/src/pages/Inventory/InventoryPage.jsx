@@ -125,8 +125,8 @@ export default function InventoryPage() {
     setDownloadingReport(true);
     try {
       const params = reportMode === 'custom'
-        ? { mode: 'custom', startDate: reportStartDate, endDate: reportEndDate, generatedBy: admin?.name || 'Super Admin' }
-        : { mode: 'today', date: reportDate, generatedBy: admin?.name || 'Super Admin' };
+        ? { mode: 'custom', startDate: reportStartDate, endDate: reportEndDate, generatedBy: admin?.name || 'Sarfaraz Ahmed' }
+        : { mode: 'today', date: reportDate, generatedBy: admin?.name || 'Sarfaraz Ahmed' };
 
       const res = await api.get('/inventory/download-report', {
         params,

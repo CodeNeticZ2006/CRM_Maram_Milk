@@ -645,16 +645,15 @@ function DeliveryPersonAuditContent() {
                       <th>DP CODE</th>
                       <th>NAME</th>
                       <th>MOBILE</th>
-                      <th>VEHICLE NO</th>
                       <th>CURRENT STATUS</th>
                       <th style={{ textAlign: 'right' }}>ACTION</th>
                     </tr>
                   </thead>
                   <tbody>
                     {dpLoading ? (
-                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: 36 }}>Loading DP profiles from DB2...</td></tr>
+                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: 36 }}>Loading DP profiles from DB2...</td></tr>
                     ) : filteredOverviewDps.length === 0 ? (
-                      <tr><td colSpan={6} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>No matching DPs found in DB2.</td></tr>
+                      <tr><td colSpan={5} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>No matching DPs found in DB2.</td></tr>
                     ) : (
                       filteredOverviewDps.map(dp => (
                         <tr
@@ -665,7 +664,6 @@ function DeliveryPersonAuditContent() {
                           <td><span style={{ fontFamily: 'monospace', fontWeight: 700, color: 'var(--primary)', fontSize: 12 }}>{dp.dpCode || 'DP-001'}</span></td>
                           <td style={{ fontWeight: 700, color: 'var(--text-primary)' }}>{dp.name}</td>
                           <td style={{ fontSize: 12.5 }}>{dp.mobileNumber || '—'}</td>
-                          <td style={{ fontSize: 12, fontFamily: 'monospace' }}>{dp.vehicleNumber || '—'}</td>
                           <td>
                             <span className={`badge ${dp.isActive !== false ? 'badge-success' : 'badge-danger'}`}>
                               {dp.isActive !== false ? 'Active' : 'Inactive'}
@@ -987,7 +985,6 @@ function DeliveryPersonAuditContent() {
                   <thead>
                     <tr>
                       <th style={{ minWidth: 140 }}>DELIVERY PERSON</th>
-                      <th style={{ minWidth: 110 }}>VEHICLE NO</th>
                       <th style={{ minWidth: 120 }}>ASSIGNED ROUTE</th>
                       <th>TOTAL DAYS</th>
                       <th style={{ color: '#10b981' }}>PRESENT DAYS</th>
@@ -1000,9 +997,9 @@ function DeliveryPersonAuditContent() {
                   </thead>
                   <tbody>
                     {attendanceLoad ? (
-                      <tr><td colSpan={10} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 attendance records...</td></tr>
+                      <tr><td colSpan={9} style={{ textAlign: 'center', padding: 48 }}>Loading DB2 attendance records...</td></tr>
                     ) : filteredAttendance.length === 0 ? (
-                      <tr><td colSpan={10} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No attendance audit records found matching filters.</td></tr>
+                      <tr><td colSpan={9} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No attendance audit records found matching filters.</td></tr>
                     ) : filteredAttendance.map(dp => (
                       <tr
                         key={dp.dpId || dp.dpCode}
@@ -1020,7 +1017,6 @@ function DeliveryPersonAuditContent() {
                             </div>
                           </div>
                         </td>
-                        <td style={{ fontFamily: 'monospace', fontSize: 12 }}>{dp.vehicleNumber || '—'}</td>
                         <td><span className="badge badge-gray">{dp.assignedRoute || 'Unassigned'}</span></td>
                         <td style={{ fontWeight: 600 }}>{dp.totalDays || 0} Days</td>
                         <td>

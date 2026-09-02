@@ -9,9 +9,11 @@ import {
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
+import useAuthStore from '../../store/authStore';
 import useOperationalDay from '../../hooks/useOperationalDay';
 
 export default function ReportsPage() {
+  const { admin } = useAuthStore();
   const [activeTab, setActiveTab] = useState('analytics'); // 'analytics' | 'inventory-reports'
   const [daily, setDaily] = useState(null);
   const [monthly, setMonthly] = useState(null);
@@ -116,7 +118,7 @@ export default function ReportsPage() {
     try {
       toast.loading('Generating Inventory Report...', { id: 'gen-report' });
       const res = await api.get('/inventory/download-report', {
-        params: { mode: 'today', date, generatedBy: 'Super Admin' },
+        params: { mode: 'today', date, generatedBy: admin?.name || 'Sarfaraz Ahmed' },
         responseType: 'blob',
       });
       const blob = new Blob([res.data], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
@@ -685,7 +687,7 @@ export default function ReportsPage() {
                           </span>
                         </td>
                         <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
-                          {report.generated_by || 'Super Admin'}
+                          {report.generated_by || admin?.name || 'Sarfaraz Ahmed'}
                         </td>
                         <td style={{ fontSize: 12, color: 'var(--text-muted)', whiteSpace: 'nowrap' }}>
                           {new Date(report.generated_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', hour12: true })}
