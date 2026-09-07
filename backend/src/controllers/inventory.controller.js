@@ -878,16 +878,17 @@ const getDpAttendanceAudit = async (req, res, next) => {
 
     // Process attendance per DP
     const attendanceAudit = dpRows.map((dp, idx) => {
-      const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+      const masterRouteObjs  = routeRows.filter(r => String(r.assignedDpId) === String(dp.id));
+      const assignedRouteObj = masterRouteObjs[0] || null;
       const recentAlloc = allocRows.find(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode)) && a.routeId);
       const allocRouteObj = recentAlloc ? routeRows.find(r => String(r.id) === String(recentAlloc.routeId)) : null;
 
       const dpAllocRouteIds  = allocRows.filter(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode))).map(a => a.routeId);
       const dpLogRouteIds    = logRows.filter(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode))).map(l => l.routeId);
-      const primaryRouteName = allocRouteObj ? allocRouteObj.name : (assignedRouteObj ? assignedRouteObj.name : null);
-      const allDpRouteIds    = Array.from(new Set([...(allocRouteObj ? [allocRouteObj.id] : []), ...(assignedRouteObj ? [assignedRouteObj.id] : []), ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
-      const assignedRouteNames = allDpRouteIds.map(rid => routeRows.find(r => String(r.id) === String(rid))?.name).filter(Boolean);
-      const dpAssignedRouteStr = primaryRouteName || (assignedRouteNames.length > 0 ? assignedRouteNames.join(', ') : (dp.zone || 'Unassigned'));
+      const masterRouteIds   = masterRouteObjs.map(r => r.id);
+      const allDpRouteIds    = Array.from(new Set([...masterRouteIds, ...(allocRouteObj ? [allocRouteObj.id] : []), ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
+      const assignedRouteNames = Array.from(new Set(allDpRouteIds.map(rid => routeRows.find(r => String(r.id) === String(rid))?.name).filter(Boolean)));
+      const dpAssignedRouteStr = assignedRouteNames.length > 0 ? assignedRouteNames.join(', ') : (dp.zone || 'Unassigned');
 
       let presentDays = 0;
       let absentDays = 0;
@@ -1295,8 +1296,9 @@ const getManagerInventory = async (req, res, next) => {
           if (r?.name) routeNamesSet.add(r.name);
         });
         if (routeNamesSet.size === 0) {
-          const masterRoute = routes.find(r => String(r.assignedDpId) === String(dp.id));
-          if (masterRoute?.name) routeNamesSet.add(masterRoute.name);
+          routes.filter(r => String(r.assignedDpId) === String(dp.id)).forEach(r => {
+            if (r?.name) routeNamesSet.add(r.name);
+          });
         }
 
         const assignedRoutesStr = Array.from(routeNamesSet).join(', ') || 'Unassigned';
@@ -2439,8 +2441,8 @@ const generateDpAuditReport = async (req, res, next) => {
       } catch (e) { /* silent */ }
 
       selectedDps.forEach(dp => {
-        const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
-        const dpAssignedRouteStr = assignedRouteObj ? assignedRouteObj.name : (dp.zone || 'Unassigned');
+        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
+        const dpAssignedRouteStr = masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'Unassigned');
 
         const dpDb2Att = attDb2Rows.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
         const dpCrmAtt = attCrmRows.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
@@ -2496,16 +2498,17 @@ const generateDpAuditReport = async (req, res, next) => {
       } catch (e) { /* silent */ }
 
       selectedDps.forEach(dp => {
-        const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
         const dpAlloc = allocRows.find(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
-        const routeObj = dpAlloc ? routeRows.find(r => String(r.id) === String(dpAlloc.routeId)) : assignedRouteObj;
+        const routeObj = dpAlloc ? routeRows.find(r => String(r.id) === String(dpAlloc.routeId)) : null;
+        const routeNameStr = routeObj ? routeObj.name : (masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'General Route'));
 
         const dataRow = ws.addRow([
           periodStr,
           dp.dpCode || 'DP-001',
           dp.name,
           dp.vehicleNumber || '—',
-          routeObj ? routeObj.name : 'General Route',
+          routeNameStr,
           routeObj?.zone || dp.zone || 'Unassigned Zone',
           dpAlloc ? 45 : 30,
           dpAlloc ? 45 : 30,
@@ -2542,7 +2545,8 @@ const generateDpAuditReport = async (req, res, next) => {
       } catch (e) { /* silent */ }
 
       selectedDps.forEach(dp => {
-        const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
+        const dpAssignedRouteStr = masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'Unassigned');
         const dpShopSale = shopSaleRows.find(s => String(s.dp_ref_id) === String(dp.id) || String(s.dp_ref_id) === String(dp.dpCode));
 
         const qtyTaken = dpShopSale ? parseFloat(dpShopSale.quantity_taken || 0) : 40;
@@ -2556,7 +2560,7 @@ const generateDpAuditReport = async (req, res, next) => {
           periodStr,
           dp.dpCode || 'DP-001',
           dp.name,
-          assignedRouteObj ? assignedRouteObj.name : (dp.zone || 'Unassigned'),
+          dpAssignedRouteStr,
           qtyTaken,
           qtyDelivered,
           undelivered,
@@ -2585,13 +2589,14 @@ const generateDpAuditReport = async (req, res, next) => {
       styleTableHeader(hRow);
 
       selectedDps.forEach(dp => {
-        const assignedRouteObj = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
+        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
+        const dpAssignedRouteStr = masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'Unassigned');
         const dataRow = ws.addRow([
           dp.dpCode || 'DP-001',
           dp.name,
           dp.mobileNumber || '—',
           dp.vehicleNumber || '—',
-          assignedRouteObj ? assignedRouteObj.name : (dp.zone || 'Unassigned'),
+          dpAssignedRouteStr,
           dp.isActive !== false ? 'Active' : 'Inactive',
           'DB2 (Live)'
         ]);

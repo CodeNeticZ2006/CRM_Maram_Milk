@@ -95,11 +95,13 @@ const getLiveOperations = async (req, res, next) => {
 
     // Map DB2 delivery persons to UI representation
     const deliveryPartners = dpRows.map((dp, idx) => {
-      const assignedRouteObj = routeRows.find(r => r.assignedDpId === dp.id);
+      const masterRouteObjs  = routeRows.filter(r => String(r.assignedDpId) === String(dp.id));
+      const assignedRouteObj = masterRouteObjs[0] || null;
       const dpAllocRouteIds  = allocationRows.filter(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode))).map(a => a.routeId);
       const dpLogRouteIds    = logRows.filter(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode))).map(l => l.routeId);
-      const allDpRouteIds    = Array.from(new Set([...(assignedRouteObj ? [assignedRouteObj.id] : []), ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
-      const assignedRouteNames = allDpRouteIds.map(rid => routeRows.find(r => String(r.id) === String(rid))?.name).filter(Boolean);
+      const masterRouteIds   = masterRouteObjs.map(r => r.id);
+      const allDpRouteIds    = Array.from(new Set([...masterRouteIds, ...dpAllocRouteIds, ...dpLogRouteIds].filter(Boolean)));
+      const assignedRouteNames = Array.from(new Set(allDpRouteIds.map(rid => routeRows.find(r => String(r.id) === String(rid))?.name).filter(Boolean)));
       const routeName = assignedRouteNames.length > 0 ? assignedRouteNames.join(', ') : (assignedRouteObj ? assignedRouteObj.name : 'Standby');
       const alloc = allocationRows.find(a => a.dpId === dp.id);
       const log = logRows.find(l => l.dpId === dp.id);

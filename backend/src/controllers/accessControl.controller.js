@@ -79,10 +79,22 @@ const getDeliveryPersons = async (req, res, next) => {
   try {
     let dpList = [];
     try {
-      const dpRes = await readFromApp(
-        'SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive", "dateOfJoining", "bankAccountDetails" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\', \'imran\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY "dpCode" ASC, name ASC'
-      );
-      dpList = dpRes.rows;
+      const [dpRes, routeRes] = await Promise.all([
+        readFromApp(
+          'SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "petrolBalance", "isActive", "dateOfJoining", "bankAccountDetails" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\', \'imran\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY "dpCode" ASC, name ASC'
+        ),
+        readFromApp('SELECT id, name, "assignedDpId" FROM "Route" ORDER BY name ASC').catch(() => ({ rows: [] })),
+      ]);
+      const dpRows = dpRes.rows || [];
+      const routeRows = routeRes.rows || [];
+
+      dpList = dpRows.map(dp => {
+        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
+        return {
+          ...dp,
+          assignedRoute: masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'Unassigned'),
+        };
+      });
     } catch (err) {
       console.warn('⚠️ DB2 DeliveryPerson query error:', err.message);
     }

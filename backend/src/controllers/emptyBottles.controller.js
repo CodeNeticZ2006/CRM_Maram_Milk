@@ -159,8 +159,8 @@ const getEmptyBottleLogs = async (req, res, next) => {
         if (routeName) dpAssignedRouteStr = routeName;
       } else {
         // 3. Master permanent assignment
-        const masterRoute = routeRows.find(r => String(r.assignedDpId) === String(dp.id));
-        if (masterRoute?.name) dpAssignedRouteStr = masterRoute.name;
+        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
+        if (masterRoutes.length > 0) dpAssignedRouteStr = masterRoutes.join(', ');
       }
 
       let totalIssued1L = 0, totalReturned1L = 0, totalMissing1L = 0;
