@@ -101,19 +101,9 @@ app.use(cors({
   ]
 }));
 
-// Global rate limiter
+// ── Global Rate Limiter ──────────────────────────────────────────────────────
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 200,
-  message: {
-    success: false,
-    message: 'Too many requests, please try again later.'
-  },
-}));
-
-// Strict rate limiter for auth
-app.use(rateLimit({
-  windowMs: 15 * 60 * 1000,
   max: 1000,
   message: {
     success: false,
@@ -122,6 +112,18 @@ app.use(rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
 }));
+
+// ── Strict Rate Limiter for Authentication ───────────────────────────────────
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: {
+    success: false,
+    message: 'Too many auth attempts. Try again in 15 minutes.'
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ── Body Parsers & Request Logger ────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
