@@ -2345,18 +2345,54 @@ const generateDpAuditReport = async (req, res, next) => {
       filePeriodStr = `${startDate}_to_${endDate}`;
     }
 
-    // 1. Fetch DP profiles from DB2 (READ-ONLY)
+    // 1. Fetch DP profiles, Routes, Allocations, Logs, Attendance, Transactions from DB2 & CRM (READ-ONLY)
     let dpRows = [];
     let routeRows = [];
+    let allocRows = [];
+    let logRows = [];
+    let attDb2Rows = [];
+    let attCrmRows = [];
+    let txRows = [];
+    let allocItemsRows = [];
+    let logItemsRows = [];
+
     try {
-      const [dpRes, rRes] = await Promise.all([
-        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" ORDER BY name ASC'),
-        readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC')
+      const [dpRes, rRes, aRes, lRes, attDb2Res, attCrmRes, txRes, raiRes, ebliRes] = await Promise.all([
+        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
+        readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
+        readFromApp('SELECT id, date, "dpId", "routeId", "litresAllocated", status FROM "RouteAllocation" WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
+        readFromApp('SELECT id, date, "dpId", "routeId", "deliveryCompleted", "flagIssue", reason, notes FROM "EmptyBottleLog" WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
+        readFromApp('SELECT id, date, "dpId", status FROM "AttendanceRecord" WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
+        readFromCRM('SELECT id, date, dp_ref_id AS "dpId", status FROM dp_attendance_logs WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
+        readFromApp('SELECT id, "dpId", "routeId", date, amount, note, type FROM "LedgerTransaction" WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
+        readFromApp(
+          `SELECT rai."routeAllocationId", rai.quantity, ii.id as "itemId", ii.name as "itemName", ii.unit, ii.material 
+           FROM "RouteAllocationItem" rai 
+           JOIN "RouteAllocation" ra ON ra.id = rai."routeAllocationId"
+           JOIN "InventoryItem" ii ON ii.id = rai."inventoryItemId"
+           WHERE ra.date >= $1 AND ra.date <= $2 AND ii.section = 'Milk'`,
+          [targetStartDate, targetEndDate]
+        ).catch(() => ({ rows: [] })),
+        readFromApp(
+          `SELECT ebli."emptyBottleLogId", ebli."actualDelivered", ebli.expected, ii.id as "itemId", ii.name as "itemName", ii.unit, ii.material 
+           FROM "EmptyBottleLogItem" ebli 
+           JOIN "EmptyBottleLog" eb ON eb.id = ebli."emptyBottleLogId"
+           JOIN "InventoryItem" ii ON ii.id = ebli."inventoryItemId"
+           WHERE eb.date >= $1 AND eb.date <= $2 AND ii.section = 'Milk'`,
+          [targetStartDate, targetEndDate]
+        ).catch(() => ({ rows: [] })),
       ]);
       dpRows = dpRes.rows || [];
       routeRows = rRes.rows || [];
+      allocRows = aRes.rows || [];
+      logRows = lRes.rows || [];
+      attDb2Rows = attDb2Res.rows || [];
+      attCrmRows = attCrmRes.rows || [];
+      txRows = txRes.rows || [];
+      allocItemsRows = raiRes.rows || [];
+      logItemsRows = ebliRes.rows || [];
     } catch (e) {
-      console.warn('⚠️ DB2 DP query error:', e.message);
+      console.warn('⚠️ DB2 report query warning:', e.message);
     }
 
     // Filter by single DP if dpId is specified and not 'all'
@@ -2367,6 +2403,23 @@ const generateDpAuditReport = async (req, res, next) => {
         selectedDps = [{ id: dpId, name: 'Delivery Person', dpCode: dpId, mobileNumber: '—', vehicleNumber: '—', zone: 'Unassigned', isActive: true }];
       }
     }
+
+    // Helper: Compute full assigned route string for a DP (master routes + allocations + logs)
+    const getDpRouteString = (dp) => {
+      const routeNamesSet = new Set();
+      routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).forEach(r => {
+        if (r?.name) routeNamesSet.add(r.name);
+      });
+      allocRows.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode)).forEach(a => {
+        const r = routeRows.find(rt => String(rt.id) === String(a.routeId));
+        if (r?.name) routeNamesSet.add(r.name);
+      });
+      logRows.filter(l => String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode)).forEach(l => {
+        const r = routeRows.find(rt => String(rt.id) === String(l.routeId));
+        if (r?.name) routeNamesSet.add(r.name);
+      });
+      return Array.from(routeNamesSet).join(', ') || dp.zone || 'Unassigned';
+    };
 
     // Prepare Workbook using ExcelJS
     const workbook = new ExcelJS.Workbook();
@@ -2429,32 +2482,73 @@ const generateDpAuditReport = async (req, res, next) => {
       ]);
       styleTableHeader(hRow);
 
-      let attDb2Rows = [];
-      let attCrmRows = [];
-      try {
-        const [attDb2Res, attCrmRes] = await Promise.all([
-          readFromApp('SELECT "dpId", date, status FROM "AttendanceRecord" WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
-          readFromCRM('SELECT dp_ref_id AS "dpId", date, status FROM dp_attendance_logs WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
-        ]);
-        attDb2Rows = attDb2Res.rows || [];
-        attCrmRows = attCrmRes.rows || [];
-      } catch (e) { /* silent */ }
+      const DB2_START_DATE = '2026-07-15';
+      const datesList = [];
+      const currDateObj = new Date(targetStartDate);
+      const endDateObj = new Date(targetEndDate);
+      while (currDateObj <= endDateObj && datesList.length < 90) {
+        datesList.push(currDateObj.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }));
+        currDateObj.setDate(currDateObj.getDate() + 1);
+      }
 
       selectedDps.forEach(dp => {
-        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
-        const dpAssignedRouteStr = masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'Unassigned');
+        const dpAssignedRouteStr = getDpRouteString(dp);
+        const masterRouteObjs = routeRows.filter(r => String(r.assignedDpId) === String(dp.id));
+        const assignedRouteObj = masterRouteObjs[0] || null;
 
-        const dpDb2Att = attDb2Rows.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
-        const dpCrmAtt = attCrmRows.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
+        let presentDays = 0;
+        let absentDays = 0;
+        let standbyDays = 0;
+        let notMarkedDays = 0;
 
-        const presCount = dpDb2Att.filter(a => String(a.status).toUpperCase() === 'PRESENT').length + dpCrmAtt.filter(a => String(a.status).toUpperCase() === 'PRESENT').length;
-        const absCount = dpDb2Att.filter(a => String(a.status).toUpperCase() === 'ABSENT').length + dpCrmAtt.filter(a => String(a.status).toUpperCase() === 'ABSENT').length;
-        const stbyCount = dpDb2Att.filter(a => String(a.status).toUpperCase() === 'STANDBY').length;
-        const notMarkedCount = dpDb2Att.filter(a => String(a.status).toUpperCase() === 'NOT_MARKED').length;
+        datesList.forEach((dStr) => {
+          const isFuture = dStr > istToday;
+          const isBeforeDb2 = dStr < DB2_START_DATE;
 
-        const totalDays = Math.max(1, presCount + absCount + stbyCount + notMarkedCount);
-        const markedDays = presCount + absCount;
-        const attPct = markedDays > 0 ? Math.round((presCount / markedDays) * 100) : (presCount > 0 ? 100 : 0);
+          const dbAttRecord = attDb2Rows.find(att => (String(att.dpId) === String(dp.id) || String(att.dpId) === String(dp.dpCode)) && String(att.date).slice(0, 10) === dStr)
+                           || attCrmRows.find(att => (String(att.dpId) === String(dp.id) || String(att.dpId) === String(dp.dpCode)) && String(att.date).slice(0, 10) === dStr);
+
+          const dbAlloc = allocRows.find(a => (String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode)) && String(a.date).slice(0, 10) === dStr);
+          const dbLog   = logRows.find(l => (String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode)) && String(l.date).slice(0, 10) === dStr);
+
+          let status = 'PRESENT';
+
+          if (isBeforeDb2) {
+            status = 'No DB2 Record';
+          } else if (isFuture) {
+            status = 'Upcoming';
+          } else if (dbAttRecord) {
+            const attStat = String(dbAttRecord.status || '').toUpperCase();
+            if (attStat === 'ABSENT' || attStat === 'LEAVE') {
+              status = 'ABSENT';
+            } else {
+              const isAssignedToRoute = Boolean(dbAlloc?.routeId || dbLog?.routeId || (assignedRouteObj && dbAlloc?.status !== 'UNASSIGNED'));
+              if (isAssignedToRoute) status = 'PRESENT';
+              else status = 'STANDBY';
+            }
+          } else if (dbAlloc || dbLog) {
+            if (dbAlloc?.status === 'ABSENT' || dbLog?.reason?.toLowerCase().includes('absent') || (dbLog?.flagIssue && !dbLog?.deliveryCompleted)) {
+              status = 'ABSENT';
+            } else if (dbAlloc?.status === 'STANDBY' || dbAlloc?.status === 'ON_CALL' || !dbAlloc?.routeId) {
+              status = 'STANDBY';
+            } else {
+              status = 'PRESENT';
+            }
+          } else {
+            status = 'NOT_MARKED';
+          }
+
+          if (!isBeforeDb2 && !isFuture) {
+            if (status === 'PRESENT') presentDays++;
+            else if (status === 'ABSENT') absentDays++;
+            else if (status === 'STANDBY') { presentDays++; standbyDays++; }
+            else if (status === 'NOT_MARKED') notMarkedDays++;
+          }
+        });
+
+        const totalDays = (presentDays - standbyDays) + standbyDays + absentDays + notMarkedDays;
+        const markedDays = presentDays + absentDays;
+        const attPct = markedDays > 0 ? Math.round((presentDays / markedDays) * 100) : (presentDays > 0 ? 100 : 0);
 
         const dataRow = ws.addRow([
           dp.dpCode || 'DP-001',
@@ -2463,10 +2557,10 @@ const generateDpAuditReport = async (req, res, next) => {
           dp.vehicleNumber || '—',
           dpAssignedRouteStr,
           totalDays,
-          presCount,
-          absCount,
-          stbyCount,
-          notMarkedCount,
+          presentDays,
+          absentDays,
+          standbyDays,
+          notMarkedDays,
           `${attPct}%`,
           dp.isActive !== false ? 'Active' : 'Inactive'
         ]);
@@ -2488,27 +2582,17 @@ const generateDpAuditReport = async (req, res, next) => {
       ]);
       styleTableHeader(hRow);
 
-      let allocRows = [];
-      try {
-        const allocRes = await readFromApp(
-          'SELECT date, "dpId", "routeId", status FROM "RouteAllocation" WHERE date >= $1 AND date <= $2',
-          [targetStartDate, targetEndDate]
-        ).catch(() => ({ rows: [] }));
-        allocRows = allocRes.rows || [];
-      } catch (e) { /* silent */ }
-
       selectedDps.forEach(dp => {
-        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
+        const dpAssignedRouteStr = getDpRouteString(dp);
         const dpAlloc = allocRows.find(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
         const routeObj = dpAlloc ? routeRows.find(r => String(r.id) === String(dpAlloc.routeId)) : null;
-        const routeNameStr = routeObj ? routeObj.name : (masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'General Route'));
 
         const dataRow = ws.addRow([
           periodStr,
           dp.dpCode || 'DP-001',
           dp.name,
           dp.vehicleNumber || '—',
-          routeNameStr,
+          dpAssignedRouteStr,
           routeObj?.zone || dp.zone || 'Unassigned Zone',
           dpAlloc ? 45 : 30,
           dpAlloc ? 45 : 30,
@@ -2535,26 +2619,87 @@ const generateDpAuditReport = async (req, res, next) => {
       ]);
       styleTableHeader(hRow);
 
-      let shopSaleRows = [];
-      try {
-        const ssRes = await readFromCRM(
-          'SELECT date, dp_ref_id, route_name, quantity_taken, quantity_delivered, paid, extra_paid, short_paid FROM shop_sales WHERE date >= $1 AND date <= $2',
-          [targetStartDate, targetEndDate]
-        ).catch(() => ({ rows: [] }));
-        shopSaleRows = ssRes.rows || [];
-      } catch (e) { /* silent */ }
-
       selectedDps.forEach(dp => {
-        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
-        const dpAssignedRouteStr = masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'Unassigned');
-        const dpShopSale = shopSaleRows.find(s => String(s.dp_ref_id) === String(dp.id) || String(s.dp_ref_id) === String(dp.dpCode));
+        const dpAssignedRouteStr = getDpRouteString(dp);
 
-        const qtyTaken = dpShopSale ? parseFloat(dpShopSale.quantity_taken || 0) : 40;
-        const qtyDelivered = dpShopSale ? parseFloat(dpShopSale.quantity_delivered || 0) : 40;
+        const dpAllocs = allocRows.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
+        const dpLogs = logRows.filter(l => String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode));
+        const dpTxs = txRows.filter(t => String(t.dpId) === String(dp.id) || String(t.dpId) === String(dp.dpCode));
+
+        let totalTakenLitresAcc = 0;
+        let totalDeliveredLitresAcc = 0;
+
+        const routeIds = new Set([...dpAllocs.map(a => a.routeId), ...dpLogs.map(l => l.routeId)].filter(Boolean));
+
+        routeIds.forEach(rId => {
+          const alloc = dpAllocs.find(a => a.routeId === rId);
+          const ebLog = dpLogs.find(l => l.routeId === rId);
+
+          let rTakenLitres = 0;
+          if (alloc) {
+            const rAllocItems = allocItemsRows.filter(i => String(i.routeAllocationId) === String(alloc.id));
+            if (rAllocItems.length > 0) {
+              let r1LT = 0, rHalfLBT = 0, rHalfLPT = 0;
+              rAllocItems.forEach(i => {
+                const qty = parseFloat(i.quantity || 0);
+                const is1L = i.unit === '1L' || (i.itemName && i.itemName.includes('1L'));
+                const isBottle = i.material === 'Bottle';
+                const isPacket = i.material === 'Packet';
+                if (is1L) r1LT += qty;
+                else if (isBottle) rHalfLBT += qty;
+                else if (isPacket) rHalfLPT += qty;
+              });
+              rTakenLitres = (r1LT * 1) + (rHalfLBT * 0.5) + (rHalfLPT * 0.5);
+            } else if (alloc.litresAllocated && parseFloat(alloc.litresAllocated) > 0) {
+              rTakenLitres = parseFloat(alloc.litresAllocated);
+            }
+          }
+
+          let rDeliveredLitres = 0;
+          let isCompleted = (alloc && alloc.status === 'COMPLETED') || (ebLog && ebLog.deliveryCompleted === true);
+          if (ebLog) {
+            const rLogItems = logItemsRows.filter(i => String(i.emptyBottleLogId) === String(ebLog.id));
+            if (rLogItems.length > 0) {
+              let r1LD = 0, rHalfLBD = 0, rHalfLPD = 0;
+              rLogItems.forEach(i => {
+                let del = parseFloat(i.actualDelivered || 0);
+                if (del === 0 && isCompleted && parseFloat(i.expected || 0) > 0) del = parseFloat(i.expected);
+                const is1L = i.unit === '1L' || (i.itemName && i.itemName.includes('1L'));
+                const isBottle = i.material === 'Bottle';
+                const isPacket = i.material === 'Packet';
+                if (is1L) r1LD += del;
+                else if (isBottle) rHalfLBD += del;
+                else if (isPacket) rHalfLPD += del;
+              });
+              rDeliveredLitres = (r1LD * 1) + (rHalfLBD * 0.5) + (rHalfLPD * 0.5);
+            } else if (isCompleted) {
+              rDeliveredLitres = rTakenLitres;
+            }
+          } else if (isCompleted) {
+            rDeliveredLitres = rTakenLitres;
+          }
+
+          totalTakenLitresAcc += rTakenLitres;
+          totalDeliveredLitresAcc += rDeliveredLitres;
+        });
+
+        const qtyTaken = totalTakenLitresAcc;
+        const qtyDelivered = totalDeliveredLitresAcc;
         const undelivered = Math.max(0, qtyTaken - qtyDelivered);
-        const paid = dpShopSale?.paid !== undefined ? dpShopSale.paid : 150;
-        const extraPaid = dpShopSale?.extra_paid !== undefined ? dpShopSale.extra_paid : 0;
-        const shortPaid = dpShopSale?.short_paid !== undefined ? dpShopSale.short_paid : 0;
+
+        let paid = 0;
+        let extraPaid = 0;
+        let shortPaid = 0;
+
+        dpTxs.forEach(t => {
+          const amt = parseFloat(t.amount || 0);
+          paid += amt;
+          const noteStr = t.note || '';
+          const extraMatch = noteStr.match(/extra\s*₹?\s*(\d+)/i);
+          if (extraMatch) extraPaid += parseInt(extraMatch[1], 10);
+          const shortMatch = noteStr.match(/short\s*₹?\s*(\d+)/i);
+          if (shortMatch) shortPaid += parseInt(shortMatch[1], 10);
+        });
 
         const dataRow = ws.addRow([
           periodStr,
@@ -2589,8 +2734,7 @@ const generateDpAuditReport = async (req, res, next) => {
       styleTableHeader(hRow);
 
       selectedDps.forEach(dp => {
-        const masterRoutes = routeRows.filter(r => String(r.assignedDpId) === String(dp.id)).map(r => r.name).filter(Boolean);
-        const dpAssignedRouteStr = masterRoutes.length > 0 ? masterRoutes.join(', ') : (dp.zone || 'Unassigned');
+        const dpAssignedRouteStr = getDpRouteString(dp);
         const dataRow = ws.addRow([
           dp.dpCode || 'DP-001',
           dp.name,
