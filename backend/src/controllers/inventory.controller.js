@@ -2355,9 +2355,12 @@ const generateDpAuditReport = async (req, res, next) => {
     let txRows = [];
     let allocItemsRows = [];
     let logItemsRows = [];
+    let adhocAllocItemsRows = [];
+    let adhocLogItemsRows = [];
+    let adhocCrmRows = [];
 
     try {
-      const [dpRes, rRes, aRes, lRes, attDb2Res, attCrmRes, txRes, raiRes, ebliRes] = await Promise.all([
+      const [dpRes, rRes, aRes, lRes, attDb2Res, attCrmRes, txRes, raiRes, ebliRes, adhocRaiRes, adhocEbliRes, adhocCrmRes] = await Promise.all([
         readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
         readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
         readFromApp('SELECT id, date, "dpId", "routeId", "litresAllocated", status FROM "RouteAllocation" WHERE date >= $1 AND date <= $2', [targetStartDate, targetEndDate]).catch(() => ({ rows: [] })),
@@ -2381,6 +2384,26 @@ const generateDpAuditReport = async (req, res, next) => {
            WHERE eb.date >= $1 AND eb.date <= $2 AND ii.section = 'Milk'`,
           [targetStartDate, targetEndDate]
         ).catch(() => ({ rows: [] })),
+        readFromApp(
+          `SELECT rai.id as "allocItemId", rai.quantity as "quantityTaken", rai."inventoryItemId", ii.name as "itemName", ii.unit, ra."dpId", ra."routeId", ra.date, ra.status
+           FROM "RouteAllocationItem" rai
+           JOIN "RouteAllocation" ra ON ra.id = rai."routeAllocationId"
+           JOIN "InventoryItem" ii ON ii.id = rai."inventoryItemId"
+           WHERE ra.date >= $1 AND ra.date <= $2 AND (ii.section != 'Milk' OR ii.section IS NULL)`,
+          [targetStartDate, targetEndDate]
+        ).catch(() => ({ rows: [] })),
+        readFromApp(
+          `SELECT ebli.id as "logItemId", ebli."actualDelivered", ebli.expected, ebli."inventoryItemId", ii.name as "itemName", ii.unit, eb."dpId", eb."routeId", eb.date, eb."deliveryCompleted", eb."flagIssue", eb.reason
+           FROM "EmptyBottleLogItem" ebli
+           JOIN "EmptyBottleLog" eb ON eb.id = ebli."emptyBottleLogId"
+           JOIN "InventoryItem" ii ON ii.id = ebli."inventoryItemId"
+           WHERE eb.date >= $1 AND eb.date <= $2 AND (ii.section != 'Milk' OR ii.section IS NULL)`,
+          [targetStartDate, targetEndDate]
+        ).catch(() => ({ rows: [] })),
+        readFromCRM(
+          `SELECT dp_ref_id, route_id, product_id, quantity_taken, quantity_delivered, quantity_sold, quantity_undelivered FROM adhoc_dp_stock WHERE date >= $1 AND date <= $2`,
+          [targetStartDate, targetEndDate]
+        ).catch(() => ({ rows: [] })),
       ]);
       dpRows = dpRes.rows || [];
       routeRows = rRes.rows || [];
@@ -2391,6 +2414,9 @@ const generateDpAuditReport = async (req, res, next) => {
       txRows = txRes.rows || [];
       allocItemsRows = raiRes.rows || [];
       logItemsRows = ebliRes.rows || [];
+      adhocAllocItemsRows = adhocRaiRes.rows || [];
+      adhocLogItemsRows = adhocEbliRes.rows || [];
+      adhocCrmRows = adhocCrmRes.rows || [];
     } catch (e) {
       console.warn('⚠️ DB2 report query warning:', e.message);
     }
@@ -2701,6 +2727,75 @@ const generateDpAuditReport = async (req, res, next) => {
           if (shortMatch) shortPaid += parseInt(shortMatch[1], 10);
         });
 
+        // Calculate AdHoc product totals (Taken, Delivered, Undelivered) for this DP
+        const dpAdhocAllocItems = adhocAllocItemsRows.filter(a => String(a.dpId) === String(dp.id) || String(a.dpId) === String(dp.dpCode));
+        const dpAdhocLogItems   = adhocLogItemsRows.filter(l => String(l.dpId) === String(dp.id) || String(l.dpId) === String(dp.dpCode));
+        const dpAdhocCrmItems   = adhocCrmRows.filter(c => String(c.dp_ref_id) === String(dp.id) || String(c.dp_ref_id) === String(dp.dpCode));
+
+        const adhocItemMap = new Map();
+
+        dpAdhocAllocItems.forEach(ai => {
+          const key = `${ai.dpId}_${ai.routeId || ''}_${ai.inventoryItemId}`;
+          adhocItemMap.set(key, {
+            dpId: ai.dpId,
+            routeId: ai.routeId,
+            productId: ai.inventoryItemId,
+            taken: parseFloat(ai.quantityTaken || 0),
+            delivered: 0,
+            status: ai.status,
+          });
+        });
+
+        dpAdhocLogItems.forEach(li => {
+          const key = `${li.dpId}_${li.routeId || ''}_${li.inventoryItemId}`;
+          let item = adhocItemMap.get(key);
+          if (!item) {
+            item = { dpId: li.dpId, routeId: li.routeId, productId: li.inventoryItemId, taken: 0, delivered: 0, status: 'DELIVERED' };
+            adhocItemMap.set(key, item);
+          }
+
+          let del = parseFloat(li.actualDelivered || 0);
+          const isCompleted = li.deliveryCompleted === true || (!li.flagIssue && !li.reason);
+          if (del === 0 && isCompleted && parseFloat(li.expected || 0) > 0) {
+            del = parseFloat(li.expected);
+          } else if (del === 0 && isCompleted && item.taken > 0) {
+            del = item.taken;
+          }
+
+          item.delivered = Math.max(item.delivered, del);
+        });
+
+        adhocItemMap.forEach(item => {
+          if (item.delivered === 0 && item.taken > 0 && item.status === 'COMPLETED') {
+            item.delivered = item.taken;
+          }
+          item.undelivered = Math.max(0, item.taken - item.delivered);
+        });
+
+        let adhocTaken = 0;
+        let adhocDelivered = 0;
+        let adhocUndelivered = 0;
+
+        adhocItemMap.forEach(item => {
+          adhocTaken += item.taken;
+          adhocDelivered += item.delivered;
+          adhocUndelivered += item.undelivered;
+        });
+
+        dpAdhocCrmItems.forEach(cr => {
+          const exists = Array.from(adhocItemMap.values()).some(
+            i => String(i.routeId || '') === String(cr.route_id || '') && String(i.productId) === String(cr.product_id)
+          );
+          if (!exists) {
+            const t = parseFloat(cr.quantity_taken || 0);
+            const d = parseFloat(cr.quantity_delivered || cr.quantity_sold || 0);
+            const u = parseFloat(cr.quantity_undelivered || Math.max(0, t - d));
+            adhocTaken += t;
+            adhocDelivered += d;
+            adhocUndelivered += u;
+          }
+        });
+
         const dataRow = ws.addRow([
           periodStr,
           dp.dpCode || 'DP-001',
@@ -2712,9 +2807,9 @@ const generateDpAuditReport = async (req, res, next) => {
           `₹${paid}`,
           `₹${extraPaid}`,
           `₹${shortPaid}`,
-          0,
-          0,
-          0
+          adhocTaken,
+          adhocDelivered,
+          adhocUndelivered
         ]);
         applyDataRowStyling(dataRow);
       });
