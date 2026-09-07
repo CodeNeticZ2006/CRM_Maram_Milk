@@ -38,37 +38,87 @@ const operationalDayRoutes = require('./routes/operationalDay.routes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// ── CORS Configuration ───────────────────────────────────────────────────────
 const getCorsOrigins = () => {
-  const defaultOrigins = ['http://localhost:5173', 'http://127.0.0.1:5173'];
-  if (!process.env.FRONTEND_URL) return defaultOrigins;
+  const defaultOrigins = [
+    'http://localhost:5173',
+    'http://127.0.0.1:5173'
+  ];
+
   const envOrigins = process.env.FRONTEND_URL
-    .split(',')
-    .map((url) => url.trim().replace(/\/+$/, ''))
-    .filter(Boolean);
+    ? process.env.FRONTEND_URL
+        .split(',')
+        .map((url) => url.trim().replace(/\/+$/, ''))
+        .filter(Boolean)
+    : [];
+
   return [...new Set([...envOrigins, ...defaultOrigins])];
 };
 
-// ── Security Middleware ──────────────────────────────────────────────────────
-app.use(helmet());
+const allowedOrigins = getCorsOrigins();
+
 app.use(cors({
-  origin: getCorsOrigins(),
+  origin: function (origin, callback) {
+
+    // Allow requests without an Origin header
+    // (Postman, server-to-server requests, health checks, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+
+    // Allow explicitly configured origins
+    if (allowedOrigins.includes(origin)) {
+      return callback(null, true);
+    }
+
+    // Allow Vercel deployment URLs belonging to this project
+    if (
+      origin.endsWith('.vercel.app') &&
+      origin.includes('crm-maram-milk')
+    ) {
+      return callback(null, true);
+    }
+
+    // Reject unknown origins
+    console.warn(`⚠️ CORS blocked origin: ${origin}`);
+    return callback(new Error('Not allowed by CORS'));
+  },
+
   credentials: true,
-  methods: ['GET','POST','PUT','PATCH','DELETE','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization'],
+
+  methods: [
+    'GET',
+    'POST',
+    'PUT',
+    'PATCH',
+    'DELETE',
+    'OPTIONS'
+  ],
+
+  allowedHeaders: [
+    'Content-Type',
+    'Authorization'
+  ]
 }));
 
 // Global rate limiter
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
   max: 200,
-  message: { success: false, message: 'Too many requests, please try again later.' },
+  message: {
+    success: false,
+    message: 'Too many requests, please try again later.'
+  },
 }));
 
 // Strict rate limiter for auth
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 20,
-  message: { success: false, message: 'Too many auth attempts. Try again in 15 minutes.' },
+  message: {
+    success: false,
+    message: 'Too many auth attempts. Try again in 15 minutes.'
+  },
 });
 
 // ── Body Parsers & Request Logger ────────────────────────────────────────────
@@ -78,13 +128,20 @@ app.use(express.urlencoded({ extended: true }));
 // Express HTTP Request Logger Middleware + Operational Day Check
 app.use((req, res, next) => {
   const start = Date.now();
+
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log(`📡 [${req.method}] ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
+
+    console.log(
+      `📡 [${req.method}] ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`
+    );
   });
 
   // Lazy check for 7:00 PM IST operational rollover (non-blocking)
-  checkAndTriggerRollover().catch(err => console.warn('⚠️ Rollover check error:', err.message));
+  checkAndTriggerRollover()
+    .catch(err =>
+      console.warn('⚠️ Rollover check error:', err.message)
+    );
 
   next();
 });
@@ -92,6 +149,7 @@ app.use((req, res, next) => {
 // ── Health Check ─────────────────────────────────────────────────────────────
 const healthHandler = async (req, res) => {
   const dbHealth = await getDatabaseHealth();
+
   res.json({
     status: 'ok',
     service: 'Maram Milk CRM API',
@@ -103,31 +161,33 @@ const healthHandler = async (req, res) => {
 app.get('/health', healthHandler);
 app.get('/api/health', healthHandler);
 
-
 // ── API Routes ───────────────────────────────────────────────────────────────
-app.use('/api/auth',          authLimiter, authRoutes);
-app.use('/api/dashboard',     dashboardRoutes);
-app.use('/api/customers',     customersRoutes);
-app.use('/api/masters',       mastersRoutes);
+app.use('/api/auth', authLimiter, authRoutes);
+app.use('/api/dashboard', dashboardRoutes);
+app.use('/api/customers', customersRoutes);
+app.use('/api/masters', mastersRoutes);
 app.use('/api/subscriptions', subscriptionsRoutes);
-app.use('/api/pause',         pauseRoutes);
-app.use('/api/wallet',        walletRoutes);
-app.use('/api/payments',      paymentsRoutes);
-app.use('/api/whatsapp',      whatsappRoutes);
-app.use('/api/reports',       reportsRoutes);
+app.use('/api/pause', pauseRoutes);
+app.use('/api/wallet', walletRoutes);
+app.use('/api/payments', paymentsRoutes);
+app.use('/api/whatsapp', whatsappRoutes);
+app.use('/api/reports', reportsRoutes);
 app.use('/api/access-control', accessControlRoutes);
 app.use('/api/stock-correctness', stockCorrectnessRoutes);
-app.use('/api/notifications',     stockCorrectnessRoutes);
+app.use('/api/notifications', stockCorrectnessRoutes);
 app.use('/api/inventory/adhoc', adhocRoutes);
-app.use('/api/adhoc',           adhocRoutes);
-app.use('/api/inventory',      inventoryRoutes);
+app.use('/api/adhoc', adhocRoutes);
+app.use('/api/inventory', inventoryRoutes);
 app.use('/api/route-intelligence', routeIntelligenceRoutes);
-app.use('/api/empty-bottles',  emptyBottlesRoutes);
+app.use('/api/empty-bottles', emptyBottlesRoutes);
 app.use('/api/operational-day', operationalDayRoutes);
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ success: false, message: `Route ${req.method} ${req.path} not found.` });
+  res.status(404).json({
+    success: false,
+    message: `Route ${req.method} ${req.path} not found.`
+  });
 });
 
 // Global error handler
@@ -137,6 +197,7 @@ app.use(errorHandler);
 const start = async () => {
   try {
     console.log('🚀 Starting Maram Milk CRM API...');
+
     await testConnections();
 
     // Run migrations and seeding — non-fatal if DB unavailable
@@ -150,15 +211,26 @@ const start = async () => {
       await runMigration007RouteCustomers();
       await runMigration007InventoryItems();
       await seedSuperAdmin();
+
       // Initialize/verify active operational day on boot
       await checkAndTriggerRollover();
+
     } catch (dbErr) {
-      console.warn('⚠️  DB setup skipped (DB unreachable):', dbErr.message);
+      console.warn(
+        '⚠️  DB setup skipped (DB unreachable):',
+        dbErr.message
+      );
     }
 
     // Schedule background 60s check for 7:00 PM IST rollover
     setInterval(() => {
-      checkAndTriggerRollover().catch(err => console.warn('⚠️ Background rollover check warning:', err.message));
+      checkAndTriggerRollover()
+        .catch(err =>
+          console.warn(
+            '⚠️ Background rollover check warning:',
+            err.message
+          )
+        );
     }, 60000);
 
     app.listen(PORT, '0.0.0.0', () => {
@@ -169,6 +241,7 @@ const start = async () => {
       console.log(`📅 Op Day:   http://localhost:${PORT}/api/operational-day/current`);
       console.log('\n');
     });
+
   } catch (err) {
     console.error('❌ Failed to start server:', err.message);
     process.exit(1);
