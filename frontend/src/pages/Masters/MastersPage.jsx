@@ -17,33 +17,33 @@ function MasterModal({ title, fields, values, onClose, onSubmit, loading }) {
   const [form, setForm] = useState(values || {});
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div className="modal" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
-        <div className="modal-header">
+      <motion.div className="modal" style={{ maxWidth: 680, width: '95%', padding: '24px 28px' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+        <div className="modal-header" style={{ marginBottom: 20 }}>
           <h2 className="modal-title">{title}</h2>
           <button className="icon-btn" onClick={onClose}><MdClose /></button>
         </div>
         <form onSubmit={(e) => { e.preventDefault(); onSubmit(form); }}>
-          <div className="modal-body">
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+          <div className="modal-body" style={{ padding: '4px 0' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 18 }}>
               {fields.map(f => (
                 <div key={f.key} className="form-group" style={f.full ? { gridColumn: '1 / -1' } : {}}>
-                  <label className="form-label">{f.label}{f.required && ' *'}</label>
+                  <label className="form-label" style={{ fontWeight: 600, marginBottom: 6 }}>{f.label}{f.required && ' *'}</label>
                   {f.type === 'select' ? (
-                    <select id={`master-${f.key}`} className="form-input" value={form[f.key] || ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })}>
+                    <select id={`master-${f.key}`} className="form-input" style={{ height: 44 }} value={form[f.key] || ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })}>
                       {f.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
                     </select>
                   ) : (
-                    <input id={`master-${f.key}`} className="form-input" type={f.type || 'text'} placeholder={f.placeholder} required={f.required}
+                    <input id={`master-${f.key}`} className="form-input" style={{ height: 44 }} type={f.type || 'text'} placeholder={f.placeholder} required={f.required}
                       value={form[f.key] || ''} onChange={e => setForm({ ...form, [f.key]: e.target.value })} />
                   )}
                 </div>
               ))}
             </div>
           </div>
-          <div className="modal-footer">
+          <div className="modal-footer" style={{ marginTop: 24, paddingTop: 16 }}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={loading}>
-              {loading ? <span className="loading-spinner" /> : 'Save'}
+            <button type="submit" className="btn btn-primary" style={{ padding: '10px 24px' }} disabled={loading}>
+              {loading ? <span className="loading-spinner" /> : 'Save Product'}
             </button>
           </div>
         </form>
@@ -81,9 +81,9 @@ function ProductsTab() {
   const fields = [
     { key: 'name', label: 'Product Name', required: true, placeholder: 'e.g. Curd Pot - 500ml' },
     { key: 'category', label: 'Category', type: 'select', options: [{ value: 'Milk', label: 'Milk' }, { value: 'AdHoc', label: 'AdHoc' }] },
-    { key: 'unit', label: 'Unit', required: true, placeholder: 'e.g. 500ml / 500gm' },
+    { key: 'packing_type', label: 'Packing Type', type: 'select', options: [{ value: 'Bottle', label: 'Bottle' }, { value: 'Packet', label: 'Packet' }, { value: 'Can', label: 'Can' }, { value: 'Other', label: 'Other' }] },
+    { key: 'unit', label: 'Unit / Size', required: true, placeholder: 'e.g. 500ml / 1L / 500gm' },
     { key: 'price_per_unit', label: 'Price per Unit (₹)', required: true, type: 'number', placeholder: '50' },
-    { key: 'sku', label: 'SKU Code', placeholder: 'e.g. ADH-CURD-500ML' },
     { key: 'status', label: 'Status', type: 'select', options: [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] },
   ];
 
@@ -117,7 +117,7 @@ function ProductsTab() {
 
       <div className="table-wrapper">
         <table className="table">
-          <thead><tr><th>Name</th><th>Category</th><th>SKU</th><th>Unit</th><th>Price</th><th>Status</th><th></th></tr></thead>
+          <thead><tr><th>Name</th><th>Category</th><th>Packing Type</th><th>Unit / Size</th><th>Price</th><th>Status</th><th></th></tr></thead>
           <tbody>
             {loading ? <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32 }}>Loading...</td></tr> :
               filteredItems.length === 0 ? <tr><td colSpan={7} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>No products found for selected category.</td></tr> :
@@ -129,7 +129,11 @@ function ProductsTab() {
                       {item.category || 'Milk'}
                     </span>
                   </td>
-                  <td><code style={{ fontSize: 11, background: 'var(--gray-100, #f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || '-'}</code></td>
+                  <td>
+                    <span className="badge badge-gray" style={{ fontWeight: 600 }}>
+                      {item.packing_type || ((item.unit || '').toLowerCase().includes('packet') || (item.name || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle')}
+                    </span>
+                  </td>
                   <td>{item.unit}</td>
                   <td style={{ fontWeight: 700 }}>₹{item.price_per_unit}</td>
                   <td><span className={`badge ${item.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{item.status}</span></td>

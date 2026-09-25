@@ -3,7 +3,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   MdAdd, MdSearch, MdClose, MdEdit, MdDelete,
   MdCheckCircle, MdCancel, MdRefresh, MdOpenInNew, MdMap,
-  MdDirectionsBike, MdWarning,
+  MdDirectionsBike, MdWarning, MdFileUpload, MdDownload,
+  MdFileDownload, MdErrorOutline,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -490,6 +491,283 @@ function CustomerDrawer({ customerId, onClose, onRefresh }) {
   );
 }
 
+// ── CSV Parsing Helper ──────────────────────────────────────────────
+const parseCSVText = (text) => {
+  const lines = text.split(/\r\n|\n/);
+  if (lines.length < 2) return [];
+
+  const parseLine = (line) => {
+    const result = [];
+    let current = '';
+    let inQuotes = false;
+    for (let i = 0; i < line.length; i++) {
+      const char = line[i];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        result.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim());
+    return result;
+  };
+
+  const headers = parseLine(lines[0]).map(h => h.toLowerCase().replace(/[^a-z0-9]/g, ''));
+  const rows = [];
+
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const values = parseLine(line);
+    const row = {};
+    headers.forEach((h, idx) => {
+      let val = values[idx] || '';
+      if (val.startsWith('"') && val.endsWith('"')) val = val.slice(1, -1);
+      if (h.includes('name')) row.name = val;
+      else if (h.includes('phone') || h.includes('mobile') || h.includes('contact')) row.phone = val;
+      else if (h.includes('whatsapp')) row.whatsapp_number = val;
+      else if (h.includes('address')) row.address = val;
+      else if (h.includes('route')) row.assigned_route_id = val;
+      else if (h.includes('source')) row.enquiry_source = val;
+    });
+    if (row.name || row.phone) {
+      rows.push(row);
+    }
+  }
+  return rows;
+};
+
+// ── Bulk Customer Import Modal ──────────────────────────────────────
+function CustomerImportModal({ onClose, onImportDone }) {
+  const [file, setFile] = useState(null);
+  const [parsedRows, setParsedRows] = useState([]);
+  const [parsing, setParsing] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const handleFileChange = (e) => {
+    const selectedFile = e.target.files[0];
+    if (!selectedFile) return;
+    setFile(selectedFile);
+    setResult(null);
+    setParsing(true);
+
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const text = evt.target.result;
+        const rows = parseCSVText(text);
+        setParsedRows(rows);
+        if (rows.length === 0) {
+          toast.error('Could not find any valid customer rows in the uploaded file.');
+        } else {
+          toast.success(`Parsed ${rows.length} records from file.`);
+        }
+      } catch (err) {
+        toast.error('Failed to parse CSV file.');
+      } finally {
+        setParsing(false);
+      }
+    };
+    reader.onerror = () => {
+      toast.error('Error reading file.');
+      setParsing(false);
+    };
+    reader.readAsText(selectedFile);
+  };
+
+  const handleDownloadTemplate = () => {
+    const headers = 'Name,Phone,WhatsApp Number,Address,Route,Enquiry Source\n';
+    const sample = 'Ramesh Kumar,9876543210,9876543210,"12 Door No 5, Alwarpet, Chennai",Alwarpet 1,Direct\nSita Lakshmi,9876543211,9876543211,"45 Main Road, Mylapore, Chennai",Mylapore 1,WhatsApp\n';
+    const blob = new Blob([headers + sample], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.setAttribute('download', 'maram_milk_customers_import_template.csv');
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const handleStartImport = async () => {
+    if (parsedRows.length === 0) return toast.error('No valid customer rows to import.');
+    setImporting(true);
+    try {
+      const res = await api.post('/customers/import', { customers: parsedRows });
+      setResult(res.data);
+      toast.success('Bulk import completed!');
+      onImportDone();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Bulk import failed.');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div className="modal" style={{ maxWidth: 680, width: '95%' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+        <div className="modal-header">
+          <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <MdFileUpload style={{ color: 'var(--primary)' }} /> Bulk Import Customers
+          </h2>
+          <button className="icon-btn" onClick={onClose}><MdClose /></button>
+        </div>
+
+        <div className="modal-body">
+          {/* Header Action & Template Download */}
+          <div style={{ background: 'rgba(59,130,246,0.05)', border: '1px solid rgba(59,130,246,0.15)', borderRadius: 10, padding: 14, marginBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13.5, color: 'var(--primary)', marginBottom: 2 }}>
+                Import Customers from CSV / Excel
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Upload a CSV file containing customer names, phone numbers, addresses, and route details.
+              </div>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={handleDownloadTemplate} style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+              <MdDownload /> Download CSV Template
+            </button>
+          </div>
+
+          {!result ? (
+            <>
+              {/* File Upload Box */}
+              <div style={{ border: '2px dashed var(--border)', borderRadius: 10, padding: 24, textAlign: 'center', background: 'var(--bg-main)', marginBottom: 16 }}>
+                <MdFileDownload style={{ fontSize: 36, color: 'var(--primary)', marginBottom: 8 }} />
+                <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 4 }}>
+                  {file ? file.name : 'Select or Drop CSV File Here'}
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 12 }}>
+                  Supports CSV format with headers: Name, Phone, WhatsApp, Address, Route, Source
+                </div>
+                <input
+                  type="file"
+                  id="customer-csv-input"
+                  accept=".csv,.txt,.xlsx"
+                  onChange={handleFileChange}
+                  style={{ display: 'none' }}
+                />
+                <label htmlFor="customer-csv-input" className="btn btn-secondary btn-sm" style={{ cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <MdFileUpload /> Browse File
+                </label>
+              </div>
+
+              {/* Parsing Progress */}
+              {parsing && <div style={{ fontSize: 13, textAlign: 'center', color: 'var(--text-muted)', margin: 12 }}><span className="loading-spinner" /> Parsing file records…</div>}
+
+              {/* Parsed Records Preview */}
+              {parsedRows.length > 0 && (
+                <div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                    <div style={{ fontWeight: 700, fontSize: 13 }}>
+                      Parsed Preview ({parsedRows.length} total rows ready to import)
+                    </div>
+                  </div>
+                  <div className="table-wrapper" style={{ maxHeight: 220, overflowY: 'auto', border: '1px solid var(--border)', borderRadius: 8 }}>
+                    <table className="table" style={{ fontSize: 12 }}>
+                      <thead>
+                        <tr>
+                          <th>#</th><th>Name</th><th>Phone</th><th>WhatsApp</th><th>Address</th><th>Route</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {parsedRows.slice(0, 8).map((r, i) => (
+                          <tr key={i}>
+                            <td>{i + 1}</td>
+                            <td style={{ fontWeight: 600 }}>{r.name || '—'}</td>
+                            <td>{r.phone || '—'}</td>
+                            <td>{r.whatsapp_number || '—'}</td>
+                            <td>{r.address ? r.address.slice(0, 30) + '…' : '—'}</td>
+                            <td>{r.assigned_route_id || '—'}</td>
+                          </tr>
+                        ))}
+                        {parsedRows.length > 8 && (
+                          <tr>
+                            <td colSpan={6} style={{ textAlign: 'center', color: 'var(--text-muted)', fontStyle: 'italic' }}>
+                              … and {parsedRows.length - 8} more rows
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </>
+          ) : (
+            /* Import Results & Summary */
+            <div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, marginBottom: 16 }}>
+                <div style={{ textAlign: 'center', background: 'rgba(59,130,246,0.08)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--primary)' }}>{result.summary.totalRows}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Total Rows</div>
+                </div>
+                <div style={{ textAlign: 'center', background: 'rgba(16,185,129,0.08)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--success)' }}>{result.summary.successCount}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Successfully Imported</div>
+                </div>
+                <div style={{ textAlign: 'center', background: 'rgba(245,158,11,0.08)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: '#d97706' }}>{result.summary.duplicateCount}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Duplicates Skipped</div>
+                </div>
+                <div style={{ textAlign: 'center', background: 'rgba(239,68,68,0.08)', borderRadius: 8, padding: 12 }}>
+                  <div style={{ fontSize: 20, fontWeight: 800, color: 'var(--danger)' }}>{result.summary.failedCount}</div>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)' }}>Failed Rows</div>
+                </div>
+              </div>
+
+              {result.errors && result.errors.length > 0 && (
+                <div>
+                  <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 8, color: 'var(--danger)', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <MdErrorOutline /> Validation Errors & Skipped Rows ({result.errors.length}):
+                  </div>
+                  <div className="table-wrapper" style={{ maxHeight: 200, overflowY: 'auto', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8 }}>
+                    <table className="table" style={{ fontSize: 12 }}>
+                      <thead>
+                        <tr><th>Row #</th><th>Field</th><th>Issue / Reason</th></tr>
+                      </thead>
+                      <tbody>
+                        {result.errors.map((err, idx) => (
+                          <tr key={idx}>
+                            <td style={{ fontWeight: 700 }}>Row {err.row}</td>
+                            <td style={{ textTransform: 'capitalize', color: 'var(--text-muted)' }}>{err.field}</td>
+                            <td style={{ color: 'var(--danger)' }}>{err.message}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
+        <div className="modal-footer">
+          <button type="button" className="btn btn-secondary" onClick={onClose}>
+            {result ? 'Close' : 'Cancel'}
+          </button>
+          {!result && (
+            <button
+              id="start-import-btn"
+              type="button"
+              className="btn btn-primary"
+              disabled={importing || parsedRows.length === 0}
+              onClick={handleStartImport}
+            >
+              {importing ? <span className="loading-spinner" /> : <><MdFileUpload /> Import {parsedRows.length} Customers</>}
+            </button>
+          )}
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Main Page ─────────────────────────────────────────────────────
 export default function CustomersPage() {
   const [customers, setCustomers] = useState([]);
@@ -501,6 +779,7 @@ export default function CustomersPage() {
   const [loading, setLoading] = useState(true);
   const [routes, setRoutes] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
+  const [showImport, setShowImport] = useState(false);
   const [editCustomer, setEditCustomer] = useState(null);
   const [detailId, setDetailId] = useState(null);
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -534,6 +813,9 @@ export default function CustomersPage() {
           <p className="page-subtitle">{total.toLocaleString()} customers total</p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
+          <button id="import-customer-btn" className="btn btn-secondary" onClick={() => setShowImport(true)}>
+            <MdFileUpload /> Import Customers
+          </button>
           <button id="add-customer-btn" className="btn btn-primary" onClick={() => setShowAdd(true)}>
             <MdAdd /> Add Customer
           </button>
@@ -683,6 +965,7 @@ export default function CustomersPage() {
 
       {/* Modals */}
       <AnimatePresence>
+        {showImport && <CustomerImportModal onClose={() => setShowImport(false)} onImportDone={fetchCustomers} />}
         {showAdd && <CustomerModal routes={routes} onClose={() => setShowAdd(false)} onSaved={fetchCustomers} />}
         {editCustomer && <CustomerModal customer={editCustomer} routes={routes} onClose={() => setEditCustomer(null)} onSaved={fetchCustomers} />}
         {detailId && <CustomerDrawer customerId={detailId} onClose={() => setDetailId(null)} onRefresh={fetchCustomers} />}

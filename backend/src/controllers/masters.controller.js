@@ -11,19 +11,21 @@ const getProducts = async (req, res, next) => {
 
 const createProduct = async (req, res, next) => {
   try {
-    const { name, category, unit, price_per_unit, sku, image_url, status = 'Active' } = req.body;
+    const { name, category, unit, price_per_unit, packing_type, sku, image_url, status = 'Active' } = req.body;
     if (!name || !unit || !price_per_unit) return res.status(400).json({ success: false, message: 'Name, unit, and price required.' });
     const generatedSku = sku || `SKU-${Date.now().toString(36).toUpperCase()}`;
+    const inferredPacking = (unit || '').toLowerCase().includes('packet') || (name || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
+    const finalPacking = packing_type || inferredPacking;
     const result = await writeToCRM(
-      'INSERT INTO products (name, category, unit, price_per_unit, sku, image_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7) RETURNING *',
-      [name, category || 'Milk', unit, price_per_unit, generatedSku, image_url || null, status]
+      'INSERT INTO products (name, category, unit, price_per_unit, packing_type, sku, image_url, status) VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING *',
+      [name, category || 'Milk', unit, price_per_unit, finalPacking, generatedSku, image_url || null, status]
     );
 
     const newProd = result.rows[0];
 
     // Synchronize newly created product into DB2 (Manager App maram_test) "InventoryItem" table
     try {
-      const material = (unit || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
+      const material = finalPacking || (unit || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
       const section = category || 'AdHoc';
       await writeToApp(
         'INSERT INTO "InventoryItem" (id, name, unit, material, section) VALUES ($1, $2, $3, $4, $5)',
@@ -41,15 +43,18 @@ const createProduct = async (req, res, next) => {
 const updateProduct = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, category, unit, price_per_unit, sku, image_url, status } = req.body;
+    const { name, category, unit, price_per_unit, packing_type, sku, image_url, status } = req.body;
+    const inferredPacking = (unit || '').toLowerCase().includes('packet') || (name || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
+    const finalPacking = packing_type || inferredPacking;
+
     await writeToCRM(
-      'UPDATE products SET name=$1, category=$2, unit=$3, price_per_unit=$4, sku=$5, image_url=$6, status=$7 WHERE id=$8',
-      [name, category, unit, price_per_unit, sku, image_url, status, id]
+      'UPDATE products SET name=$1, category=$2, unit=$3, price_per_unit=$4, packing_type=$5, sku=$6, image_url=$7, status=$8 WHERE id=$9',
+      [name, category, unit, price_per_unit, finalPacking, sku, image_url, status, id]
     );
 
     // Synchronize update to DB2 "InventoryItem"
     try {
-      const material = (unit || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
+      const material = finalPacking || (unit || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
       const section = category || 'AdHoc';
       const updatedInApp = await writeToApp(
         'UPDATE "InventoryItem" SET name=$1, unit=$2, material=$3, section=$4 WHERE id=$5 OR LOWER(name)=$6',

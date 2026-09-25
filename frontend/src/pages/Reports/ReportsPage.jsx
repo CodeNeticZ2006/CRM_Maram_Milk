@@ -496,7 +496,7 @@ export default function ReportsPage() {
                 <thead>
                   <tr>
                     <th>Product Name</th>
-                    <th>SKU</th>
+                    <th>Packing Type</th>
                     <th>Opening</th>
                     <th>Added</th>
                     <th>DP Issued</th>
@@ -511,7 +511,7 @@ export default function ReportsPage() {
                     adhocReportData.centralSummary.map(row => (
                       <tr key={row.id}>
                         <td style={{ fontWeight: 700 }}>{row.name}</td>
-                        <td><code>{row.sku}</code></td>
+                        <td><span className="badge badge-gray">{row.packing_type || ((row.unit || '').toLowerCase().includes('packet') || (row.name || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle')}</span></td>
                         <td>{row.openingStock} {row.unit}</td>
                         <td style={{ color: 'var(--success)', fontWeight: 700 }}>+{row.addedStock}</td>
                         <td style={{ color: 'var(--primary)', fontWeight: 700 }}>{row.dpIssuedStock}</td>

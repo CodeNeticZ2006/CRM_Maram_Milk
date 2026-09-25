@@ -359,8 +359,149 @@ const getEnquiries = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─────────────────────────────────────────────
+// POST /api/customers/import — Bulk Customer Import
+// ─────────────────────────────────────────────
+const importCustomers = async (req, res, next) => {
+  try {
+    const { customers: importRows } = req.body;
+    if (!Array.isArray(importRows) || importRows.length === 0) {
+      return res.status(400).json({ success: false, message: 'No customer data provided for import.' });
+    }
+
+    // Fetch existing customer phones for duplicate checking
+    const existingRes = await readFromCRM('SELECT phone, customer_code FROM customers');
+    const existingPhoneSet = new Set(
+      existingRes.rows
+        .map(r => (r.phone || '').trim().replace(/[\s\-\+\(\)]/g, ''))
+        .filter(Boolean)
+    );
+
+    // Fetch routes for matching assigned_route_id
+    const routesRes = await readFromCRM('SELECT id, route_name FROM routes').catch(() => ({ rows: [] }));
+    const routeMap = new Map();
+    for (const r of routesRes.rows) {
+      if (r.id) routeMap.set(String(r.id).toLowerCase(), r.id);
+      if (r.route_name) routeMap.set(r.route_name.trim().toLowerCase(), r.id);
+    }
+
+    let totalRows = importRows.length;
+    let successCount = 0;
+    let duplicateCount = 0;
+    let failedCount = 0;
+    const errors = [];
+
+    // Track phone numbers seen within the import file to prevent intra-file duplicates
+    const filePhoneSet = new Set();
+
+    for (let index = 0; index < importRows.length; index++) {
+      const rowNum = index + 1; // 1-indexed row number
+      const row = importRows[index] || {};
+
+      const name = (row.name || '').trim();
+      let phone = (row.phone || row.mobile || row.contact || '').toString().trim();
+      const whatsapp = (row.whatsapp_number || row.whatsapp || phone).toString().trim();
+      const address = (row.address || '').trim();
+      const rawRoute = (row.assigned_route_id || row.route_name || row.route || '').toString().trim();
+      const enquiry_source = (row.enquiry_source || row.source || 'Bulk Import').trim();
+      const maps_url = (row.maps_url || '').trim();
+
+      // Validation 1: Name required
+      if (!name) {
+        failedCount++;
+        errors.push({ row: rowNum, field: 'name', message: 'Name is required' });
+        continue;
+      }
+
+      // Validation 2: Phone required
+      if (!phone) {
+        failedCount++;
+        errors.push({ row: rowNum, field: 'phone', message: 'Phone number is required' });
+        continue;
+      }
+
+      // Clean phone number for comparison
+      const cleanPhone = phone.replace(/[\s\-\+\(\)]/g, '');
+
+      // Validation 3: Basic phone length check (must be at least 7 digits)
+      if (cleanPhone.length < 7) {
+        failedCount++;
+        errors.push({ row: rowNum, field: 'phone', message: `Invalid phone number format (${phone})` });
+        continue;
+      }
+
+      // Duplicate Check 1: Already exists in Database
+      if (existingPhoneSet.has(cleanPhone)) {
+        duplicateCount++;
+        errors.push({ row: rowNum, field: 'phone', message: `Customer with phone ${phone} already exists in database` });
+        continue;
+      }
+
+      // Duplicate Check 2: Repeated in import file
+      if (filePhoneSet.has(cleanPhone)) {
+        duplicateCount++;
+        errors.push({ row: rowNum, field: 'phone', message: `Duplicate phone number ${phone} in import file` });
+        continue;
+      }
+
+      // Match route if provided
+      let matchedRouteId = null;
+      if (rawRoute) {
+        if (routeMap.has(rawRoute.toLowerCase())) {
+          matchedRouteId = routeMap.get(rawRoute.toLowerCase());
+        } else {
+          matchedRouteId = rawRoute;
+        }
+      }
+
+      try {
+        // Generate unique customer code
+        const customer_code = await generateCustomerCode();
+
+        const insertRes = await writeToCRM(
+          `INSERT INTO customers (customer_code, name, phone, whatsapp_number, address, assigned_route_id, enquiry_source, status, maps_url)
+           VALUES ($1,$2,$3,$4,$5,$6,$7,'Active',$8) RETURNING *`,
+          [customer_code, name, phone, whatsapp || phone, address || null, matchedRouteId || null, enquiry_source, maps_url || null]
+        );
+
+        const newCust = insertRes.rows[0];
+
+        // Create wallet entry
+        await writeToCRM('INSERT INTO wallet (customer_id) VALUES ($1) ON CONFLICT DO NOTHING', [newCust.id]);
+
+        // Add to tracking sets
+        existingPhoneSet.add(cleanPhone);
+        filePhoneSet.add(cleanPhone);
+
+        successCount++;
+      } catch (err) {
+        failedCount++;
+        errors.push({ row: rowNum, field: 'database', message: `Failed to insert record: ${err.message}` });
+      }
+    }
+
+    // Audit log
+    await writeToCRM(
+      `INSERT INTO audit_logs (user_type, user_ref_id, action, entity, detail_json, ip_address) VALUES ($1,$2,$3,$4,$5,$6)`,
+      ['SuperAdmin', req.admin?.id || null, 'BULK_IMPORT_CUSTOMERS', 'customers', JSON.stringify({ totalRows, successCount, duplicateCount, failedCount }), req.ip]
+    );
+
+    res.json({
+      success: true,
+      summary: {
+        totalRows,
+        successCount,
+        duplicateCount,
+        failedCount,
+      },
+      errors,
+      message: `Bulk import completed: ${successCount} imported, ${duplicateCount} duplicates skipped, ${failedCount} failed.`
+    });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getCustomers, getCustomerById, createCustomer, updateCustomer,
   toggleCustomerStatus, deleteCustomer, getCustomerLedger, addCustomerNote, getCustomerNotes,
-  createEnquiry, getEnquiries,
+  createEnquiry, getEnquiries, importCustomers,
 };

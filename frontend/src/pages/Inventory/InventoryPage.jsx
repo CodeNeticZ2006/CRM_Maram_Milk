@@ -410,6 +410,7 @@ export default function InventoryPage() {
       inventoryItemId: targetItem ? targetItem.id : '',
       quantityAdded: '',
       unit: targetItem ? (targetItem.unit || 'Units') : 'Litres',
+      date: selectedDate || operationalDate || new Date().toISOString().split('T')[0],
       supplier: '',
       batchNumber: '',
       remarks: '',
@@ -433,19 +434,21 @@ export default function InventoryPage() {
     if (isNaN(qty) || qty <= 0) return toast.error('Quantity added must be greater than 0.');
 
     const selectedItem = allProductsForModal.find(i => i.id === addForm.inventoryItemId);
+    const targetDate = addForm.date || selectedDate;
     setConfirmDialog({
       type: 'ADD',
       item: selectedItem,
       isAdhoc: selectedItem?.isAdhoc || selectedItem?.category === 'AdHoc',
       qty,
       unit: addForm.unit,
+      date: targetDate,
       payload: {
         inventoryItemId: selectedItem?.id,
         productId: selectedItem?.id,
         quantityAdded: qty,
         quantity: qty,
         unit: addForm.unit,
-        date: selectedDate,
+        date: targetDate,
         addedBy: admin?.name || 'Super Admin',
         supplier: addForm.supplier,
         batchNumber: addForm.batchNumber,
@@ -478,7 +481,7 @@ export default function InventoryPage() {
         res = await api.post('/inventory/adhoc/add-stock', {
           productId: confirmDialog.item.id,
           quantity: confirmDialog.qty,
-          date: selectedDate,
+          date: confirmDialog.date || selectedDate,
           addedBy: admin?.name || 'Super Admin',
           remarks: addForm.remarks,
         });
@@ -750,7 +753,7 @@ export default function InventoryPage() {
                       </div>
                     </div>
                   </td>
-                  <td><code style={{ fontSize: 11, background: 'var(--gray-100,#f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || `MK-${item.id}`}</code></td>
+                  <td><span className="badge badge-gray">{item.material || item.packing_type || ((item.unit || '').toLowerCase().includes('packet') || (item.name || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle')}</span></td>
                   <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{opening} {item.unit}</td>
                   <td style={{ fontWeight: 700, color: 'var(--success)' }}>+{added} {item.unit}</td>
                   <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{dpTaken} {item.unit}</td>
@@ -782,7 +785,7 @@ export default function InventoryPage() {
                       <div style={{ fontSize: 13, color: 'var(--text-primary)', fontWeight: 700 }}>{item.name}</div>
                     </div>
                   </td>
-                  <td><code style={{ fontSize: 11, background: 'var(--gray-100,#f1f5f9)', padding: '2px 6px', borderRadius: 4 }}>{item.sku || '-'}</code></td>
+                  <td><span className="badge badge-gray">{item.packing_type || ((item.unit || '').toLowerCase().includes('packet') || (item.name || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle')}</span></td>
                   <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{item.openingStock ?? 0} {item.unit}</td>
                   <td style={{ fontWeight: 700, color: 'var(--success)' }}>+{item.addedStock ?? 0} {item.unit}</td>
                   <td style={{ fontWeight: 700, color: 'var(--primary)' }}>{item.dpIssuedStock ?? 0} {item.unit}</td>
@@ -825,7 +828,7 @@ export default function InventoryPage() {
                     <thead>
                       <tr>
                         <th style={{ minWidth: 200 }}>Product</th>
-                        <th>SKU</th>
+                        <th>Packing Type</th>
                         <th>Opening</th>
                         <th>Added</th>
                         <th>DP Taken</th>
@@ -1059,7 +1062,7 @@ export default function InventoryPage() {
                 <div className="modal-body">
                   <div style={{ background: 'rgba(124,58,237,0.06)', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 12.5, borderLeft: '3px solid #7c3aed' }}>
                     <strong>Direct Override</strong> — overwrites all stock fields for this product on <strong>{selectedDate}</strong>.<br />
-                    Unit: <strong>{showAdhocOverrideModal.unit}</strong> · SKU: <strong>{showAdhocOverrideModal.sku || 'N/A'}</strong>
+                    Unit: <strong>{showAdhocOverrideModal.unit}</strong> · Packing: <strong>{showAdhocOverrideModal.packing_type || ((showAdhocOverrideModal.unit || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle')}</strong>
                   </div>
                   <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
                     <div className="form-group">
@@ -1119,42 +1122,54 @@ export default function InventoryPage() {
                 <button className="icon-btn" onClick={() => setShowAddModal(false)}><MdClose /></button>
               </div>
               <form onSubmit={triggerAddConfirmation} style={{ padding: 20 }}>
-                <div className="form-group" style={{ marginBottom: 14 }}>
-                  <label className="form-label">Product Name *</label>
-                  {selectedModalItem ? (
-                    <div className="form-input" style={{ background: 'var(--gray-100, #f1f5f9)', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 42, padding: '0 12px' }}>
-                      <span>{selectedModalItem.name}</span>
-                      <span className="badge badge-blue" style={{ fontSize: 11.5 }}>
-                        Available: {selectedModalItem.currentStock ?? selectedModalItem.remainingStock ?? 0} {selectedModalItem.unit}
-                      </span>
-                    </div>
-                  ) : (
-                    <select
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <label className="form-label">Product Name *</label>
+                    {selectedModalItem ? (
+                      <div className="form-input" style={{ background: 'var(--gray-100, #f1f5f9)', fontWeight: 700, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', height: 42, padding: '0 12px' }}>
+                        <span>{selectedModalItem.name}</span>
+                        <span className="badge badge-blue" style={{ fontSize: 11.5 }}>
+                          Available: {selectedModalItem.currentStock ?? selectedModalItem.remainingStock ?? 0} {selectedModalItem.unit}
+                        </span>
+                      </div>
+                    ) : (
+                      <select
+                        className="form-input"
+                        value={addForm.inventoryItemId}
+                        onChange={e => {
+                          const id = e.target.value;
+                          const found = allProductsForModal.find(p => p.id === id);
+                          setAddForm(f => ({
+                            ...f,
+                            inventoryItemId: id,
+                            unit: found ? (found.unit || 'Units') : f.unit
+                          }));
+                        }}
+                        required
+                      >
+                        <optgroup label="Milk Division">
+                          {items.map(i => (
+                            <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock} {i.unit})</option>
+                          ))}
+                        </optgroup>
+                        <optgroup label="AdHoc & Other Products">
+                          {adhocItems.map(i => (
+                            <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock ?? i.remainingStock ?? 0} {i.unit})</option>
+                          ))}
+                        </optgroup>
+                      </select>
+                    )}
+                  </div>
+                  <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                    <label className="form-label">Inventory Date *</label>
+                    <input
+                      type="date"
                       className="form-input"
-                      value={addForm.inventoryItemId}
-                      onChange={e => {
-                        const id = e.target.value;
-                        const found = allProductsForModal.find(p => p.id === id);
-                        setAddForm(f => ({
-                          ...f,
-                          inventoryItemId: id,
-                          unit: found ? (found.unit || 'Units') : f.unit
-                        }));
-                      }}
+                      value={addForm.date || selectedDate}
+                      onChange={e => setAddForm(f => ({ ...f, date: e.target.value }))}
                       required
-                    >
-                      <optgroup label="Milk Division">
-                        {items.map(i => (
-                          <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock} {i.unit})</option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="AdHoc & Other Products">
-                        {adhocItems.map(i => (
-                          <option key={i.id} value={i.id}>{i.name} (Available: {i.currentStock ?? i.remainingStock ?? 0} {i.unit})</option>
-                        ))}
-                      </optgroup>
-                    </select>
-                  )}
+                    />
+                  </div>
                 </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12, marginBottom: 14 }}>
                   <div className="form-group">

@@ -4,7 +4,7 @@ const { authenticate, requireSuperAdmin } = require('../middleware/auth');
 const {
   getCustomers, getCustomerById, createCustomer, updateCustomer,
   toggleCustomerStatus, deleteCustomer, getCustomerLedger, addCustomerNote, getCustomerNotes,
-  createEnquiry, getEnquiries,
+  createEnquiry, getEnquiries, importCustomers,
 } = require('../controllers/customers.controller');
 
 router.use(authenticate);
@@ -17,6 +17,7 @@ router.get('/:id/ledger', getCustomerLedger);
 router.get('/:id/notes',   getCustomerNotes);
 
 // Super Admin ONLY endpoints for Customer Management
+router.post('/import',      requireSuperAdmin, importCustomers);
 router.post('/',            requireSuperAdmin, createCustomer);
 router.put('/:id',          requireSuperAdmin, updateCustomer);
 router.patch('/:id/status', requireSuperAdmin, toggleCustomerStatus);
