@@ -24,3 +24,7 @@ src/seeds/check_*.js
 src/seeds/fix_*.js
 src/seeds/verify_*.js
 src/seeds/inspect_*.js
+backups/
+*.sql
+scripts/
+

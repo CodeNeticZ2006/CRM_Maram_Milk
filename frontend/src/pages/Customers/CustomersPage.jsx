@@ -844,7 +844,7 @@ export default function CustomersPage() {
             onChange={(e) => { setRouteFilter(e.target.value); setPage(1); }}
           >
             <option value="">All Routes</option>
-            {routes.filter(r => Number(r.customer_count || 0) > 0).map(r => (
+            {routes.map(r => (
               <option key={r.id} value={r.id}>{r.route_name}</option>
             ))}
           </select>

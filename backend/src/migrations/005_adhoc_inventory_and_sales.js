@@ -90,8 +90,12 @@ const runAdhocMigrations = async () => {
     try {
       await writeToCRM(q);
     } catch (err) {
-      console.error('⚠️ AdHoc migration query error:', err.message);
-      throw err;
+      if (err.message.includes('cannot create index on relation') || err.message.includes('is a view')) {
+        console.warn('⚠️ Skipped index creation on view "adhoc_central_inventory":', err.message);
+      } else {
+        console.error('⚠️ AdHoc migration query error:', err.message);
+        throw err;
+      }
     }
   }
 
