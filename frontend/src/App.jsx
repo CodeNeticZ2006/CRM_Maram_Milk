@@ -25,6 +25,7 @@ const PaymentsPage     = lazy(() => import('./pages/Payments/PaymentsPage'));
 const WhatsAppPage     = lazy(() => import('./pages/WhatsApp/WhatsAppPage'));
 const ReportsPage      = lazy(() => import('./pages/Reports/ReportsPage'));
 const RevenuePage      = lazy(() => import('./pages/Revenue/RevenuePage'));
+const ReportPlaceholderPage = lazy(() => import('./pages/Reports/ReportPlaceholderPage'));
 const FeedbackPage     = lazy(() => import('./pages/Feedback/FeedbackPage'));
 const SmsPage          = lazy(() => import('./pages/Sms/SmsPage'));
 const AccessControlPage = lazy(() => import('./pages/AccessControl/AccessControlPage'));
@@ -150,6 +151,66 @@ export default function App() {
             } />
             <Route path="/revenue" element={
               <Suspense fallback={<PageLoader />}><RevenuePage /></Suspense>
+            } />
+
+            {/* ── Reports Section Sub-Routes ──────────────────────────── */}
+            {/* GENERAL */}
+            <Route path="/reports/audit-trail" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Audit Trail" group="GENERAL" /></Suspense>
+            } />
+            <Route path="/reports/customer-info" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer Information Report" group="GENERAL" /></Suspense>
+            } />
+            <Route path="/reports/customer-statement" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer Statement" group="GENERAL" /></Suspense>
+            } />
+
+            {/* DELIVERY & PLANNING */}
+            <Route path="/reports/daily-planner" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Daily Planner" group="DELIVERY & PLANNING" /></Suspense>
+            } />
+            <Route path="/reports/delivery-planner" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Planner" group="DELIVERY & PLANNING" /></Suspense>
+            } />
+            <Route path="/reports/hub-daily-planner" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Hub-Wise Daily Planner Report" group="DELIVERY & PLANNING" /></Suspense>
+            } />
+            <Route path="/reports/delivery-boy-planner" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Boy-Wise Daily Planner Report" group="DELIVERY & PLANNING" /></Suspense>
+            } />
+            <Route path="/reports/delivery-boy-planner-new" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Boy-Wise Daily Planner Report New" group="DELIVERY & PLANNING" /></Suspense>
+            } />
+            <Route path="/reports/delivery-area" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Area Report" group="DELIVERY & PLANNING" /></Suspense>
+            } />
+            <Route path="/reports/mark-delivery" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Mark Delivery Report" group="DELIVERY & PLANNING" /></Suspense>
+            } />
+
+            {/* CUSTOMER REQUESTS */}
+            <Route path="/reports/pause-resume-request" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Pause / Resume Request Report" group="CUSTOMER REQUESTS" /></Suspense>
+            } />
+            <Route path="/reports/subscription-change-request" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer - Subscription Change Request Report" group="CUSTOMER REQUESTS" /></Suspense>
+            } />
+            <Route path="/reports/change-request-today-tomorrow" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Change Request For Today & Tomorrow" group="CUSTOMER REQUESTS" /></Suspense>
+            } />
+
+            {/* FINANCE & SALES */}
+            <Route path="/reports/payment-collection" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Payment Collection Report" group="FINANCE & SALES" /></Suspense>
+            } />
+            <Route path="/reports/payment-approval" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Payment Approval" group="FINANCE & SALES" /></Suspense>
+            } />
+            <Route path="/reports/customer-billing" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer Billing" group="FINANCE & SALES" /></Suspense>
+            } />
+            <Route path="/reports/sales" element={
+              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Sales Report" group="FINANCE & SALES" /></Suspense>
             } />
             <Route path="/feedback" element={
               <Suspense fallback={<PageLoader />}><FeedbackPage /></Suspense>

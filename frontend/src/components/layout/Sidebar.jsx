@@ -9,6 +9,9 @@ import {
   MdMap, MdSatellite, MdHexagon, MdRule, MdHistory, MdInsights,
   MdTune, MdExpandMore, MdExpandLess, MdInventory, MdWineBar,
   MdLocalDrink, MdWorkspacePremium, MdClose, MdCalendarToday, MdDirectionsBike,
+  MdContactPage, MdAssignment, MdToday, MdHub, MdFactCheck,
+  MdPauseCircle, MdAutorenew, MdDateRange, MdPayments, MdVerifiedUser,
+  MdReceiptLong,
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import useAuthStore from '../../store/authStore';
@@ -34,6 +37,26 @@ const ROUTE_PERMISSION_MAP = {
   '/sms': 'SMS',
   '/access-control': 'ACCESS_CONTROL',
   '/settings': 'SETTINGS',
+
+  // Reports Section Items
+  '/reports/audit-trail': 'REPORTS',
+  '/reports/customer-info': 'REPORTS',
+  '/reports/customer-statement': 'REPORTS',
+  '/reports/daily-planner': 'REPORTS',
+  '/reports/delivery-planner': 'REPORTS',
+  '/reports/hub-daily-planner': 'REPORTS',
+  '/reports/delivery-boy-planner': 'REPORTS',
+  '/reports/delivery-boy-planner-new': 'REPORTS',
+  '/reports/delivery-area': 'REPORTS',
+  '/reports/mark-delivery': 'REPORTS',
+  '/reports/pause-resume-request': 'REPORTS',
+  '/reports/subscription-change-request': 'REPORTS',
+  '/reports/change-request-today-tomorrow': 'REPORTS',
+  '/reports/payment-collection': 'REPORTS',
+  '/reports/payment-approval': 'REPORTS',
+  '/reports/customer-billing': 'REPORTS',
+  '/reports/sales': 'REPORTS',
+
   // Route Intelligence — always visible to SuperAdmin
   '/route-intelligence/live':        'ROUTE_INTELLIGENCE',
   '/route-intelligence/territories':  'ROUTE_INTELLIGENCE',
@@ -79,9 +102,46 @@ const NAV_SECTIONS = [
   },
   {
     label: 'Reports',
-    items: [
-      { to: '/reports', icon: <MdBarChart />, label: 'Reports' },
-      { to: '/revenue', icon: <MdTrendingUp />, label: 'Revenue Report' },
+    isGroup: true,
+    groupIcon: <MdBarChart />,
+    groups: [
+      {
+        sublabel: 'GENERAL',
+        items: [
+          { to: '/reports/audit-trail', icon: <MdHistory />, label: 'Audit Trail' },
+          { to: '/reports/customer-info', icon: <MdContactPage />, label: 'Customer Information Report' },
+          { to: '/reports/customer-statement', icon: <MdAssignment />, label: 'Customer Statement' },
+        ]
+      },
+      {
+        sublabel: 'DELIVERY & PLANNING',
+        items: [
+          { to: '/reports/daily-planner', icon: <MdToday />, label: 'Daily Planner' },
+          { to: '/reports/delivery-planner', icon: <MdLocalShipping />, label: 'Delivery Planner' },
+          { to: '/reports/hub-daily-planner', icon: <MdHub />, label: 'Hub-Wise Daily Planner Report' },
+          { to: '/reports/delivery-boy-planner', icon: <MdDirectionsBike />, label: 'Delivery Boy-Wise Daily Planner Report' },
+          { to: '/reports/delivery-boy-planner-new', icon: <MdDirectionsBike />, label: 'Delivery Boy-Wise Daily Planner Report New' },
+          { to: '/reports/delivery-area', icon: <MdMap />, label: 'Delivery Area Report' },
+          { to: '/reports/mark-delivery', icon: <MdFactCheck />, label: 'Mark Delivery Report' },
+        ]
+      },
+      {
+        sublabel: 'CUSTOMER REQUESTS',
+        items: [
+          { to: '/reports/pause-resume-request', icon: <MdPauseCircle />, label: 'Pause / Resume Request Report' },
+          { to: '/reports/subscription-change-request', icon: <MdAutorenew />, label: 'Customer - Subscription Change Request Report' },
+          { to: '/reports/change-request-today-tomorrow', icon: <MdDateRange />, label: 'Change Request For Today & Tomorrow' },
+        ]
+      },
+      {
+        sublabel: 'FINANCE & SALES',
+        items: [
+          { to: '/reports/payment-collection', icon: <MdPayments />, label: 'Payment Collection Report' },
+          { to: '/reports/payment-approval', icon: <MdVerifiedUser />, label: 'Payment Approval' },
+          { to: '/reports/customer-billing', icon: <MdReceiptLong />, label: 'Customer Billing' },
+          { to: '/reports/sales', icon: <MdTrendingUp />, label: 'Sales Report' },
+        ]
+      }
     ]
   },
   {
@@ -112,7 +172,7 @@ const NAV_SECTIONS = [
 export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
   const { admin, logout } = useAuthStore();
   const navigate = useNavigate();
-  const [openGroups, setOpenGroups] = useState({ 'Route Intelligence': true });
+  const [openGroups, setOpenGroups] = useState({ 'Route Intelligence': true, 'Reports': true });
 
   const toggleGroup = (label) => setOpenGroups(prev => ({ ...prev, [label]: !prev[label] }));
 
@@ -131,13 +191,24 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
 
   // Filter sections and items based on permissions
   const filteredSections = NAV_SECTIONS.map(sec => {
-    const validItems = sec.items.filter(item => {
+    if (sec.groups) {
+      const validGroups = sec.groups.map(grp => {
+        const validItems = grp.items.filter(item => {
+          if (isSuperAdmin || accessLevel === 'FULL_CONTROL') return true;
+          const reqPerm = ROUTE_PERMISSION_MAP[item.to];
+          return userPermissions.includes('*') || userPermissions.includes(reqPerm);
+        });
+        return { ...grp, items: validItems };
+      }).filter(grp => grp.items.length > 0);
+      return { ...sec, groups: validGroups };
+    }
+    const validItems = (sec.items || []).filter(item => {
       if (isSuperAdmin || accessLevel === 'FULL_CONTROL') return true;
       const reqPerm = ROUTE_PERMISSION_MAP[item.to];
       return userPermissions.includes('*') || userPermissions.includes(reqPerm);
     });
     return { ...sec, items: validItems };
-  }).filter(sec => sec.items.length > 0);
+  }).filter(sec => (sec.items && sec.items.length > 0) || (sec.groups && sec.groups.length > 0));
 
   const initials = admin?.name?.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() || 'SA';
 
@@ -172,7 +243,7 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
         {filteredSections.map((section) => (
           <div className="nav-section" key={section.label}>
             {section.isGroup ? (
-              /* Collapsible group header for Route Intelligence */
+              /* Collapsible group header */
               <>
                 <button
                   className="nav-section-group-btn"
@@ -186,24 +257,43 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
                 <AnimatePresence initial={false}>
                   {openGroups[section.label] && (
                     <motion.div
-                      key="ri-submenu"
+                      key={`${section.label}-submenu`}
                       initial={{ height: 0, opacity: 0 }}
                       animate={{ height: 'auto', opacity: 1 }}
                       exit={{ height: 0, opacity: 0 }}
                       transition={{ duration: 0.2 }}
                       style={{ overflow: 'hidden' }}
                     >
-                      {section.items.map((item) => (
-                        <NavLink
-                          key={item.to}
-                          to={item.to}
-                          onClick={onCloseMobile}
-                          className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
-                        >
-                          <span className="nav-icon">{item.icon}</span>
-                          {item.label}
-                        </NavLink>
-                      ))}
+                      {section.groups ? (
+                        section.groups.map((grp) => (
+                          <div key={grp.sublabel} className="nav-subgroup">
+                            <div className="nav-subgroup-label">{grp.sublabel}</div>
+                            {grp.items.map((item) => (
+                              <NavLink
+                                key={item.to}
+                                to={item.to}
+                                onClick={onCloseMobile}
+                                className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
+                              >
+                                <span className="nav-icon">{item.icon}</span>
+                                {item.label}
+                              </NavLink>
+                            ))}
+                          </div>
+                        ))
+                      ) : (
+                        section.items.map((item) => (
+                          <NavLink
+                            key={item.to}
+                            to={item.to}
+                            onClick={onCloseMobile}
+                            className={({ isActive }) => `nav-item nav-item-sub${isActive ? ' active' : ''}`}
+                          >
+                            <span className="nav-icon">{item.icon}</span>
+                            {item.label}
+                          </NavLink>
+                        ))
+                      )}
                     </motion.div>
                   )}
                 </AnimatePresence>

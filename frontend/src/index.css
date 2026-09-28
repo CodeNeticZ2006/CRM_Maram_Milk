@@ -230,6 +230,20 @@ img { max-width: 100%; display: block; }
   font-size: 13px;
 }
 
+.nav-subgroup {
+  margin-top: 4px;
+  margin-bottom: 4px;
+}
+
+.nav-subgroup-label {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  color: rgba(148, 163, 184, 0.5);
+  padding: 8px 20px 4px 32px;
+}
+
 .nav-badge {
   margin-left: auto;
   background: var(--danger);
