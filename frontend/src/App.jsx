@@ -32,6 +32,13 @@ const DeliveryBoyPlannerReportPage = lazy(() => import('./pages/Reports/Delivery
 const DeliveryBoyDailyPlannerPage = lazy(() => import('./pages/Reports/DeliveryBoyDailyPlannerPage'));
 const DeliveryAreaReportPage = lazy(() => import('./pages/Reports/DeliveryAreaReportPage'));
 const MarkDeliveryReportPage = lazy(() => import('./pages/Reports/MarkDeliveryReportPage'));
+const PauseResumeRequestReportPage = lazy(() => import('./pages/Reports/PauseResumeRequestReportPage'));
+const SubscriptionChangeRequestReportPage = lazy(() => import('./pages/Reports/SubscriptionChangeRequestReportPage'));
+const ChangeRequestTodayTomorrowPage = lazy(() => import('./pages/Reports/ChangeRequestTodayTomorrowPage'));
+const PaymentCollectionReportPage = lazy(() => import('./pages/Reports/PaymentCollectionReportPage'));
+const PaymentApprovalReportPage = lazy(() => import('./pages/Reports/PaymentApprovalReportPage'));
+const ManageCustomerBillingPage = lazy(() => import('./pages/Reports/ManageCustomerBillingPage'));
+const SalesReportPage = lazy(() => import('./pages/Reports/SalesReportPage'));
 const ReportPlaceholderPage = lazy(() => import('./pages/Reports/ReportPlaceholderPage'));
 const FeedbackPage     = lazy(() => import('./pages/Feedback/FeedbackPage'));
 const SmsPage          = lazy(() => import('./pages/Sms/SmsPage'));
@@ -200,27 +207,30 @@ export default function App() {
 
             {/* CUSTOMER REQUESTS */}
             <Route path="/reports/pause-resume-request" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Pause / Resume Request Report" group="CUSTOMER REQUESTS" /></Suspense>
+              <Suspense fallback={<PageLoader />}><PauseResumeRequestReportPage /></Suspense>
             } />
             <Route path="/reports/subscription-change-request" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer - Subscription Change Request Report" group="CUSTOMER REQUESTS" /></Suspense>
+              <Suspense fallback={<PageLoader />}><SubscriptionChangeRequestReportPage /></Suspense>
             } />
             <Route path="/reports/change-request-today-tomorrow" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Change Request For Today & Tomorrow" group="CUSTOMER REQUESTS" /></Suspense>
+              <Suspense fallback={<PageLoader />}><ChangeRequestTodayTomorrowPage /></Suspense>
             } />
 
             {/* FINANCE & SALES */}
             <Route path="/reports/payment-collection" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Payment Collection Report" group="FINANCE & SALES" /></Suspense>
+              <Suspense fallback={<PageLoader />}><PaymentCollectionReportPage /></Suspense>
             } />
             <Route path="/reports/payment-approval" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Payment Approval" group="FINANCE & SALES" /></Suspense>
+              <Suspense fallback={<PageLoader />}><PaymentApprovalReportPage /></Suspense>
             } />
             <Route path="/reports/customer-billing" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer Billing" group="FINANCE & SALES" /></Suspense>
+              <Suspense fallback={<PageLoader />}><ManageCustomerBillingPage /></Suspense>
             } />
             <Route path="/reports/sales" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Sales Report" group="FINANCE & SALES" /></Suspense>
+              <Suspense fallback={<PageLoader />}><SalesReportPage /></Suspense>
+            } />
+            <Route path="/reports/sales-report" element={
+              <Suspense fallback={<PageLoader />}><SalesReportPage /></Suspense>
             } />
             <Route path="/feedback" element={
               <Suspense fallback={<PageLoader />}><FeedbackPage /></Suspense>

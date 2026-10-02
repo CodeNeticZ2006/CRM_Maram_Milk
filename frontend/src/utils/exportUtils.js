@@ -1492,6 +1492,689 @@ export const exportMarkDeliveryPDF = ({
   printWindow.document.close();
 };
 
+/**
+ * REPORT 1: Export Pause Resume Request Report to Excel
+ * Filename: Pause_Resume_Request_Report.xlsx
+ */
+export const exportPauseResumeRequestExcel = ({ rows, filters = {} }) => {
+  const data = [];
+
+  data.push(['PAUSE RESUME REQUEST REPORT']);
+  if (filters.customer) data.push([`Customer: ${filters.customer}`]);
+  if (filters.pauseDate) data.push([`Pause Date: ${filters.pauseDate}`]);
+  data.push([]); // blank separator
+
+  const headers = ['Customer Name', 'Plan', 'Status', 'Pause Request Date', 'Pause Date'];
+  data.push(headers);
+
+  rows.forEach(r => {
+    data.push([
+      r.customer_name || '',
+      r.plan || '',
+      r.status || '',
+      r.pause_request_date || '',
+      r.pause_date || '',
+    ]);
+  });
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  worksheet['!cols'] = [
+    { wch: 28 }, // Customer Name
+    { wch: 26 }, // Plan
+    { wch: 16 }, // Status
+    { wch: 20 }, // Pause Request Date
+    { wch: 18 }, // Pause Date
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Pause Resume Requests');
+  XLSX.writeFile(workbook, 'Pause_Resume_Request_Report.xlsx');
+};
+
+/**
+ * REPORT 1: Export Pause Resume Request Report to PDF
+ * Filename: Pause_Resume_Request_Report.pdf
+ */
+export const exportPauseResumeRequestPDF = ({ rows, filters = {} }) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Please allow popups to download/print the PDF report.');
+    return;
+  }
+
+  const filterItems = [];
+  if (filters.customer && filters.customer !== 'All' && filters.customer !== '[ Select Customer ▼ ]') filterItems.push(`Customer: ${filters.customer}`);
+  if (filters.pauseDate) filterItems.push(`Pause Date: ${filters.pauseDate}`);
+  const filterInfo = filterItems.join(' | ');
+
+  const tableRowsHtml = rows.map(r => `
+    <tr>
+      <td><strong>${r.customer_name || ''}</strong></td>
+      <td>${r.plan || ''}</td>
+      <td><span style="display:inline-block; padding:2px 6px; background:#fee2e2; color:#991b1b; border-radius:4px; font-weight:600; font-size:9px;">${r.status || 'Active'}</span></td>
+      <td>${r.pause_request_date || ''}</td>
+      <td>${r.pause_date || ''}</td>
+    </tr>
+  `).join('');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Pause_Resume_Request_Report</title>
+      <style>
+        @page { size: portrait; margin: 12mm; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 12px; font-size: 9.5px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0284c7; padding-bottom: 8px; margin-bottom: 8px; }
+        .title { font-size: 16px; font-weight: 800; color: #0284c7; letter-spacing: 0.5px; }
+        .meta { font-size: 9.5px; color: #475569; margin-bottom: 12px; background: #f1f5f9; padding: 6px 10px; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 6px; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        th { background: #f1f5f9; color: #1e293b; font-weight: 700; text-align: left; padding: 7px 9px; border: 1px solid #cbd5e1; font-size: 9px; text-transform: uppercase; }
+        td { padding: 7px 9px; border: 1px solid #e2e8f0; font-size: 9.5px; vertical-align: middle; }
+        .footer { margin-top: 16px; font-size: 9px; color: #94a3b8; display: flex; justify-content: space-between; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">PAUSE RESUME REQUEST REPORT</div>
+      </div>
+      <div class="meta">
+        ${filterInfo ? filterInfo + ' | ' : ''}Generated: ${new Date().toLocaleString('en-IN')} | Total Records: ${rows.length}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Customer Name</th>
+            <th>Plan</th>
+            <th>Status</th>
+            <th>Pause Request Date</th>
+            <th>Pause Date</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+        </tbody>
+      </table>
+      <div class="footer">
+        <span>Pause Resume Request Report | Maram Milk SuperAdmin CRM</span>
+      </div>
+      <script>
+        window.onload = function() { window.print(); };
+      </script>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
+
+/**
+ * REPORT 2: Export Customer Subscription Change Request Report to Excel
+ * Filename: Customer_Subscription_Change_Request_Report.xlsx
+ */
+export const exportSubscriptionChangeRequestExcel = ({ rows, filters = {} }) => {
+  const data = [];
+
+  data.push(['CUSTOMER - SUBSCRIPTION CHANGE REQUEST REPORT']);
+  if (filters.customer) data.push([`Customer: ${filters.customer}`]);
+  if (filters.subscriptionType) data.push([`Subscription Type: ${filters.subscriptionType}`]);
+  if (filters.changeRequestDate) data.push([`Change Request Date: ${filters.changeRequestDate}`]);
+  if (filters.product) data.push([`Product: ${filters.product}`]);
+  if (filters.status) data.push([`Status: ${filters.status}`]);
+  data.push([]); // blank separator
+
+  const headers = [
+    'Customer',
+    'Subscription Type',
+    'Start Date',
+    'Delivery Type',
+    'Delivery Boy',
+    'Product Name',
+    'Packaging',
+    'Qty',
+    'Changed Qty',
+    'Change Request Date',
+    'Entry by'
+  ];
+  data.push(headers);
+
+  rows.forEach(r => {
+    data.push([
+      r.customer || '',
+      r.subscription_type || '',
+      r.start_date || '',
+      r.delivery_type || 'Daily Delivery',
+      r.delivery_boy || '',
+      r.product_name || '',
+      r.packaging || '',
+      r.qty !== undefined ? r.qty : '',
+      r.changed_qty !== undefined ? r.changed_qty : '',
+      r.change_request_date || '',
+      r.entry_by || '',
+    ]);
+  });
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  worksheet['!cols'] = [
+    { wch: 26 }, // Customer
+    { wch: 18 }, // Subscription Type
+    { wch: 14 }, // Start Date
+    { wch: 16 }, // Delivery Type
+    { wch: 18 }, // Delivery Boy
+    { wch: 26 }, // Product Name
+    { wch: 12 }, // Packaging
+    { wch: 8 },  // Qty
+    { wch: 12 }, // Changed Qty
+    { wch: 18 }, // Change Request Date
+    { wch: 16 }, // Entry by
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Change Requests');
+  XLSX.writeFile(workbook, 'Customer_Subscription_Change_Request_Report.xlsx');
+};
+
+/**
+ * REPORT 2: Export Customer Subscription Change Request Report to PDF
+ * Filename: Customer_Subscription_Change_Request_Report.pdf
+ */
+export const exportSubscriptionChangeRequestPDF = ({ rows, filters = {} }) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Please allow popups to download/print the PDF report.');
+    return;
+  }
+
+  const filterItems = [];
+  if (filters.customer && filters.customer !== 'All' && filters.customer !== '[ Select Customer ▼ ]') filterItems.push(`Customer: ${filters.customer}`);
+  if (filters.subscriptionType && filters.subscriptionType !== 'All' && filters.subscriptionType !== '[ Select Type ▼ ]') filterItems.push(`Subscription Type: ${filters.subscriptionType}`);
+  if (filters.changeRequestDate) filterItems.push(`Change Request Date: ${filters.changeRequestDate}`);
+  if (filters.product && filters.product !== 'All' && filters.product !== '[ Select Product ▼ ]') filterItems.push(`Product: ${filters.product}`);
+  if (filters.status && filters.status !== 'All' && filters.status !== '[ Select Status ▼ ]') filterItems.push(`Status: ${filters.status}`);
+  const filterInfo = filterItems.join(' | ');
+
+  const tableRowsHtml = rows.map(r => `
+    <tr>
+      <td><strong>${r.customer || ''}</strong></td>
+      <td><span style="display:inline-block; padding:2px 5px; background:#e0f2fe; color:#0369a1; border-radius:4px; font-weight:600; font-size:8px;">${r.subscription_type || 'Subscribe'}</span></td>
+      <td>${r.start_date || ''}</td>
+      <td>${r.delivery_type || 'Daily Delivery'}</td>
+      <td>${r.delivery_boy || ''}</td>
+      <td>${r.product_name || ''}</td>
+      <td>${r.packaging || ''}</td>
+      <td style="text-align:right; font-weight:600;">${r.qty}</td>
+      <td style="text-align:right; font-weight:700; color:#166534;">${r.changed_qty}</td>
+      <td>${r.change_request_date || ''}</td>
+      <td>${r.entry_by || ''}</td>
+    </tr>
+  `).join('');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Customer_Subscription_Change_Request_Report</title>
+      <style>
+        @page { size: landscape; margin: 10mm; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 12px; font-size: 8.5px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0284c7; padding-bottom: 8px; margin-bottom: 8px; }
+        .title { font-size: 15px; font-weight: 800; color: #0284c7; letter-spacing: 0.5px; }
+        .meta { font-size: 9px; color: #475569; margin-bottom: 10px; background: #f1f5f9; padding: 6px 10px; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        th { background: #f1f5f9; color: #1e293b; font-weight: 700; text-align: left; padding: 5px 6px; border: 1px solid #cbd5e1; font-size: 8px; text-transform: uppercase; }
+        td { padding: 5px 6px; border: 1px solid #e2e8f0; font-size: 8px; vertical-align: middle; }
+        .footer { margin-top: 14px; font-size: 8px; color: #94a3b8; display: flex; justify-content: space-between; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">CUSTOMER - SUBSCRIPTION CHANGE REQUEST REPORT</div>
+      </div>
+      <div class="meta">
+        ${filterInfo ? filterInfo + ' | ' : ''}Generated: ${new Date().toLocaleString('en-IN')} | Total Records: ${rows.length}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Customer</th>
+            <th>Subscription Type</th>
+            <th>Start Date</th>
+            <th>Delivery Type</th>
+            <th>Delivery Boy</th>
+            <th>Product Name</th>
+            <th>Packaging</th>
+            <th style="text-align:right;">Qty</th>
+            <th style="text-align:right;">Changed Qty</th>
+            <th>Change Request Date</th>
+            <th>Entry by</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+        </tbody>
+      </table>
+      <div class="footer">
+        <span>Customer Subscription Change Request Report | Maram Milk SuperAdmin CRM</span>
+      </div>
+      <script>
+        window.onload = function() { window.print(); };
+      </script>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
+
+/**
+ * REPORT 3: Export Change Request For Today & Tomorrow to Excel
+ * Filename: Change_Request_Today_Tomorrow.xlsx
+ */
+export const exportChangeTodayTomorrowExcel = ({ rows, filters = {} }) => {
+  const data = [];
+
+  data.push(['CHANGE REQUEST FOR TODAY & TOMORROW']);
+  if (filters.customer) data.push([`Customer: ${filters.customer}`]);
+  if (filters.city) data.push([`City: ${filters.city}`]);
+  data.push([]); // blank separator
+
+  const headers = [
+    'Customer',
+    'Type',
+    'Start Date',
+    'Product Name',
+    'Packaging',
+    'Qty',
+    'Changed Qty',
+    'Change Request Date'
+  ];
+  data.push(headers);
+
+  rows.forEach(r => {
+    data.push([
+      r.customer || '',
+      r.type || 'Subscribe',
+      r.start_date || '',
+      r.product_name || '',
+      r.packaging || '',
+      r.qty !== undefined ? r.qty : '',
+      r.changed_qty !== undefined ? r.changed_qty : '',
+      r.change_request_date || '',
+    ]);
+  });
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  worksheet['!cols'] = [
+    { wch: 32 }, // Customer
+    { wch: 16 }, // Type
+    { wch: 14 }, // Start Date
+    { wch: 28 }, // Product Name
+    { wch: 12 }, // Packaging
+    { wch: 8 },  // Qty
+    { wch: 12 }, // Changed Qty
+    { wch: 18 }, // Change Request Date
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Today & Tomorrow Requests');
+  XLSX.writeFile(workbook, 'Change_Request_Today_Tomorrow.xlsx');
+};
+
+/**
+ * Export Payment Collection Report to Excel
+ * Filename: Payment_Collection_Report_<START>_to_<END>.xlsx
+ */
+export const exportPaymentCollectionExcel = ({
+  rows,
+  totalsRow,
+  startDate,
+  endDate,
+  totalAmountRecharged = 0,
+  totalCashback = 0,
+  filters = {}
+}) => {
+  const data = [];
+
+  // Metadata block
+  data.push(['PAYMENT COLLECTION REPORT']);
+  data.push([`Date Range: ${startDate} to ${endDate}`]);
+  if (filters.customer) data.push([`Customer: ${filters.customer}`]);
+  if (filters.customerType) data.push([`Customer Type: ${filters.customerType}`]);
+  if (filters.deliveryBoy) data.push([`Delivery Boy: ${filters.deliveryBoy}`]);
+  if (filters.mode) data.push([`Mode: ${filters.mode}`]);
+  if (filters.city) data.push([`City: ${filters.city}`]);
+  if (filters.paymentMethod) data.push([`Payment Method: ${filters.paymentMethod}`]);
+  data.push([`Total Amount Recharged: Rs. ${totalAmountRecharged}`]);
+  data.push([`Total Cashback: Rs. ${totalCashback}`]);
+  data.push([]); // blank separator
+
+  // Table headers
+  const headers = [
+    'Date',
+    'Customer',
+    'Amount(Rs)',
+    'Promocode',
+    'Cashback Amount',
+    'Payment Method',
+    'Remark / Payment History',
+    'Mode',
+    'Narration'
+  ];
+  data.push(headers);
+
+  // Table rows
+  rows.forEach(r => {
+    data.push([
+      r.date || '',
+      r.customer || '',
+      r.amount !== undefined ? r.amount : 0,
+      r.promocode || '-',
+      r.cashback_amount !== undefined ? r.cashback_amount : 0,
+      r.payment_method || '',
+      r.remark || '',
+      r.mode || '',
+      r.narration || '',
+    ]);
+  });
+
+  // Total row
+  if (totalsRow) {
+    data.push([
+      totalsRow.date || 'Total',
+      '',
+      totalsRow.amount || 0,
+      '',
+      totalsRow.cashback_amount || 0,
+      '',
+      '',
+      '',
+      ''
+    ]);
+  }
+
+  const worksheet = XLSX.utils.aoa_to_sheet(data);
+  worksheet['!cols'] = [
+    { wch: 14 }, // Date
+    { wch: 35 }, // Customer
+    { wch: 14 }, // Amount(Rs)
+    { wch: 14 }, // Promocode
+    { wch: 16 }, // Cashback Amount
+    { wch: 18 }, // Payment Method
+    { wch: 28 }, // Remark
+    { wch: 12 }, // Mode
+    { wch: 30 }, // Narration
+  ];
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Payment Collection');
+
+  const fileName = `Payment_Collection_Report_${startDate}_to_${endDate}.xlsx`;
+  XLSX.writeFile(workbook, fileName);
+};
+
+/**
+ * Export Payment Collection Report to PDF (Landscape print)
+ * Filename: Payment_Collection_Report_<START>_to_<END>.pdf
+ */
+export const exportPaymentCollectionPDF = ({
+  rows,
+  totalsRow,
+  startDate,
+  endDate,
+  totalAmountRecharged = 0,
+  totalCashback = 0,
+  filters = {}
+}) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    alert('Please allow popups to download/print the PDF report.');
+    return;
+  }
+
+  const filterItems = [];
+  filterItems.push(`Date Range: ${startDate} to ${endDate}`);
+  if (filters.customer && filters.customer !== 'All' && filters.customer !== '[ Select Customer ▼ ]') filterItems.push(`Customer: ${filters.customer}`);
+  if (filters.customerType && filters.customerType !== 'All' && filters.customerType !== '[ Select Customer Type ▼ ]') filterItems.push(`Customer Type: ${filters.customerType}`);
+  if (filters.deliveryBoy && filters.deliveryBoy !== 'All' && filters.deliveryBoy !== '[ Select Delivery Boy ▼ ]') filterItems.push(`Delivery Boy: ${filters.deliveryBoy}`);
+  if (filters.mode && filters.mode !== 'All' && filters.mode !== '[ Select Mode ▼ ]') filterItems.push(`Mode: ${filters.mode}`);
+  filterItems.push(`City: ${filters.city || 'Chennai'}`);
+  if (filters.paymentMethod && filters.paymentMethod !== 'All' && filters.paymentMethod !== '[ Select Payment Method ▼ ]') filterItems.push(`Payment Method: ${filters.paymentMethod}`);
+  const filterInfo = filterItems.join(' | ');
+
+  const tableRowsHtml = rows.map(r => `
+    <tr>
+      <td style="white-space:nowrap;">${r.date || ''}</td>
+      <td><strong>${r.customer || ''}</strong></td>
+      <td style="text-align:right; font-weight:700; color:#166534;">${r.amount}</td>
+      <td>${r.promocode || '-'}</td>
+      <td style="text-align:right; font-weight:600; color:#0284c7;">${r.cashback_amount}</td>
+      <td><span style="display:inline-block; padding:2px 5px; background:#e0f2fe; color:#0369a1; border-radius:4px; font-weight:600; font-size:8px;">${r.payment_method || ''}</span></td>
+      <td style="font-size:8.5px; color:#475569;">${r.remark || ''}</td>
+      <td><span style="display:inline-block; padding:2px 5px; background:#f1f5f9; color:#334155; border-radius:4px; font-weight:600; font-size:8px;">${r.mode || ''}</span></td>
+      <td style="font-size:8.5px; color:#475569;">${r.narration || ''}</td>
+    </tr>
+  `).join('');
+
+  const totalsHtml = totalsRow ? `
+    <tr style="background:#f8fafc; font-weight:700; border-top:2px solid #0284c7;">
+      <td style="font-weight:800;">Total</td>
+      <td></td>
+      <td style="text-align:right; font-weight:800; color:#166534;">${totalsRow.amount}</td>
+      <td></td>
+      <td style="text-align:right; font-weight:800; color:#0284c7;">${totalsRow.cashback_amount}</td>
+      <td></td>
+      <td></td>
+      <td></td>
+      <td></td>
+    </tr>
+  ` : '';
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Payment_Collection_Report_${startDate}_to_${endDate}</title>
+      <style>
+        @page { size: landscape; margin: 10mm; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 12px; font-size: 8.5px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0284c7; padding-bottom: 8px; margin-bottom: 8px; }
+        .title { font-size: 16px; font-weight: 800; color: #0284c7; letter-spacing: 0.5px; }
+        .summary-box { display: flex; gap: 16px; margin-bottom: 10px; }
+        .card { background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 8px 12px; flex: 1; }
+        .card-title { font-size: 8px; text-transform: uppercase; color: #64748b; font-weight: 700; }
+        .card-value { font-size: 13px; font-weight: 800; color: #1e293b; margin-top: 2px; }
+        .meta { font-size: 9px; color: #475569; margin-bottom: 10px; background: #f1f5f9; padding: 6px 10px; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        th { background: #f1f5f9; color: #1e293b; font-weight: 700; text-align: left; padding: 5px 6px; border: 1px solid #cbd5e1; font-size: 8px; text-transform: uppercase; }
+        td { padding: 5px 6px; border: 1px solid #e2e8f0; font-size: 8px; vertical-align: middle; }
+        .footer { margin-top: 14px; font-size: 8px; color: #94a3b8; display: flex; justify-content: space-between; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">PAYMENT COLLECTION REPORT</div>
+      </div>
+      <div class="summary-box">
+        <div class="card">
+          <div class="card-title">Total Amount Recharged</div>
+          <div class="card-value" style="color:#166534;">Rs. ${totalAmountRecharged}</div>
+        </div>
+        <div class="card">
+          <div class="card-title">Total Cashback</div>
+          <div class="card-value" style="color:#0284c7;">Rs. ${totalCashback}</div>
+        </div>
+      </div>
+      <div class="meta">
+        ${filterInfo} | Total Records: ${rows.length}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Customer</th>
+            <th style="text-align:right;">Amount(Rs)</th>
+            <th>Promocode</th>
+            <th style="text-align:right;">Cashback Amount</th>
+            <th>Payment Method</th>
+            <th>Remark / Payment History</th>
+            <th>Mode</th>
+            <th>Narration</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+          ${totalsHtml}
+        </tbody>
+      </table>
+      <div class="footer">
+        <span>Payment Collection Report | Maram Milk SuperAdmin CRM</span>
+      </div>
+      <script>
+        window.onload = function() { window.print(); };
+      </script>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
+
+/**
+ * Export Payment Approval Report as PDF
+ */
+export const exportPaymentApprovalPDF = ({ rows, startDate, endDate, filterInfo }) => {
+  const printWindow = window.open('', '_blank');
+  if (!printWindow) {
+    throw new Error('Popup blocked! Please allow popups to generate PDF report.');
+  }
+
+  const tableRowsHtml = rows.map(r => `
+    <tr>
+      <td style="font-weight:700; color:#3b82f6;">${r.customer_id || ''}</td>
+      <td><strong>${r.customer || ''}</strong></td>
+      <td style="white-space:nowrap;">${r.pay_date || ''}</td>
+      <td style="font-size:8.5px; color:#475569;">${r.remark || ''}</td>
+      <td style="text-align:right; font-weight:700; color:#166534;">₹${parseFloat(r.amount || 0).toLocaleString('en-IN', { minimumFractionDigits: 2 })}</td>
+      <td>${r.entry_by || 'Admin'}</td>
+      <td><span style="display:inline-block; padding:2px 6px; background:#dcfce7; color:#15803d; border-radius:4px; font-weight:700; font-size:8px;">${r.approval || 'Approved'}</span></td>
+    </tr>
+  `).join('');
+
+  const htmlContent = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+      <title>Payment_Approval_Report_${startDate}_to_${endDate}</title>
+      <style>
+        @page { size: landscape; margin: 10mm; }
+        body { font-family: 'Segoe UI', Arial, sans-serif; color: #0f172a; margin: 0; padding: 12px; font-size: 8.5px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #0284c7; padding-bottom: 8px; margin-bottom: 8px; }
+        .title { font-size: 16px; font-weight: 800; color: #0284c7; letter-spacing: 0.5px; }
+        .meta { font-size: 9px; color: #475569; margin-bottom: 10px; background: #f1f5f9; padding: 6px 10px; border-radius: 4px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 4px; }
+        thead { display: table-header-group; }
+        tr { page-break-inside: avoid; }
+        th { background: #f1f5f9; color: #1e293b; font-weight: 700; text-align: left; padding: 6px 8px; border: 1px solid #cbd5e1; font-size: 8px; text-transform: uppercase; }
+        td { padding: 6px 8px; border: 1px solid #e2e8f0; font-size: 8.5px; vertical-align: middle; }
+        .footer { margin-top: 14px; font-size: 8px; color: #94a3b8; display: flex; justify-content: space-between; }
+      </style>
+    </head>
+    <body>
+      <div class="header">
+        <div class="title">PAYMENT APPROVAL REPORT</div>
+      </div>
+      <div class="meta">
+        ${filterInfo} | Total Records: ${rows.length}
+      </div>
+      <table>
+        <thead>
+          <tr>
+            <th>Customer Id</th>
+            <th>Customer</th>
+            <th>Pay Date</th>
+            <th>Remark / Payment History</th>
+            <th style="text-align:right;">Amount</th>
+            <th>Entry by</th>
+            <th>Approval</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${tableRowsHtml}
+        </tbody>
+      </table>
+      <div class="footer">
+        <span>Payment Approval Report | Maram Milk CRM</span>
+      </div>
+      <script>
+        window.onload = function() { window.print(); };
+      </script>
+    </body>
+    </html>
+  `;
+
+  printWindow.document.write(htmlContent);
+  printWindow.document.close();
+};
+
+/**
+ * Export Manage Customer Billing Report as Excel
+ */
+export const exportCustomerBillingExcel = ({ rows, startDate, endDate, filterInfo }) => {
+  const headers = ['Customer ID', 'Customer Name', 'Phone', 'From Date', 'To Date', 'Bill Amount', 'Paid Amount', 'Remaining Amount', 'Status'];
+  const excelRows = rows.map(r => [
+    r.customer_id || '',
+    r.customer_name || '',
+    r.phone || '',
+    r.from_date || '',
+    r.to_date || '',
+    parseFloat(r.bill_amount || 0),
+    parseFloat(r.paid_amount || 0),
+    parseFloat(r.remaining_amount || 0),
+    r.status || 'Active',
+  ]);
+
+  exportToExcel({
+    fileName: `Customer_Billing_${startDate}_to_${endDate}`,
+    sheetName: 'Customer Billing',
+    reportTitle: 'Manage Customer Billing',
+    filterInfo,
+    headers,
+    rows: excelRows,
+  });
+};
+
+/**
+ * Export Sales Report as Excel
+ */
+export const exportSalesReportExcel = ({ rows, startDate, endDate, filterInfo }) => {
+  const headers = ['Customer ID', 'Customer Name', 'Route', 'Date', 'Amount'];
+  const excelRows = rows.map(r => [
+    r.customer_id || '',
+    r.customer || '',
+    r.route || '',
+    r.date || '',
+    parseFloat(r.amount || 0),
+  ]);
+
+  exportToExcel({
+    fileName: `Sales_Report_${startDate}_to_${endDate}`,
+    sheetName: 'Sales Report',
+    reportTitle: 'Sales Report',
+    filterInfo,
+    headers,
+    rows: excelRows,
+  });
+};
+
 
 
 
