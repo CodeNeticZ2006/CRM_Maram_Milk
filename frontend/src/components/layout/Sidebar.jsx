@@ -39,6 +39,7 @@ const ROUTE_PERMISSION_MAP = {
   '/settings': 'SETTINGS',
 
   // Reports Section Items
+  '/reports/general': 'REPORTS',
   '/reports/audit-trail': 'REPORTS',
   '/reports/customer-info': 'REPORTS',
   '/reports/customer-statement': 'REPORTS',
@@ -119,8 +120,8 @@ const NAV_SECTIONS = [
           { to: '/reports/daily-planner', icon: <MdToday />, label: 'Daily Planner' },
           { to: '/reports/delivery-planner', icon: <MdLocalShipping />, label: 'Delivery Planner' },
           { to: '/reports/hub-daily-planner', icon: <MdHub />, label: 'Hub-Wise Daily Planner Report' },
-          { to: '/reports/delivery-boy-planner', icon: <MdDirectionsBike />, label: 'Delivery Boy-Wise Daily Planner Report' },
-          { to: '/reports/delivery-boy-planner-new', icon: <MdDirectionsBike />, label: 'Delivery Boy-Wise Daily Planner Report New' },
+          { to: '/reports/delivery-boy-planner', icon: <MdDirectionsBike />, label: 'Delivery Boy-Wise Monthly Planner' },
+          { to: '/reports/delivery-boy-planner-new', icon: <MdDirectionsBike />, label: 'Delivery Boy-Wise Daily Planner Report' },
           { to: '/reports/delivery-area', icon: <MdMap />, label: 'Delivery Area Report' },
           { to: '/reports/mark-delivery', icon: <MdFactCheck />, label: 'Mark Delivery Report' },
         ]

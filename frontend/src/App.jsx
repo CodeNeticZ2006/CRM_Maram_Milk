@@ -25,6 +25,13 @@ const PaymentsPage     = lazy(() => import('./pages/Payments/PaymentsPage'));
 const WhatsAppPage     = lazy(() => import('./pages/WhatsApp/WhatsAppPage'));
 const ReportsPage      = lazy(() => import('./pages/Reports/ReportsPage'));
 const RevenuePage      = lazy(() => import('./pages/Revenue/RevenuePage'));
+const GeneralReportsPage = lazy(() => import('./pages/Reports/GeneralReportsPage'));
+const CustomerInfoReportPage = lazy(() => import('./pages/Reports/CustomerInfoReportPage'));
+const DeliveryPlannerPage = lazy(() => import('./pages/Reports/DeliveryPlannerPage'));
+const DeliveryBoyPlannerReportPage = lazy(() => import('./pages/Reports/DeliveryBoyPlannerReportPage'));
+const DeliveryBoyDailyPlannerPage = lazy(() => import('./pages/Reports/DeliveryBoyDailyPlannerPage'));
+const DeliveryAreaReportPage = lazy(() => import('./pages/Reports/DeliveryAreaReportPage'));
+const MarkDeliveryReportPage = lazy(() => import('./pages/Reports/MarkDeliveryReportPage'));
 const ReportPlaceholderPage = lazy(() => import('./pages/Reports/ReportPlaceholderPage'));
 const FeedbackPage     = lazy(() => import('./pages/Feedback/FeedbackPage'));
 const SmsPage          = lazy(() => import('./pages/Sms/SmsPage'));
@@ -155,37 +162,40 @@ export default function App() {
 
             {/* ── Reports Section Sub-Routes ──────────────────────────── */}
             {/* GENERAL */}
+            <Route path="/reports/general" element={
+              <Suspense fallback={<PageLoader />}><GeneralReportsPage /></Suspense>
+            } />
             <Route path="/reports/audit-trail" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Audit Trail" group="GENERAL" /></Suspense>
+              <Suspense fallback={<PageLoader />}><GeneralReportsPage /></Suspense>
             } />
             <Route path="/reports/customer-info" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer Information Report" group="GENERAL" /></Suspense>
+              <Suspense fallback={<PageLoader />}><CustomerInfoReportPage /></Suspense>
             } />
             <Route path="/reports/customer-statement" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Customer Statement" group="GENERAL" /></Suspense>
+              <Suspense fallback={<PageLoader />}><GeneralReportsPage /></Suspense>
             } />
 
             {/* DELIVERY & PLANNING */}
             <Route path="/reports/daily-planner" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Daily Planner" group="DELIVERY & PLANNING" /></Suspense>
+              <Suspense fallback={<PageLoader />}><GeneralReportsPage /></Suspense>
             } />
             <Route path="/reports/delivery-planner" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Planner" group="DELIVERY & PLANNING" /></Suspense>
+              <Suspense fallback={<PageLoader />}><DeliveryPlannerPage /></Suspense>
             } />
             <Route path="/reports/hub-daily-planner" element={
               <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Hub-Wise Daily Planner Report" group="DELIVERY & PLANNING" /></Suspense>
             } />
             <Route path="/reports/delivery-boy-planner" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Boy-Wise Daily Planner Report" group="DELIVERY & PLANNING" /></Suspense>
+              <Suspense fallback={<PageLoader />}><DeliveryBoyPlannerReportPage /></Suspense>
             } />
             <Route path="/reports/delivery-boy-planner-new" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Boy-Wise Daily Planner Report New" group="DELIVERY & PLANNING" /></Suspense>
+              <Suspense fallback={<PageLoader />}><DeliveryBoyDailyPlannerPage /></Suspense>
             } />
             <Route path="/reports/delivery-area" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Delivery Area Report" group="DELIVERY & PLANNING" /></Suspense>
+              <Suspense fallback={<PageLoader />}><DeliveryAreaReportPage /></Suspense>
             } />
             <Route path="/reports/mark-delivery" element={
-              <Suspense fallback={<PageLoader />}><ReportPlaceholderPage title="Mark Delivery Report" group="DELIVERY & PLANNING" /></Suspense>
+              <Suspense fallback={<PageLoader />}><MarkDeliveryReportPage /></Suspense>
             } />
 
             {/* CUSTOMER REQUESTS */}

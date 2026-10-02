@@ -4,13 +4,14 @@ import {
   MdRefresh, MdCalendarToday, MdDownload, MdFileDownload,
   MdInventory2, MdAnalytics, MdFilterList, MdSearch,
   MdCheckCircle, MdDateRange, MdGridOn, MdStorefront, MdBusiness,
-  MdOutlineAssignmentReturn, MdFlashOn
+  MdOutlineAssignmentReturn, MdFlashOn, MdPictureAsPdf
 } from 'react-icons/md';
 import { AreaChart, Area, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useAuthStore from '../../store/authStore';
 import useOperationalDay from '../../hooks/useOperationalDay';
+import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
 
 export default function ReportsPage() {
   const { admin } = useAuthStore();
@@ -95,6 +96,82 @@ export default function ReportsPage() {
     } finally {
       setScReportLoading(false);
     }
+  };
+
+  const handleExportAdhocPdf = () => {
+    if (!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0) {
+      toast.error('No AdHoc sales data available to export.');
+      return;
+    }
+    const headers = ['Date', 'DP Name', 'Route', 'Product', 'Taken', 'Sold', 'Returned', 'Remaining', 'Sales Amount (₹)'];
+    const rows = adhocReportData.dpSalesAudit.map(r => [
+      r.date, r.dp_name, r.route_name, r.product_name, r.quantity_taken, r.quantity_sold, r.quantity_returned, r.quantity_remaining, `₹${parseFloat(r.total_sales_amount || 0).toFixed(2)}`
+    ]);
+    exportToPDF({
+      reportTitle: 'AdHoc Product Sales Report',
+      filterInfo: `Mode: ${adhocReportMode}`,
+      headers,
+      rows,
+      totalRecords: rows.length,
+    });
+    toast.success('Generated PDF report!');
+  };
+
+  const handleExportAdhocExcel = () => {
+    if (!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0) {
+      toast.error('No AdHoc sales data available to export.');
+      return;
+    }
+    const headers = ['Date', 'DP Name', 'Route', 'Product', 'Taken', 'Sold', 'Returned', 'Remaining', 'Sales Amount (₹)'];
+    const rows = adhocReportData.dpSalesAudit.map(r => [
+      r.date, r.dp_name, r.route_name, r.product_name, r.quantity_taken, r.quantity_sold, r.quantity_returned, r.quantity_remaining, `₹${parseFloat(r.total_sales_amount || 0).toFixed(2)}`
+    ]);
+    exportToExcel({
+      fileName: `adhoc_sales_report_${adhocReportMode}`,
+      reportTitle: 'AdHoc Product Sales Report',
+      filterInfo: `Mode: ${adhocReportMode}`,
+      headers,
+      rows,
+    });
+    toast.success('Exported to Excel!');
+  };
+
+  const handleExportScPdf = () => {
+    if (!scReportData || !scReportData.data || scReportData.data.length === 0) {
+      toast.error('No stock correctness data available to export.');
+      return;
+    }
+    const headers = ['Operational Day', 'Product Name', 'Expected Stock', 'Manager Logged Stock', 'Difference', 'Status', 'Review Status', 'Remarks'];
+    const rows = scReportData.data.map(r => [
+      r.operationalDay, r.productName, r.expectedStock, r.managerLoggedStock !== null ? r.managerLoggedStock : 'Not Logged', r.difference, r.status, r.reviewStatus, r.remarks || '-'
+    ]);
+    exportToPDF({
+      reportTitle: 'Stock Correctness Report',
+      filterInfo: `Mode: ${scReportMode}`,
+      headers,
+      rows,
+      totalRecords: rows.length,
+    });
+    toast.success('Generated PDF report!');
+  };
+
+  const handleExportScExcel = () => {
+    if (!scReportData || !scReportData.data || scReportData.data.length === 0) {
+      toast.error('No stock correctness data available to export.');
+      return;
+    }
+    const headers = ['Operational Day', 'Product Name', 'Expected Stock', 'Manager Logged Stock', 'Difference', 'Status', 'Review Status', 'Remarks'];
+    const rows = scReportData.data.map(r => [
+      r.operationalDay, r.productName, r.expectedStock, r.managerLoggedStock !== null ? r.managerLoggedStock : 'Not Logged', r.difference, r.status, r.reviewStatus, r.remarks || '-'
+    ]);
+    exportToExcel({
+      fileName: `stock_correctness_report_${scReportMode}`,
+      reportTitle: 'Stock Correctness Report',
+      filterInfo: `Mode: ${scReportMode}`,
+      headers,
+      rows,
+    });
+    toast.success('Exported to Excel!');
   };
 
   const fetchAll = async () => {
@@ -458,9 +535,49 @@ export default function ReportsPage() {
                 )}
               </div>
 
-              <button className="btn btn-primary" style={{ background: 'linear-gradient(135deg, #d97706, #b45309)', border: 'none' }} onClick={handleGenerateReportDirect}>
-                <MdFileDownload /> Download AdHoc Excel Report
-              </button>
+              <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={handleExportAdhocPdf}
+                  disabled={!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 600,
+                    padding: '7px 14px',
+                    borderRadius: '8px',
+                    background: '#ef4444',
+                    color: '#fff',
+                    border: 'none',
+                    opacity: (!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0) ? 0.5 : 1,
+                    cursor: (!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <MdPictureAsPdf style={{ fontSize: 16 }} /> 📄 Export to PDF
+                </button>
+
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={handleExportAdhocExcel}
+                  disabled={!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 600,
+                    padding: '7px 14px',
+                    borderRadius: '8px',
+                    background: '#10b981',
+                    color: '#fff',
+                    border: 'none',
+                    opacity: (!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0) ? 0.5 : 1,
+                    cursor: (!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <MdFileDownload style={{ fontSize: 16 }} /> ↓ Export to Excel
+                </button>
+              </div>
             </div>
           </div>
 
@@ -760,6 +877,50 @@ export default function ReportsPage() {
               <button className="btn btn-secondary btn-sm" onClick={fetchStockCorrectnessReports} disabled={scReportLoading}>
                 <MdRefresh className={scReportLoading ? 'spin' : ''} /> {scReportLoading ? 'Loading...' : 'Generate'}
               </button>
+
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                <button
+                  className="btn btn-danger btn-sm"
+                  onClick={handleExportScPdf}
+                  disabled={!scReportData || !scReportData.data || scReportData.data.length === 0}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 600,
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    background: '#ef4444',
+                    color: '#fff',
+                    border: 'none',
+                    opacity: (!scReportData || !scReportData.data || scReportData.data.length === 0) ? 0.5 : 1,
+                    cursor: (!scReportData || !scReportData.data || scReportData.data.length === 0) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <MdPictureAsPdf style={{ fontSize: 14 }} /> 📄 Export to PDF
+                </button>
+
+                <button
+                  className="btn btn-success btn-sm"
+                  onClick={handleExportScExcel}
+                  disabled={!scReportData || !scReportData.data || scReportData.data.length === 0}
+                  style={{
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontWeight: 600,
+                    padding: '5px 12px',
+                    borderRadius: '6px',
+                    background: '#10b981',
+                    color: '#fff',
+                    border: 'none',
+                    opacity: (!scReportData || !scReportData.data || scReportData.data.length === 0) ? 0.5 : 1,
+                    cursor: (!scReportData || !scReportData.data || scReportData.data.length === 0) ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  <MdFileDownload style={{ fontSize: 14 }} /> ↓ Export to Excel
+                </button>
+              </div>
             </div>
           </div>
 
