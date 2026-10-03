@@ -13,6 +13,7 @@ const runMigration006 = require('./migrations/006_stock_correctness');
 const { runMigration007: runMigration007RouteCustomers } = require('./migrations/007_seed_missing_route_customers');
 const { runMigration007: runMigration007InventoryItems } = require('./migrations/007_seed_missing_inventory_items');
 const { runMigration008 } = require('./migrations/008_add_packing_type');
+const { runMigration009 } = require('./migrations/009_subscription_items');
 const { seedSuperAdmin } = require('./utils/seed');
 const { errorHandler } = require('./middleware/errorHandler');
 const { checkAndTriggerRollover } = require('./services/operationalDay.service');
@@ -216,6 +217,7 @@ const start = async () => {
       await runMigration007RouteCustomers();
       await runMigration007InventoryItems();
       await runMigration008();
+      await runMigration009();
       await seedSuperAdmin();
 
       // Initialize/verify active operational day on boot

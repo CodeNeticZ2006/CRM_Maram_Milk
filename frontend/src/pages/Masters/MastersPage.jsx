@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   MdAdd, MdEdit, MdClose, MdCategory, MdRoute,
-  MdSensors, MdStorage, MdSync, MdLocalGasStation
+  MdSensors, MdStorage, MdSync, MdLocalGasStation, MdDelete, MdArchive, MdWarning
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -59,6 +59,8 @@ function ProductsTab() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { item, archiveMode }
+  const [deleting, setDeleting] = useState(false);
 
   const fetch = async () => {
     setLoading(true);
@@ -76,6 +78,27 @@ function ProductsTab() {
       toast.success('Product saved!'); setModal(null); fetch();
     } catch (e) { toast.error(e.response?.data?.message || 'Failed.'); }
     finally { setSaving(false); }
+  };
+
+  const handleDeleteClick = async (item) => {
+    // We'll let the backend determine archive vs hard delete — just confirm
+    setDeleteConfirm({ item });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteConfirm?.item) return;
+    setDeleting(true);
+    try {
+      const res = await api.delete(`/masters/products/${deleteConfirm.item.id}`);
+      if (res.data.archived) {
+        toast.success(`"${deleteConfirm.item.name}" archived (it has existing records).`);
+      } else {
+        toast.success(`"${deleteConfirm.item.name}" permanently deleted.`);
+      }
+      setDeleteConfirm(null);
+      fetch();
+    } catch (e) { toast.error(e.response?.data?.message || 'Failed to delete.'); }
+    finally { setDeleting(false); }
   };
 
   const fields = [
@@ -136,13 +159,53 @@ function ProductsTab() {
                   </td>
                   <td>{item.unit}</td>
                   <td style={{ fontWeight: 700 }}>₹{item.price_per_unit}</td>
-                  <td><span className={`badge ${item.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{item.status}</span></td>
-                  <td><button id={`edit-product-${item.id}`} className="btn btn-ghost btn-sm" onClick={() => setModal({ item })}><MdEdit /></button></td>
+                  <td><span className={`badge ${item.status === 'Active' ? 'badge-success' : item.status === 'Archived' ? 'badge-warning' : 'badge-danger'}`}>{item.status}</span></td>
+                  <td>
+                    <div style={{ display: 'flex', gap: 6 }}>
+                      <button id={`edit-product-${item.id}`} className="btn btn-ghost btn-sm" title="Edit" onClick={() => setModal({ item })}><MdEdit /></button>
+                      <button id={`delete-product-${item.id}`} className="btn btn-danger btn-sm" title="Delete" onClick={() => handleDeleteClick(item)}><MdDelete /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
+
+      {/* Delete Confirmation Dialog */}
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setDeleteConfirm(null)}>
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-header">
+              <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444' }}>
+                <MdWarning /> Delete Product
+              </h2>
+              <button className="icon-btn" onClick={() => setDeleteConfirm(null)}><MdClose /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
+                Are you sure you want to delete <strong>"{ deleteConfirm.item.name }"</strong>?
+              </p>
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: 12, fontSize: 13, color: '#92400e', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <MdArchive style={{ marginTop: 2, flexShrink: 0, color: '#d97706' }} />
+                <span>If this product has been used in any subscriptions or delivery records, it will be <strong>archived</strong> instead of permanently deleted — so historical data remains intact.</span>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              <button
+                id={`delete-product-confirm-${deleteConfirm.item.id}`}
+                className="btn btn-danger"
+                onClick={confirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? <span className="loading-spinner" /> : <><MdDelete /> Delete / Archive</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AnimatePresence>
         {modal && <MasterModal title={modal.item ? 'Edit Product' : 'Add Product'} fields={fields} values={modal.item} onClose={() => setModal(null)} onSubmit={save} loading={saving} />}
       </AnimatePresence>

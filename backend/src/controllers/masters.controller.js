@@ -47,6 +47,24 @@ const updateProduct = async (req, res, next) => {
     const inferredPacking = (unit || '').toLowerCase().includes('packet') || (name || '').toLowerCase().includes('packet') ? 'Packet' : 'Bottle';
     const finalPacking = packing_type || inferredPacking;
 
+    // Log price change to product_price_history if price changed
+    try {
+      const existing = await readFromCRM('SELECT price_per_unit FROM products WHERE id=$1', [id]);
+      if (existing.rows.length > 0) {
+        const oldPrice = parseFloat(existing.rows[0].price_per_unit);
+        const newPrice = parseFloat(price_per_unit);
+        if (!isNaN(oldPrice) && !isNaN(newPrice) && oldPrice !== newPrice) {
+          await writeToCRM(
+            `INSERT INTO product_price_history (product_id, old_price, new_price, effective_from, changed_by, reason)
+             VALUES ($1, $2, $3, CURRENT_DATE, 'Super Admin', 'Rate updated via Masters')`,
+            [id, oldPrice, newPrice]
+          );
+        }
+      }
+    } catch (phErr) {
+      console.warn('⚠️ Price history log warning:', phErr.message);
+    }
+
     await writeToCRM(
       'UPDATE products SET name=$1, category=$2, unit=$3, price_per_unit=$4, packing_type=$5, sku=$6, image_url=$7, status=$8 WHERE id=$9',
       [name, category, unit, price_per_unit, finalPacking, sku, image_url, status, id]
@@ -76,8 +94,43 @@ const updateProduct = async (req, res, next) => {
 
 const deleteProduct = async (req, res, next) => {
   try {
-    await writeToCRM('UPDATE products SET status=$1 WHERE id=$2', ['Inactive', req.params.id]);
-    res.json({ success: true, message: 'Product deactivated.' });
+    const { id } = req.params;
+
+    // Check if product is referenced anywhere historically
+    const [subItems, deliveries, invoices] = await Promise.all([
+      readFromCRM('SELECT COUNT(*) FROM subscription_items WHERE product_id=$1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+      readFromCRM('SELECT COUNT(*) FROM deliveries WHERE product_id=$1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+      // Also check old-style subscriptions table (product_id column)
+      readFromCRM('SELECT COUNT(*) FROM subscriptions WHERE product_id=$1', [id]).catch(() => ({ rows: [{ count: '0' }] })),
+    ]);
+
+    const usedInItems     = parseInt(subItems.rows[0].count, 10);
+    const usedInDelivery  = parseInt(deliveries.rows[0].count, 10);
+    const usedInSubLegacy = parseInt(invoices.rows[0].count, 10);
+    const totalUsage      = usedInItems + usedInDelivery + usedInSubLegacy;
+
+    if (totalUsage > 0) {
+      // Soft delete — archive
+      await writeToCRM('UPDATE products SET status=$1 WHERE id=$2', ['Archived', id]);
+      return res.json({
+        success: true,
+        archived: true,
+        message: 'This product is used in existing subscriptions or historical records. It has been archived instead of permanently deleted.',
+        usageCount: totalUsage,
+      });
+    }
+
+    // Hard delete — safe because no references exist
+    await writeToCRM('DELETE FROM products WHERE id=$1', [id]);
+
+    // Also remove from DB2 if present
+    try { await writeToApp('DELETE FROM "InventoryItem" WHERE id=$1', [id]); } catch (_) {}
+
+    res.json({
+      success: true,
+      archived: false,
+      message: 'Product permanently deleted.',
+    });
   } catch (err) { next(err); }
 };
 

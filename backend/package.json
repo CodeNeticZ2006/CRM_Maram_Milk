@@ -6,7 +6,7 @@
   "scripts": {
     "start": "node src/server.js",
     "dev": "nodemon src/server.js",
-    "migrate": "node -e \"require('./src/migrations/001_create_tables').runMigrations().then(()=>process.exit(0))\"",
+    "migrate": "node src/utils/migrate.js",
     "seed": "node -e \"require('./src/utils/seed').seedSuperAdmin().then(()=>process.exit(0))\""
   },
   "keywords": [],
