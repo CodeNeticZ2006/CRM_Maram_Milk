@@ -49,7 +49,7 @@ export default function LiveOperationsPage() {
         setCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
       }
     } catch (err) {
-      console.warn('⚠️ Failed to load DB2 Live Operations data:', err.message);
+      console.warn('Failed to load DB2 Live Operations data:', err.message);
     } finally {
       setLoading(false);
     }

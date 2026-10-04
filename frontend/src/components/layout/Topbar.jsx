@@ -1,6 +1,18 @@
 import { useState, useEffect } from 'react';
 import { useLocation } from 'react-router-dom';
-import { MdNotifications, MdMenu, MdCalendarToday, MdCheckCircle, MdClose, MdRefresh, MdSchedule } from 'react-icons/md';
+import {
+  Bell,
+  Menu,
+  Calendar,
+  CheckCircle2,
+  X,
+  RefreshCw,
+  Clock,
+  AlertTriangle,
+  AlertCircle,
+  Info,
+  Pin
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -27,13 +39,13 @@ const PAGE_TITLES = {
   '/access-control': 'User Access Control',
   '/settings': 'Settings',
   // Route Intelligence
-  '/route-intelligence/live':        '📍 Live Operations',
-  '/route-intelligence/territories':  '📍 Territory Monitoring',
-  '/route-intelligence/geofencing':   '📍 Geofencing',
-  '/route-intelligence/compliance':   '📍 Route Compliance',
-  '/route-intelligence/replay':       '📍 Route Replay',
-  '/route-intelligence/analytics':    '📍 Route Analytics',
-  '/route-intelligence/settings':     '📍 Route Intelligence Settings',
+  '/route-intelligence/live':        'Live Operations',
+  '/route-intelligence/territories':  'Territory Monitoring',
+  '/route-intelligence/geofencing':   'Geofencing',
+  '/route-intelligence/compliance':   'Route Compliance',
+  '/route-intelligence/replay':       'Route Replay',
+  '/route-intelligence/analytics':    'Route Analytics',
+  '/route-intelligence/settings':     'Route Intelligence Settings',
 };
 
 export default function Topbar({ onToggleMobileSidebar }) {
@@ -104,7 +116,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
             const mismatchNames = mismatches.map(m => `${m.productName} (${m.difference > 0 ? '+' : ''}${m.difference} ${m.unit})`).join(', ');
 
             toast.error(
-              `⚠️ Stock Mismatch Alert: ${mismatches.length} product(s) have a quantity mismatch (${mismatchNames}). Check Inventory > Stock Correctness.`,
+              `Stock Mismatch Alert: ${mismatches.length} product(s) have a quantity mismatch (${mismatchNames}). Check Inventory > Stock Correctness.`,
               {
                 duration: 10000,
                 id: 'mismatch-login-toast',
@@ -152,7 +164,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
             title="Toggle Menu"
             style={{ minWidth: 38 }}
           >
-            <MdMenu style={{ fontSize: 22 }} />
+            <Menu size={20} />
           </button>
         )}
         <div>
@@ -182,7 +194,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
             }}
             title="Click to view Operational Day Details (7:00 PM IST Rollover System)"
           >
-            <MdCalendarToday style={{ fontSize: 14 }} />
+            <Calendar size={14} />
             <span>Op Day: <strong>{opDayData.displayDate || opDayData.formattedDate || opDayData.date}</strong></span>
             <span
               style={{
@@ -210,7 +222,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
             onClick={() => setShowNotifDropdown(!showNotifDropdown)}
             style={{ position: 'relative' }}
           >
-            <MdNotifications style={{ fontSize: 22 }} />
+            <Bell size={20} />
             {unreadCount > 0 && (
               <span
                 style={{
@@ -297,8 +309,14 @@ export default function Topbar({ onToggleMobileSidebar }) {
                           window.location.href = `${n.linkUrl || '/inventory'}?tab=stock-correctness`;
                         }}
                       >
-                        <div style={{ fontSize: 18, marginTop: 2 }}>
-                          {n.type === 'Mismatch' ? '🔴' : n.type === 'Missing Log' ? '⚠️' : 'ℹ️'}
+                        <div style={{ marginTop: 2 }}>
+                          {n.type === 'Mismatch' ? (
+                            <AlertCircle size={18} color="#ef4444" />
+                          ) : n.type === 'Missing Log' ? (
+                            <AlertTriangle size={18} color="#f59e0b" />
+                          ) : (
+                            <Info size={18} color="#3b82f6" />
+                          )}
                         </div>
                         <div style={{ flex: 1 }}>
                           <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>{n.title}</div>
@@ -325,13 +343,13 @@ export default function Topbar({ onToggleMobileSidebar }) {
               <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'linear-gradient(135deg, #7c3aed, #5b21b6)', color: '#fff', padding: '16px 20px' }}>
                 <div>
                   <div className="card-title" style={{ color: '#fff', fontSize: 15, display: 'flex', alignItems: 'center', gap: 8, margin: 0 }}>
-                    <MdSchedule style={{ fontSize: 20 }} /> Central Operational Day System
+                    <Clock size={20} /> Central Operational Day System
                   </div>
                   <div style={{ fontSize: 11.5, color: '#ddd6fe', marginTop: 3 }}>
                     7:00 PM IST Central Rollover Cycle (Asia/Kolkata)
                   </div>
                 </div>
-                <button className="icon-btn" onClick={() => setShowOpModal(false)} style={{ color: '#fff', border: 'none', background: 'transparent', cursor: 'pointer' }}><MdClose style={{ fontSize: 20 }} /></button>
+                <button className="icon-btn" onClick={() => setShowOpModal(false)} style={{ color: '#fff', border: 'none', background: 'transparent', cursor: 'pointer' }}><X size={20} /></button>
               </div>
 
               <div style={{ padding: 20 }}>
@@ -343,7 +361,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
                     <span style={{ fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>System Status:</span>
                     <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '4px 10px', fontSize: 11 }}>
-                      <MdCheckCircle /> {opDayData.status}
+                      <CheckCircle2 size={12} /> {opDayData.status}
                     </span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
@@ -364,8 +382,11 @@ export default function Topbar({ onToggleMobileSidebar }) {
                   </div>
                 </div>
 
-                <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: 16 }}>
-                  📌 <strong>Rollover Rules:</strong> Inventory remaining stock carries forward automatically at 7:00 PM IST. Daily counters for Inventory, Attendance, Audit, and Empty Bottles reset. Master profiles, wallet, payments, and history are never deleted.
+                <div style={{ background: 'rgba(59,130,246,0.06)', border: '1px solid rgba(59,130,246,0.2)', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: 'var(--text-secondary)', lineHeight: 1.4, marginBottom: 16, display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <Pin size={15} style={{ color: 'var(--primary)', flexShrink: 0, marginTop: 2 }} />
+                  <div>
+                    <strong>Rollover Rules:</strong> Inventory remaining stock carries forward automatically at 7:00 PM IST. Daily counters for Inventory, Attendance, Audit, and Empty Bottles reset. Master profiles, wallet, payments, and history are never deleted.
+                  </div>
                 </div>
 
                 <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
@@ -375,7 +396,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
                     disabled={loadingRollover}
                     style={{ display: 'flex', alignItems: 'center', gap: 6 }}
                   >
-                    <MdRefresh className={loadingRollover ? 'spin' : ''} />
+                    <RefreshCw size={14} className={loadingRollover ? 'spin' : ''} />
                     {loadingRollover ? 'Checking...' : 'Check Rollover Status'}
                   </button>
                   <button className="btn btn-primary btn-sm" onClick={() => setShowOpModal(false)}>

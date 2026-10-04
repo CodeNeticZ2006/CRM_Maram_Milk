@@ -244,7 +244,7 @@ export default function ChangeRequestTodayTomorrowPage() {
               className="btn btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 20px', borderRadius: 8, fontWeight: 600, fontSize: 14 }}
             >
-              <FiSearch size={16} /> 🔍 View
+              <FiSearch size={16} /> View
             </button>
             <button
               type="button"

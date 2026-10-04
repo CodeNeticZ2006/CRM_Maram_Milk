@@ -122,7 +122,7 @@ const getCustomers = async (req, res, next) => {
 const getCustomerById = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const [customer, subscriptions, wallet, ledger] = await Promise.all([
+    const [customer, subscriptions, wallet, ledger, walletTransactions] = await Promise.all([
       readFromCRM(
         `SELECT c.*, COALESCE(r.route_name, c.assigned_route_id) AS route_name FROM customers c
          LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
@@ -139,7 +139,11 @@ const getCustomerById = async (req, res, next) => {
       ),
       readFromCRM('SELECT * FROM wallet WHERE customer_id = $1', [id]),
       readFromCRM(
-        `SELECT * FROM customer_ledger WHERE customer_id = $1 ORDER BY date DESC LIMIT 30`,
+        `SELECT * FROM customer_ledger WHERE customer_id = $1 ORDER BY date DESC, created_at DESC LIMIT 50`,
+        [id]
+      ),
+      readFromCRM(
+        `SELECT * FROM wallet_transactions WHERE customer_id = $1 ORDER BY created_at DESC LIMIT 50`,
         [id]
       ),
     ]);
@@ -153,6 +157,7 @@ const getCustomerById = async (req, res, next) => {
         subscriptions: subscriptions.rows,
         wallet: wallet.rows[0] || null,
         ledger: ledger.rows,
+        wallet_transactions: walletTransactions.rows,
       },
     });
   } catch (err) { next(err); }

@@ -185,7 +185,7 @@ export default function LogisticsPage() {
       {/* Routes Table */}
       <div className="card">
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h3 className="card-title">🛣️ Configured Routes ({filteredRoutes.length})</h3>
+          <h3 className="card-title">Configured Routes ({filteredRoutes.length})</h3>
           <span className="badge badge-blue">{filteredRoutes.length} Routes Listed</span>
         </div>
         <div className="card-body" style={{ padding: 0 }}>

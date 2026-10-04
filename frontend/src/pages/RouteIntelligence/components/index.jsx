@@ -7,6 +7,7 @@ import {
   MdCheckCircle, MdWarning, MdError, MdInfo,
   MdTrendingUp, MdTrendingDown,
 } from 'react-icons/md';
+import { Map, Play, Square, Package, AlertTriangle, MapPin, Info } from 'lucide-react';
 
 // ── StatusBadge ─────────────────────────────────────────────
 export function StatusBadge({ status }) {
@@ -81,7 +82,7 @@ export function LiveMapCard({ title = 'Live Map', height = 420, children }) {
       <div className="ri-map-placeholder">
         <div className="ri-map-grid" />
         <div className="ri-map-center">
-          <div className="ri-map-icon">🗺️</div>
+          <div className="ri-map-icon"><Map size={36} color="var(--primary)" /></div>
           <div className="ri-map-label">Interactive Map</div>
           <div className="ri-map-sub">Google Maps / Leaflet will render here</div>
           <div className="ri-map-badge">Plug-in Ready</div>
@@ -138,18 +139,18 @@ export function TerritoryCard({ territory }) {
 // ── RouteReplayCard ──────────────────────────────────────────
 export function RouteReplayCard({ event }) {
   const iconMap = {
-    start:    { icon: '🟢', color: 'var(--success)' },
-    end:      { icon: '🔴', color: 'var(--danger)'  },
-    delivery: { icon: '📦', color: 'var(--primary)' },
-    alert:    { icon: '⚠️', color: 'var(--warning)' },
-    geo:      { icon: '📍', color: 'var(--info)'    },
-    info:     { icon: 'ℹ️',  color: 'var(--accent)'  },
+    start:    { Icon: Play, color: 'var(--success)' },
+    end:      { Icon: Square, color: 'var(--danger)'  },
+    delivery: { Icon: Package, color: 'var(--primary)' },
+    alert:    { Icon: AlertTriangle, color: 'var(--warning)' },
+    geo:      { Icon: MapPin, color: 'var(--info)'    },
+    info:     { Icon: Info,  color: 'var(--accent)'  },
   };
-  const { icon, color } = iconMap[event.type] || iconMap.info;
+  const { Icon, color } = iconMap[event.type] || iconMap.info;
   return (
     <div className="ri-replay-event">
-      <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 14, flexShrink: 0 }}>
-        {icon}
+      <div style={{ width: 28, height: 28, borderRadius: '50%', background: `${color}18`, display: 'flex', alignItems: 'center', justifyContent: 'center', color, flexShrink: 0 }}>
+        <Icon size={14} />
       </div>
       <div style={{ flex: 1 }}>
         <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>{event.event}</div>

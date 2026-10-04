@@ -300,7 +300,7 @@ export default function CustomerInfoReportPage() {
               }}
             >
               <MdPictureAsPdf style={{ fontSize: 16 }} />
-              {exportingPdf ? 'Generating PDF...' : '📄 Export to PDF'}
+              {exportingPdf ? 'Generating PDF...' : 'Export to PDF'}
             </button>
 
             <button

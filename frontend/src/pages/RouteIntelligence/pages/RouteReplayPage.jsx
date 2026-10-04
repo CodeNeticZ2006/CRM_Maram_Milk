@@ -47,7 +47,7 @@ export default function RouteReplayPage() {
         setCrmCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
       }
     } catch (err) {
-      console.warn('⚠️ Failed to fetch DB2 replay list:', err.message);
+      console.warn('Failed to fetch DB2 replay list:', err.message);
     } finally {
       setLoading(false);
     }
@@ -118,12 +118,12 @@ export default function RouteReplayPage() {
               center={MOCK_REPLAY_GIS_DATA.currentPos}
               zoom={13}
               legendItems={[
-                { label: 'Head Office',      color: '#8b5cf6', icon: '🏢' },
-                { label: 'Current Position', color: '#3b82f6', icon: '📍' },
-                { label: 'Completed Segment',color: '#10b981', icon: '➖' },
-                { label: 'Remaining Route',  color: '#94a3b8', icon: '➖' },
-                { label: 'Delivered Stop',   color: '#10b981', icon: '🏠' },
-                { label: 'Pending Stop',     color: '#f59e0b', icon: '🏠' },
+                { label: 'Head Office',      color: '#8b5cf6' },
+                { label: 'Current Position', color: '#3b82f6', shape: 'circle' },
+                { label: 'Completed Segment',color: '#10b981' },
+                { label: 'Remaining Route',  color: '#94a3b8' },
+                { label: 'Delivered Stop',   color: '#10b981', shape: 'circle' },
+                { label: 'Pending Stop',     color: '#f59e0b', shape: 'circle' },
               ]}
             >
               {({ showCustomers, showRoutes }) => (

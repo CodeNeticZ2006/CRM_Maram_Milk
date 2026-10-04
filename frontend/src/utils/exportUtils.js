@@ -359,23 +359,23 @@ export const exportDeliveryPlannerPDF = ({
     if (d.status === 'Mark Delivered') {
       statusColor = '#15803d';
       statusBg = '#dcfce7';
-      badgeIcon = '✅ ';
+      badgeIcon = '';
     } else if (d.status === 'AdHoc') {
       statusColor = '#166534';
       statusBg = '#f0fdf4';
-      badgeIcon = '🟢 ';
+      badgeIcon = '';
     } else if (d.status === 'Pause') {
       statusColor = '#991b1b';
       statusBg = '#fee2e2';
-      badgeIcon = '🔴 ';
+      badgeIcon = '';
     } else if (d.status === 'Daily Delivery') {
       statusColor = '#854d0e';
       statusBg = '#fef9c3';
-      badgeIcon = '🟤 ';
+      badgeIcon = '';
     } else if (d.status === 'Not Delivered') {
       statusColor = '#b91c1c';
       statusBg = '#fef2f2';
-      badgeIcon = '🔴 ';
+      badgeIcon = '';
     }
 
     return `
@@ -529,11 +529,11 @@ export const exportDeliveryPlannerPDF = ({
 
       <div class="legend-box">
         <span class="legend-title">Legend:</span>
-        <span class="legend-item">🟢 AdHoc</span>
-        <span class="legend-item">🔴 Pause</span>
-        <span class="legend-item">🟤 Daily Delivery</span>
-        <span class="legend-item">🔴 Not Delivered</span>
-        <span class="legend-item">✅ Mark Delivered</span>
+        <span class="legend-item" style="color: #166534; font-weight: 600;">AdHoc</span>
+        <span class="legend-item" style="color: #991b1b; font-weight: 600;">Pause</span>
+        <span class="legend-item" style="color: #854d0e; font-weight: 600;">Daily Delivery</span>
+        <span class="legend-item" style="color: #b91c1c; font-weight: 600;">Not Delivered</span>
+        <span class="legend-item" style="color: #15803d; font-weight: 600;">Mark Delivered</span>
       </div>
 
       <table>

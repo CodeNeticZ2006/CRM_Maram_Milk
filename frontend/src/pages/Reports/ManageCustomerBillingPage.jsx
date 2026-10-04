@@ -342,7 +342,7 @@ export default function ManageCustomerBillingPage() {
               className="btn btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 20px', borderRadius: 8, fontWeight: 600, fontSize: 14 }}
             >
-              <FiSearch size={16} /> 🔍 Search
+              <FiSearch size={16} /> Search
             </button>
             <button
               type="button"
@@ -497,7 +497,7 @@ export default function ManageCustomerBillingPage() {
                 <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#0f172a' }}>Customer Bill Details</h3>
                 <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>{selectedBill.customer_id} - {selectedBill.customer_name}</p>
               </div>
-              <button onClick={() => setSelectedBill(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              <button onClick={() => setSelectedBill(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>&times;</button>
             </div>
 
             <div style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 12, fontSize: 14 }}>

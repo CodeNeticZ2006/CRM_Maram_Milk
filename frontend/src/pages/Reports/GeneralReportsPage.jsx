@@ -733,7 +733,7 @@ export default function GeneralReportsPage() {
                   }}
                 >
                   <MdPictureAsPdf style={{ fontSize: 18 }} />
-                  {exportingPdf ? 'Generating PDF...' : '📄 Export to PDF'}
+                  {exportingPdf ? 'Generating PDF...' : 'Export to PDF'}
                 </button>
 
                 <button

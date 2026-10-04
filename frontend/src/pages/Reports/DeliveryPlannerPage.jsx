@@ -4,6 +4,7 @@ import {
   MdLocalShipping, MdChevronLeft, MdChevronRight, MdFileDownload,
   MdPictureAsPdf, MdPerson, MdSearch, MdRefresh, MdCalendarToday
 } from 'react-icons/md';
+import { CheckCircle2 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useOperationalDay from '../../hooks/useOperationalDay';
@@ -153,16 +154,16 @@ export default function DeliveryPlannerPage() {
   const renderStatusBadge = (status) => {
     switch (status) {
       case 'Mark Delivered':
-        return <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', fontWeight: 600 }}>✅ Mark Delivered</span>;
+        return <span className="badge badge-success" style={{ background: '#dcfce7', color: '#15803d', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 4 }}><CheckCircle2 size={12} /> Delivered</span>;
       case 'AdHoc':
-        return <span className="badge badge-success" style={{ background: '#f0fdf4', color: '#166534', fontWeight: 600 }}>🟢 AdHoc</span>;
+        return <span className="badge badge-success" style={{ background: '#f0fdf4', color: '#166534', fontWeight: 600 }}>AdHoc</span>;
       case 'Pause':
-        return <span className="badge badge-danger" style={{ background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>🔴 Pause</span>;
+        return <span className="badge badge-danger" style={{ background: '#fee2e2', color: '#991b1b', fontWeight: 600 }}>Pause</span>;
       case 'Daily Delivery':
-        return <span className="badge badge-warning" style={{ background: '#fef9c3', color: '#854d0e', fontWeight: 600 }}>🟤 Daily Delivery</span>;
+        return <span className="badge badge-warning" style={{ background: '#fef9c3', color: '#854d0e', fontWeight: 600 }}>Daily Delivery</span>;
       case 'Not Delivered':
       default:
-        return <span className="badge badge-secondary" style={{ background: '#fef2f2', color: '#b91c1c', fontWeight: 600 }}>🔴 Not Delivered</span>;
+        return <span className="badge badge-secondary" style={{ background: '#fef2f2', color: '#b91c1c', fontWeight: 600 }}>Not Delivered</span>;
     }
   };
 
@@ -410,11 +411,11 @@ export default function DeliveryPlannerPage() {
             {/* Legend Bar */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', background: 'var(--bg-secondary)', padding: '8px 14px', borderRadius: 8, fontSize: 12, fontWeight: 600 }}>
               <span style={{ color: 'var(--text-muted)' }}>Legend:</span>
-              <span>🟢 AdHoc</span>
-              <span>🔴 Pause</span>
-              <span>🟤 Daily Delivery</span>
-              <span>🔴 Not Delivered</span>
-              <span>✅ Mark Delivered</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#166534' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#166534' }} /> AdHoc</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#991b1b' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#991b1b' }} /> Pause</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#854d0e' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#854d0e' }} /> Daily Delivery</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#b91c1c' }}><span style={{ width: 8, height: 8, borderRadius: '50%', background: '#b91c1c' }} /> Not Delivered</span>
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: '#15803d' }}><CheckCircle2 size={13} /> Mark Delivered</span>
             </div>
           </div>
 

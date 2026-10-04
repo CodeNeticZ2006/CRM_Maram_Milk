@@ -623,7 +623,7 @@ export default function InventoryPage() {
           <div style={{ background: 'rgba(59,130,246,0.04)', border: '1px solid rgba(59,130,246,0.18)', borderRadius: 10, padding: '10px 16px', marginBottom: 20, display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 12 }}>
             <div style={{ fontSize: 13, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
               <MdFilterList style={{ color: 'var(--primary)', fontSize: 18 }} />
-              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>🥛 Milk inventory tracks DB2 live dispatches.</span>
+              <span style={{ color: 'var(--text-muted)', fontSize: 12 }}>Milk inventory tracks DB2 live dispatches.</span>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <label style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-muted)' }}>Target Date:</label>
@@ -2025,7 +2025,7 @@ export default function InventoryPage() {
                               </td>
                               <td>
                                 <span className="badge badge-danger" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                  <MdCancel /> 🔴 Quantity Mismatch ({diffDisplay})
+                                  <MdCancel /> Quantity Mismatch ({diffDisplay})
                                 </span>
                               </td>
                               <td>
@@ -2274,7 +2274,7 @@ export default function InventoryPage() {
               <form onSubmit={handleDownloadReport} style={{ padding: 20 }}>
                 {/* Exclusion Callout */}
                 <div style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.2)', borderRadius: 8, padding: '10px 14px', marginBottom: 18, fontSize: 12, color: 'var(--text-secondary)', lineHeight: 1.4 }}>
-                  <span style={{ fontWeight: 700, color: '#ef4444' }}>📌 Excludes Stock Ledger Audit:</span> Workbook strictly contains 3 sheets: <strong>Current Inventory & DB2 Stock</strong>, <strong>Shop Sale</strong>, and <strong>Manager Inventory Log</strong>.
+                  <span style={{ fontWeight: 700, color: '#ef4444' }}>Excludes Stock Ledger Audit:</span> Workbook strictly contains 3 sheets: <strong>Current Inventory & DB2 Stock</strong>, <strong>Shop Sale</strong>, and <strong>Manager Inventory Log</strong>.
                 </div>
 
                 {/* Filter Selector */}

@@ -23,7 +23,7 @@ export default function AnalyticsPage() {
         setIsDb2Loaded(true);
       }
     } catch (err) {
-      console.warn('⚠️ Failed to fetch DB2 Analytics:', err.message);
+      console.warn('Failed to fetch DB2 Analytics:', err.message);
     } finally {
       setLoading(false);
     }
@@ -115,7 +115,7 @@ export default function AnalyticsPage() {
                 <text x="60" y="72" textAnchor="middle" fontSize="10" fill="var(--text-muted)">Fleet Score</text>
               </svg>
               <div className="ri-score-label">
-                {complianceScore >= 85 ? '✅ Excellent' : complianceScore >= 65 ? '⚠️ Needs Attention' : '🔴 Critical'}
+                {complianceScore >= 85 ? 'Excellent' : complianceScore >= 65 ? 'Needs Attention' : 'Critical'}
               </div>
             </div>
             {/* Legend */}

@@ -440,7 +440,7 @@ export default function ReportsPage() {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 16, marginBottom: 24 }}>
             {/* Pie Chart */}
             <div className="card">
-              <div className="card-header"><h3 className="card-title">👥 Customer Status</h3></div>
+              <div className="card-header"><h3 className="card-title">Customer Status</h3></div>
               <div className="card-body">
                 <ResponsiveContainer width="100%" height={200}>
                   <PieChart>
@@ -456,7 +456,7 @@ export default function ReportsPage() {
             </div>
             {/* Top Customers */}
             <div className="card">
-              <div className="card-header"><h3 className="card-title">🏆 Top Customers by Total Recharge</h3></div>
+              <div className="card-header"><h3 className="card-title">Top Customers by Total Recharge</h3></div>
               <div className="card-body" style={{ padding: 0 }}>
                 <div className="table-wrapper">
                   <table className="table">
@@ -483,7 +483,7 @@ export default function ReportsPage() {
           {/* Route Distribution */}
           {(customerAnalysis?.route_distribution || []).length > 0 && (
             <div className="card">
-              <div className="card-header"><h3 className="card-title">🛣️ Customer Distribution by Route</h3></div>
+              <div className="card-header"><h3 className="card-title">Customer Distribution by Route</h3></div>
               <div className="card-body">
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={customerAnalysis?.route_distribution || []}>
@@ -554,7 +554,7 @@ export default function ReportsPage() {
                     cursor: (!adhocReportData || !adhocReportData.dpSalesAudit || adhocReportData.dpSalesAudit.length === 0) ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  <MdPictureAsPdf style={{ fontSize: 16 }} /> 📄 Export to PDF
+                  <MdPictureAsPdf style={{ fontSize: 16 }} /> Export to PDF
                 </button>
 
                 <button
@@ -897,7 +897,7 @@ export default function ReportsPage() {
                     cursor: (!scReportData || !scReportData.data || scReportData.data.length === 0) ? 'not-allowed' : 'pointer'
                   }}
                 >
-                  <MdPictureAsPdf style={{ fontSize: 14 }} /> 📄 Export to PDF
+                  <MdPictureAsPdf style={{ fontSize: 14 }} /> Export to PDF
                 </button>
 
                 <button

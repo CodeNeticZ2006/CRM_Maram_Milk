@@ -324,7 +324,7 @@ export default function SalesReportPage() {
               className="btn btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 20px', borderRadius: 8, fontWeight: 600, fontSize: 14 }}
             >
-              <FiSearch size={16} /> 🔍 Search
+              <FiSearch size={16} /> Search
             </button>
             <button
               type="button"
@@ -469,7 +469,7 @@ export default function SalesReportPage() {
                 <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#0f172a' }}>Bill Invoice Summary</h3>
                 <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>{viewBillModal.invoice_number || 'INV-2026-001'}</p>
               </div>
-              <button onClick={() => setViewBillModal(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              <button onClick={() => setViewBillModal(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>&times;</button>
             </div>
 
             <div style={{ padding: '16px 0', display: 'flex', flexDirection: 'column', gap: 12, fontSize: 14 }}>
@@ -517,7 +517,7 @@ export default function SalesReportPage() {
                 <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#0f172a' }}>Customer Payment History</h3>
                 <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>{historyModal.customer} ({historyModal.customer_id})</p>
               </div>
-              <button onClick={() => setHistoryModal(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>✕</button>
+              <button onClick={() => setHistoryModal(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>&times;</button>
             </div>
 
             <div style={{ padding: '16px 0', fontSize: 14 }}>

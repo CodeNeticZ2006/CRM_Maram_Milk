@@ -34,7 +34,7 @@ class DPErrorBoundary extends Component {
     if (this.state.hasError) {
       return (
         <div style={{ padding: 40, textAlign: 'center', background: 'var(--card-bg, #fff)', borderRadius: 12, border: '1px solid var(--border, #e2e8f0)', margin: 20 }}>
-          <h2 style={{ color: '#ef4444', marginBottom: 12 }}>⚠️ Something went wrong in Delivery Person Audit</h2>
+          <h2 style={{ color: '#ef4444', marginBottom: 12 }}>Something went wrong in Delivery Person Audit</h2>
           <p style={{ color: 'var(--text-muted, #64748b)', marginBottom: 20, fontSize: 14 }}>
             {this.state.error?.message || 'An unexpected rendering error occurred.'}
           </p>
@@ -634,7 +634,7 @@ function DeliveryPersonAuditContent() {
           {/* Delivery Persons Table */}
           <div className="card">
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 className="card-title">🛵 Delivery Persons ({filteredOverviewDps.length} DPs) — Live DB2 Data</h3>
+              <h3 className="card-title">Delivery Persons ({filteredOverviewDps.length} DPs) — Live DB2 Data</h3>
               <span className="badge badge-purple">{filteredOverviewDps.length} DPs Listed</span>
             </div>
             <div className="card-body" style={{ padding: 0 }}>
@@ -1144,7 +1144,7 @@ function DeliveryPersonAuditContent() {
           {/* Operational Activity Table for Selected Date */}
           <div className="card">
             <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-              <h3 className="card-title">📋 DP Operational Audit Log ({dailyDate})</h3>
+              <h3 className="card-title">DP Operational Audit Log ({dailyDate})</h3>
               <span className="badge badge-blue">{dailyData?.items?.length || safeDeliveryPersons.length} DPs Tracked</span>
             </div>
             <div className="card-body" style={{ padding: 0 }}>

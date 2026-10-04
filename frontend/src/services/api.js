@@ -17,11 +17,11 @@ api.interceptors.request.use(
   (config) => {
     const token = localStorage.getItem('crm_token');
     if (token) config.headers.Authorization = `Bearer ${token}`;
-    console.log(`🌐 [API Request] ${config.method?.toUpperCase()} ${config.url}`);
+    console.log(`[API Request] ${config.method?.toUpperCase()} ${config.url}`);
     return config;
   },
   (error) => {
-    console.error('❌ [API Request Error]', error);
+    console.error('[API Request Error]', error);
     return Promise.reject(error);
   }
 );
@@ -29,11 +29,11 @@ api.interceptors.request.use(
 // Response Interceptor: Log Clean Status & Handle 401 Session Expiry
 api.interceptors.response.use(
   (res) => {
-    console.log(`✅ [API Response] ${res.status} ${res.config.url}`);
+    console.log(`[API Response] ${res.status} ${res.config.url}`);
     return res;
   },
   (err) => {
-    console.error(`⚠️ [API Response Error] ${err.response?.status || 'Network Error'} ${err.config?.url}`);
+    console.error(`[API Response Error] ${err.response?.status || 'Network Error'} ${err.config?.url}`);
     const isLoginReq = err.config?.url?.includes('/auth/login');
     if (err.response?.status === 401 && !isLoginReq) {
       localStorage.removeItem('crm_token');

@@ -28,70 +28,6 @@ function FreqBadge({ type }) {
   );
 }
 
-// ── Pause Modal ───────────────────────────────────────────────────
-function PauseModal({ subscriptionId, onClose, onSaved }) {
-  const [form, setForm] = useState({ pause_start_date: '', pause_end_date: '', reason: '' });
-  const [loading, setLoading] = useState(false);
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    if (!form.pause_start_date) return toast.error('Start date is required.');
-    setLoading(true);
-    try {
-      await api.post(`/subscriptions/${subscriptionId}/pause`, form);
-      toast.success('Pause scheduled!');
-      onSaved();
-      onClose();
-    } catch (err) {
-      toast.error(err.response?.data?.message || 'Failed to schedule pause.');
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <motion.div className="modal" style={{ maxWidth: 460, background: '#ffffff', borderRadius: 16 }} initial={{ opacity: 0, scale: 0.96 }} animate={{ opacity: 1, scale: 1 }}>
-        <div className="modal-header" style={{ padding: '20px 24px 0' }}>
-          <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 700 }}>
-            <Pause size={18} style={{ color: '#f59e0b' }} /> Schedule Pause
-          </h2>
-          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
-        </div>
-        <form onSubmit={handleSubmit}>
-          <div className="modal-body" style={{ display: 'grid', gap: 14, padding: '18px 24px' }}>
-            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-              <div className="form-group">
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>Pause Start Date *</label>
-                <input type="date" className="form-input" value={form.pause_start_date}
-                  onChange={e => setForm({ ...form, pause_start_date: e.target.value })} required />
-              </div>
-              <div className="form-group">
-                <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>Pause End Date</label>
-                <input type="date" className="form-input" value={form.pause_end_date}
-                  min={form.pause_start_date}
-                  onChange={e => setForm({ ...form, pause_end_date: e.target.value })} />
-                <small style={{ fontSize: 11, color: 'var(--text-muted)' }}>Leave empty for single day</small>
-              </div>
-            </div>
-            <div className="form-group">
-              <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>Reason</label>
-              <input type="text" className="form-input" placeholder="e.g. Vacation, Holiday, Travel..."
-                value={form.reason} onChange={e => setForm({ ...form, reason: e.target.value })} />
-            </div>
-          </div>
-          <div className="modal-footer" style={{ padding: '0 24px 20px' }}>
-            <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button type="submit" className="btn btn-primary" disabled={loading} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-              {loading ? <span className="loading-spinner" /> : <><Pause size={15} /> Pause Delivery</>}
-            </button>
-          </div>
-        </form>
-      </motion.div>
-    </div>
-  );
-}
-
 // ── Add/Edit Subscription Modal ───────────────────────────────────
 function SubscriptionModal({ editData, onClose, onSaved }) {
   const isEdit = Boolean(editData);
@@ -678,7 +614,6 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
 function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [showPauseModal, setShowPauseModal] = useState(false);
   const [showEdit, setShowEdit] = useState(false);
 
   const fetchDetail = async () => {
@@ -696,16 +631,6 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
   useEffect(() => {
     fetchDetail();
   }, [subscriptionId]);
-
-  const removePause = async (pauseId) => {
-    try {
-      await api.delete(`/subscriptions/${subscriptionId}/pause/${pauseId}`);
-      toast.success('Pause cancelled.');
-      fetchDetail();
-    } catch {
-      toast.error('Failed to cancel pause.');
-    }
-  };
 
   if (loading) {
     return (
@@ -756,9 +681,6 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <button className="btn btn-ghost btn-sm" onClick={() => setShowEdit(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
               <Pencil size={14} /> Edit
-            </button>
-            <button className="btn btn-primary btn-sm" onClick={() => setShowPauseModal(true)} style={{ display: 'inline-flex', alignItems: 'center', gap: 5 }}>
-              <Pause size={14} /> Add Pause
             </button>
             <button className="icon-btn" onClick={onClose}><X size={18} /></button>
           </div>
@@ -829,11 +751,35 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
           )) : <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>No products configured.</div>}
         </div>
 
-        {/* Active Pauses */}
+        {/* Pause Notice Banner */}
+        {data.status === 'Paused' && (
+          <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#b45309' }}>⏸️ Subscription Currently Paused</div>
+              <div style={{ fontSize: 11.5, color: '#92400e', marginTop: 2 }}>
+                Deliveries are suspended. All pause schedules and resumptions are managed in the Pause module.
+              </div>
+            </div>
+            <a
+              href="/pause"
+              className="btn btn-warning btn-sm"
+              style={{ fontSize: 11, fontWeight: 700, textDecoration: 'none', padding: '6px 12px', whiteSpace: 'nowrap' }}
+            >
+              Open Pause Module →
+            </a>
+          </div>
+        )}
+
+        {/* Read-Only Pause History */}
         {data.pauses && data.pauses.length > 0 && (
           <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
-            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
-              <Pause size={14} /> Pause History
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 10 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+                <Clock size={14} /> Pause Schedule Records
+              </div>
+              <a href="/pause" style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--primary)', textDecoration: 'none' }}>
+                Manage in Pause Module →
+              </a>
             </div>
             {data.pauses.map((p, i) => (
               <div
@@ -854,20 +800,10 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
                   </div>
                   {p.reason && <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{p.reason}</div>}
                 </div>
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div>
                   <span className={`badge ${p.is_active !== false && p.status !== 'Cancelled' ? 'badge-warning' : 'badge-gray'}`}>
                     {p.status || 'Active'}
                   </span>
-                  {p.is_active !== false && p.status !== 'Cancelled' && (
-                    <button
-                      className="btn btn-danger btn-sm"
-                      title="Cancel Pause"
-                      onClick={() => removePause(p.id)}
-                      style={{ width: 28, height: 28, padding: 0, borderRadius: 6, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
-                    >
-                      <Trash2 size={13} />
-                    </button>
-                  )}
                 </div>
               </div>
             ))}
@@ -942,13 +878,6 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
         )}
       </motion.div>
 
-      {showPauseModal && (
-        <PauseModal
-          subscriptionId={subscriptionId}
-          onClose={() => setShowPauseModal(false)}
-          onSaved={() => { fetchDetail(); onRefresh(); }}
-        />
-      )}
       {showEdit && (
         <SubscriptionModal
           editData={data}
@@ -1174,17 +1103,7 @@ export default function SubscriptionsPage() {
                               <Play size={15} />
                             </button>
                           )}
-                          {s.status === 'Active' && (
-                            <button
-                              id={`sub-pause-${s.id}`}
-                              className="btn btn-ghost btn-sm"
-                              title="Pause"
-                              onClick={() => changeStatus(s.id, 'Paused')}
-                              style={{ height: 32, width: 32, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                            >
-                              <Pause size={15} />
-                            </button>
-                          )}
+
                           {s.status !== 'Cancelled' && (
                             <button
                               id={`sub-cancel-${s.id}`}

@@ -1,13 +1,97 @@
 const { readFromCRM, writeToCRM } = require('../config/database');
 
 // ─────────────────────────────────────────────
-// GET /api/pause — aggregated view of all pending requests
+// GET /api/pause — aggregated view of all pause requests & subscription pauses
 // ─────────────────────────────────────────────
 const getPauseRequests = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, tab = 'hold' } = req.query;
-    const offset = (page - 1) * limit;
+    const { page = 1, limit = 20, tab = 'subscription_pauses', search = '', status_filter = 'all' } = req.query;
+    const offset = (parseInt(page) - 1) * parseInt(limit);
+    const today = new Date().toISOString().slice(0, 10);
 
+    // ── TAB: Subscription Pauses (Direct Subscription Pauses) ──
+    if (tab === 'subscription_pauses' || tab === 'all_pauses') {
+      const where = ['1=1'];
+      const params = [];
+      let pi = 1;
+
+      if (search && search.trim()) {
+        where.push(`(c.name ILIKE $${pi} OR c.customer_code ILIKE $${pi} OR c.phone ILIKE $${pi})`);
+        params.push(`%${search.trim()}%`);
+        pi++;
+      }
+
+      if (status_filter === 'active') {
+        where.push(`sp.is_active = TRUE AND COALESCE(sp.pause_start_date, sp.pause_date) <= '${today}' AND COALESCE(sp.pause_end_date, sp.resume_date, '9999-12-31') >= '${today}' AND sp.status != 'Cancelled'`);
+      } else if (status_filter === 'upcoming') {
+        where.push(`sp.is_active = TRUE AND COALESCE(sp.pause_start_date, sp.pause_date) > '${today}' AND sp.status != 'Cancelled'`);
+      } else if (status_filter === 'completed') {
+        where.push(`(sp.status = 'Completed' OR (sp.is_active = TRUE AND COALESCE(sp.pause_end_date, sp.resume_date) < '${today}'))`);
+      } else if (status_filter === 'cancelled') {
+        where.push(`(sp.is_active = FALSE OR sp.status = 'Cancelled')`);
+      }
+
+      const whereClause = where.join(' AND ');
+
+      const [rows, count] = await Promise.all([
+        readFromCRM(
+          `SELECT
+            sp.id,
+            sp.subscription_id,
+            sp.customer_id,
+            sp.product_id,
+            COALESCE(sp.pause_type, 'Temporary Hold') as pause_type,
+            COALESCE(sp.pause_start_date, sp.pause_date)::text as pause_start_date,
+            COALESCE(sp.pause_end_date, sp.resume_date, sp.pause_start_date, sp.pause_date)::text as pause_end_date,
+            sp.resume_date::text as resume_date,
+            sp.reason,
+            sp.status as raw_status,
+            sp.is_active,
+            sp.created_by,
+            sp.created_at,
+            c.name as customer_name,
+            c.customer_code,
+            c.phone as customer_phone,
+            c.address as customer_address,
+            s.frequency_type,
+            s.status as subscription_status,
+            CASE
+              WHEN sp.is_active = FALSE OR sp.status = 'Cancelled' THEN 'Cancelled'
+              WHEN sp.status = 'Completed' THEN 'Completed'
+              WHEN COALESCE(sp.pause_start_date, sp.pause_date) > '${today}' THEN 'Upcoming'
+              WHEN COALESCE(sp.pause_start_date, sp.pause_date) <= '${today}' AND COALESCE(sp.pause_end_date, sp.resume_date, '9999-12-31') >= '${today}' THEN 'Active'
+              ELSE 'Completed'
+            END as computed_status,
+            COALESCE((
+              SELECT string_agg(p.name || ' (' || si.quantity || ')', ', ')
+              FROM subscription_items si
+              JOIN products p ON p.id = si.product_id
+              WHERE si.subscription_id = sp.subscription_id AND si.is_active = TRUE
+            ), 'Subscription #' || substring(sp.subscription_id::text, 1, 8)) as items_summary
+          FROM subscription_pauses sp
+          LEFT JOIN customers c ON c.id = sp.customer_id
+          LEFT JOIN subscriptions s ON s.id = sp.subscription_id
+          WHERE ${whereClause}
+          ORDER BY sp.created_at DESC
+          LIMIT $${pi} OFFSET $${pi + 1}`,
+          [...params, limit, offset]
+        ),
+        readFromCRM(
+          `SELECT COUNT(*) FROM subscription_pauses sp
+           LEFT JOIN customers c ON c.id = sp.customer_id
+           WHERE ${whereClause}`,
+          params
+        )
+      ]);
+
+      return res.json({
+        success: true,
+        data: rows.rows,
+        total: parseInt(count.rows[0].count)
+      });
+    }
+
+    // ── TAB: Hold Requests ──
     if (tab === 'hold') {
       const [rows, count] = await Promise.all([
         readFromCRM(
@@ -60,6 +144,7 @@ const getPauseRequests = async (req, res, next) => {
       return res.json({ success: true, data: rows.rows, total: parseInt(count.rows[0].count) });
     }
 
+    // ── TAB: Vacation Requests ──
     if (tab === 'vacation') {
       const [rows, count] = await Promise.all([
         readFromCRM(
@@ -112,6 +197,7 @@ const getPauseRequests = async (req, res, next) => {
       return res.json({ success: true, data: rows.rows, total: parseInt(count.rows[0].count) });
     }
 
+    // ── TAB: Change Requests ──
     if (tab === 'change') {
       const [rows, count] = await Promise.all([
         readFromCRM(
@@ -125,12 +211,430 @@ const getPauseRequests = async (req, res, next) => {
       return res.json({ success: true, data: rows.rows, total: parseInt(count.rows[0].count) });
     }
 
+    // ── TAB: History & Archive ──
+    if (tab === 'history') {
+      const [rows, count] = await Promise.all([
+        readFromCRM(
+          `SELECT
+            sp.id,
+            sp.subscription_id,
+            sp.customer_id,
+            COALESCE(sp.pause_type, 'Temporary Hold') as pause_type,
+            COALESCE(sp.pause_start_date, sp.pause_date)::text as pause_start_date,
+            COALESCE(sp.pause_end_date, sp.resume_date, sp.pause_start_date, sp.pause_date)::text as pause_end_date,
+            sp.resume_date::text as resume_date,
+            sp.reason,
+            CASE
+              WHEN sp.is_active = FALSE OR sp.status = 'Cancelled' THEN 'Cancelled'
+              ELSE 'Completed'
+            END as status,
+            sp.created_by,
+            sp.created_at,
+            sp.updated_at,
+            c.name as customer_name,
+            c.customer_code,
+            c.phone as customer_phone
+          FROM subscription_pauses sp
+          LEFT JOIN customers c ON c.id = sp.customer_id
+          WHERE sp.is_active = FALSE OR sp.status IN ('Cancelled', 'Completed') OR COALESCE(sp.pause_end_date, sp.resume_date) < '${today}'
+          ORDER BY COALESCE(sp.updated_at, sp.created_at) DESC
+          LIMIT $1 OFFSET $2`,
+          [limit, offset]
+        ),
+        readFromCRM(
+          `SELECT COUNT(*) FROM subscription_pauses sp
+           WHERE sp.is_active = FALSE OR sp.status IN ('Cancelled', 'Completed') OR COALESCE(sp.pause_end_date, sp.resume_date) < '${today}'`
+        )
+      ]);
+      return res.json({ success: true, data: rows.rows, total: parseInt(count.rows[0].count) });
+    }
+
     res.status(400).json({ success: false, message: 'Invalid tab.' });
   } catch (err) { next(err); }
 };
 
 // ─────────────────────────────────────────────
-// POST /api/pause/hold
+// GET /api/pause/customer-subscriptions/:customerId
+// Returns all active subscriptions with product items for a customer
+// ─────────────────────────────────────────────
+const getCustomerSubscriptions = async (req, res, next) => {
+  try {
+    const { customerId } = req.params;
+    const subsRes = await readFromCRM(
+      `SELECT
+        s.id,
+        s.frequency_type,
+        s.status,
+        s.start_date::text as start_date,
+        s.end_date::text as end_date,
+        COALESCE((
+          SELECT string_agg(p.name || ' (' || si.quantity || ' ' || COALESCE(p.unit, 'pkt') || ')', ', ')
+          FROM subscription_items si
+          JOIN products p ON p.id = si.product_id
+          WHERE si.subscription_id = s.id AND si.is_active = TRUE
+        ), 'Subscription') as items_summary
+       FROM subscriptions s
+       WHERE s.customer_id = $1 AND s.status IN ('Active', 'Paused')
+       ORDER BY s.created_at DESC`,
+      [customerId]
+    );
+    res.json({ success: true, data: subsRes.rows });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// POST /api/pause/create or POST /api/pause
+// Create a new pause activity (for customer or specific subscription)
+// ─────────────────────────────────────────────
+const createPause = async (req, res, next) => {
+  try {
+    const {
+      customer_id,
+      subscription_id,
+      pause_type = 'Temporary Hold',
+      pause_start_date,
+      pause_end_date,
+      reason
+    } = req.body;
+
+    if (!customer_id)
+      return res.status(400).json({ success: false, message: 'Customer selection is required.' });
+    if (!pause_start_date)
+      return res.status(400).json({ success: false, message: 'Pause start date is required.' });
+
+    const startDate = pause_start_date;
+    const endDate = pause_end_date || pause_start_date;
+
+    if (endDate < startDate)
+      return res.status(400).json({ success: false, message: 'Pause end date cannot be earlier than start date.' });
+
+    const adminName = req.admin?.name || 'Super Admin';
+    const pauseReason = reason || `${pause_type} scheduled`;
+    const today = new Date().toISOString().slice(0, 10);
+    const isEffectiveToday = startDate <= today && today <= endDate;
+
+    // Determine target subscriptions
+    let targetSubIds = [];
+    if (subscription_id && subscription_id !== 'all') {
+      const subCheck = await readFromCRM(
+        `SELECT id, status FROM subscriptions WHERE id = $1 AND customer_id = $2`,
+        [subscription_id, customer_id]
+      );
+      if (subCheck.rows.length === 0) {
+        return res.status(404).json({ success: false, message: 'Selected subscription not found.' });
+      }
+      targetSubIds = [subscription_id];
+    } else {
+      // Pause all active/paused subscriptions of this customer
+      const subsRes = await readFromCRM(
+        `SELECT id FROM subscriptions WHERE customer_id = $1 AND status IN ('Active', 'Paused')`,
+        [customer_id]
+      );
+      targetSubIds = subsRes.rows.map(r => r.id);
+    }
+
+    if (targetSubIds.length === 0) {
+      return res.status(400).json({ success: false, message: 'No active subscriptions found for this customer.' });
+    }
+
+    const createdRecords = [];
+    for (const subId of targetSubIds) {
+      const pauseRes = await writeToCRM(
+        `INSERT INTO subscription_pauses
+          (subscription_id, customer_id, pause_start_date, pause_end_date, pause_date, resume_date, reason, status, is_active, pause_type, created_by)
+         VALUES ($1, $2, $3, $4, $3, $4, $5, 'Active', TRUE, $6, $7)
+         RETURNING *`,
+        [subId, customer_id, startDate, endDate, pauseReason, pause_type, adminName]
+      );
+      createdRecords.push(pauseRes.rows[0]);
+
+      // If effective today, mark subscription as Paused
+      if (isEffectiveToday) {
+        await writeToCRM(`UPDATE subscriptions SET status = 'Paused', updated_at = NOW() WHERE id = $1`, [subId]);
+      }
+    }
+
+    // Sync to hold_requests or vacation_requests so manager app and report sync
+    if (pause_type === 'Vacation') {
+      await writeToCRM(
+        `INSERT INTO vacation_requests (customer_id, start_date, end_date, reason, status, approved_by)
+         VALUES ($1, $2, $3, $4, 'Approved', $5)`,
+        [customer_id, startDate, endDate, pauseReason, adminName]
+      );
+    } else {
+      await writeToCRM(
+        `INSERT INTO hold_requests (customer_id, hold_from, hold_to, reason, status, approved_by)
+         VALUES ($1, $2, $3, $4, 'Approved', $5)`,
+        [customer_id, startDate, endDate, pauseReason, adminName]
+      );
+    }
+
+    res.status(201).json({
+      success: true,
+      message: `Successfully paused delivery from ${startDate} to ${endDate}.`,
+      data: createdRecords
+    });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// POST /api/pause/:id/resume — Resume delivery immediately or on specific date
+// ─────────────────────────────────────────────
+const resumePause = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const today = new Date().toISOString().slice(0, 10);
+    const resumeDate = req.body?.resume_date || today;
+
+    // Update the pause record
+    const updateRes = await writeToCRM(
+      `UPDATE subscription_pauses
+       SET is_active = FALSE, status = 'Completed', resume_date = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING subscription_id, customer_id, pause_start_date`,
+      [resumeDate, id]
+    );
+
+    if (updateRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Pause record not found.' });
+    }
+
+    const { subscription_id, customer_id, pause_start_date } = updateRes.rows[0];
+
+    // Check if subscription has any other active pause records covering today
+    if (subscription_id) {
+      const activeCheck = await readFromCRM(
+        `SELECT id FROM subscription_pauses
+         WHERE subscription_id = $1 AND is_active = TRUE
+           AND COALESCE(pause_start_date, pause_date) <= $2
+           AND COALESCE(pause_end_date, resume_date, '9999-12-31') >= $2`,
+        [subscription_id, today]
+      );
+
+      if (activeCheck.rows.length === 0) {
+        await writeToCRM(
+          `UPDATE subscriptions SET status = 'Active', updated_at = NOW() WHERE id = $1 AND status != 'Cancelled'`,
+          [subscription_id]
+        );
+      }
+    }
+
+    // Mark matching hold_requests as completed
+    if (customer_id && pause_start_date) {
+      await writeToCRM(
+        `UPDATE hold_requests SET status = 'Completed'
+         WHERE customer_id = $1 AND hold_from = $2 AND status = 'Approved'`,
+        [customer_id, pause_start_date]
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Delivery resumed successfully (Effective: ${resumeDate}). Subscription is now Active.`
+    });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// POST /api/pause/bulk-resume
+// ─────────────────────────────────────────────
+const bulkResumePauses = async (req, res, next) => {
+  try {
+    const { ids = [], resume_date } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'No pause IDs provided.' });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    const resumeDate = resume_date || today;
+    let count = 0;
+
+    for (const id of ids) {
+      const updateRes = await writeToCRM(
+        `UPDATE subscription_pauses
+         SET is_active = FALSE, status = 'Completed', resume_date = $1, updated_at = NOW()
+         WHERE id = $2
+         RETURNING subscription_id, customer_id, pause_start_date`,
+        [resumeDate, id]
+      );
+      if (updateRes.rows.length > 0) {
+        count++;
+        const { subscription_id, customer_id, pause_start_date } = updateRes.rows[0];
+        if (subscription_id) {
+          const activeCheck = await readFromCRM(
+            `SELECT id FROM subscription_pauses
+             WHERE subscription_id = $1 AND is_active = TRUE
+               AND COALESCE(pause_start_date, pause_date) <= $2
+               AND COALESCE(pause_end_date, resume_date, '9999-12-31') >= $2`,
+            [subscription_id, today]
+          );
+          if (activeCheck.rows.length === 0) {
+            await writeToCRM(
+              `UPDATE subscriptions SET status = 'Active', updated_at = NOW() WHERE id = $1 AND status != 'Cancelled'`,
+              [subscription_id]
+            );
+          }
+        }
+        if (customer_id && pause_start_date) {
+          await writeToCRM(
+            `UPDATE hold_requests SET status = 'Completed'
+             WHERE customer_id = $1 AND hold_from = $2 AND status = 'Approved'`,
+            [customer_id, pause_start_date]
+          );
+        }
+      }
+    }
+
+    res.json({ success: true, message: `Successfully resumed deliveries for ${count} subscription pause(s).` });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// POST /api/pause/bulk-cancel
+// ─────────────────────────────────────────────
+const bulkCancelPauses = async (req, res, next) => {
+  try {
+    const { ids = [] } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ success: false, message: 'No pause IDs provided.' });
+    }
+    const today = new Date().toISOString().slice(0, 10);
+    let count = 0;
+
+    for (const id of ids) {
+      const updateRes = await writeToCRM(
+        `UPDATE subscription_pauses
+         SET is_active = FALSE, status = 'Cancelled', updated_at = NOW()
+         WHERE id = $1
+         RETURNING subscription_id, customer_id, pause_start_date`,
+        [id]
+      );
+      if (updateRes.rows.length > 0) {
+        count++;
+        const { subscription_id, customer_id, pause_start_date } = updateRes.rows[0];
+        if (subscription_id) {
+          const activeCheck = await readFromCRM(
+            `SELECT id FROM subscription_pauses
+             WHERE subscription_id = $1 AND is_active = TRUE
+               AND COALESCE(pause_start_date, pause_date) <= $2
+               AND COALESCE(pause_end_date, resume_date, '9999-12-31') >= $2`,
+            [subscription_id, today]
+          );
+          if (activeCheck.rows.length === 0) {
+            await writeToCRM(
+              `UPDATE subscriptions SET status = 'Active', updated_at = NOW() WHERE id = $1 AND status != 'Cancelled'`,
+              [subscription_id]
+            );
+          }
+        }
+        if (customer_id && pause_start_date) {
+          await writeToCRM(
+            `UPDATE hold_requests SET status = 'Cancelled'
+             WHERE customer_id = $1 AND hold_from = $2 AND status = 'Approved'`,
+            [customer_id, pause_start_date]
+          );
+        }
+      }
+    }
+
+    res.json({ success: true, message: `Successfully cancelled ${count} pause(s).` });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// POST /api/pause/:id/cancel or DELETE /api/pause/:id — Cancel a pause
+// ─────────────────────────────────────────────
+const cancelPause = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const today = new Date().toISOString().slice(0, 10);
+
+    const updateRes = await writeToCRM(
+      `UPDATE subscription_pauses
+       SET is_active = FALSE, status = 'Cancelled', updated_at = NOW()
+       WHERE id = $1
+       RETURNING subscription_id, customer_id, pause_start_date`,
+      [id]
+    );
+
+    if (updateRes.rows.length === 0) {
+      // Check if it's a hold_request or vacation_request id
+      const holdRes = await writeToCRM(`UPDATE hold_requests SET status = 'Cancelled' WHERE id = $1 RETURNING customer_id`, [id]);
+      if (holdRes.rows.length > 0) {
+        return res.json({ success: true, message: 'Hold request cancelled.' });
+      }
+      const vacRes = await writeToCRM(`UPDATE vacation_requests SET status = 'Cancelled' WHERE id = $1 RETURNING customer_id`, [id]);
+      if (vacRes.rows.length > 0) {
+        return res.json({ success: true, message: 'Vacation request cancelled.' });
+      }
+      return res.status(404).json({ success: false, message: 'Pause record not found.' });
+    }
+
+    const { subscription_id, customer_id, pause_start_date } = updateRes.rows[0];
+
+    // If subscription has no other active pauses, ensure it's Active
+    if (subscription_id) {
+      const activeCheck = await readFromCRM(
+        `SELECT id FROM subscription_pauses
+         WHERE subscription_id = $1 AND is_active = TRUE
+           AND COALESCE(pause_start_date, pause_date) <= $2
+           AND COALESCE(pause_end_date, resume_date, '9999-12-31') >= $2`,
+        [subscription_id, today]
+      );
+
+      if (activeCheck.rows.length === 0) {
+        await writeToCRM(
+          `UPDATE subscriptions SET status = 'Active', updated_at = NOW() WHERE id = $1 AND status != 'Cancelled'`,
+          [subscription_id]
+        );
+      }
+    }
+
+    // Cancel matching hold_requests
+    if (customer_id && pause_start_date) {
+      await writeToCRM(
+        `UPDATE hold_requests SET status = 'Cancelled'
+         WHERE customer_id = $1 AND hold_from = $2 AND status = 'Approved'`,
+        [customer_id, pause_start_date]
+      );
+    }
+
+    res.json({ success: true, message: 'Pause cancelled. Delivery schedule restored.' });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// PUT /api/pause/:id — Extend / modify pause dates & reason
+// ─────────────────────────────────────────────
+const extendPause = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { pause_start_date, pause_end_date, reason } = req.body;
+
+    if (!pause_start_date || !pause_end_date)
+      return res.status(400).json({ success: false, message: 'Start date and end date are required.' });
+    if (pause_end_date < pause_start_date)
+      return res.status(400).json({ success: false, message: 'End date cannot be earlier than start date.' });
+
+    const updateRes = await writeToCRM(
+      `UPDATE subscription_pauses
+       SET pause_start_date = $1, pause_date = $1,
+           pause_end_date = $2, resume_date = $2,
+           reason = COALESCE($3, reason),
+           updated_at = NOW()
+       WHERE id = $4
+       RETURNING *`,
+      [pause_start_date, pause_end_date, reason, id]
+    );
+
+    if (updateRes.rows.length === 0)
+      return res.status(404).json({ success: false, message: 'Pause record not found.' });
+
+    res.json({ success: true, message: 'Pause dates updated successfully.', data: updateRes.rows[0] });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// POST /api/pause/hold — Legacy Hold Request route (kept for backwards compatibility)
 // ─────────────────────────────────────────────
 const createHoldRequest = async (req, res, next) => {
   try {
@@ -167,7 +671,7 @@ const createHoldRequest = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
-// PATCH /api/pause/:type/:id — approve or reject
+// PATCH /api/pause/:type/:id — approve or reject hold/vacation/change
 // ─────────────────────────────────────────────
 const updateRequestStatus = async (req, res, next) => {
   try {
@@ -240,24 +744,74 @@ const updateRequestStatus = async (req, res, next) => {
 };
 
 // ─────────────────────────────────────────────
-// GET /api/pause/summary — pending counts
+// GET /api/pause/summary — comprehensive KPI summary
 // ─────────────────────────────────────────────
 const getPauseSummary = async (req, res, next) => {
   try {
-    const [hold, vacation, change] = await Promise.all([
+    const today = new Date().toISOString().slice(0, 10);
+    const startOfMonth = today.slice(0, 7) + '-01';
+
+    const [activeRes, upcomingRes, holdRes, vacationRes, changeRes, resumedRes] = await Promise.all([
+      // Currently active pauses (today falls inside the pause window)
+      readFromCRM(`
+        SELECT COUNT(DISTINCT sp.id) FROM subscription_pauses sp
+        WHERE sp.is_active = TRUE
+          AND COALESCE(sp.pause_start_date, sp.pause_date) <= $1
+          AND COALESCE(sp.pause_end_date, sp.resume_date, '9999-12-31') >= $1
+          AND sp.status != 'Cancelled'
+      `, [today]),
+
+      // Upcoming pauses scheduled for the future
+      readFromCRM(`
+        SELECT COUNT(DISTINCT sp.id) FROM subscription_pauses sp
+        WHERE sp.is_active = TRUE
+          AND COALESCE(sp.pause_start_date, sp.pause_date) > $1
+          AND sp.status != 'Cancelled'
+      `, [today]),
+
+      // Pending hold requests
       readFromCRM("SELECT COUNT(*) FROM hold_requests WHERE status='Pending'"),
+
+      // Pending vacation requests
       readFromCRM("SELECT COUNT(*) FROM vacation_requests WHERE status='Pending'"),
+
+      // Pending change requests
       readFromCRM("SELECT COUNT(*) FROM change_requests WHERE status='Pending'"),
+
+      // Resumed / Completed this month
+      readFromCRM(`
+        SELECT COUNT(*) FROM subscription_pauses
+        WHERE (status = 'Completed' OR resume_date IS NOT NULL)
+          AND (resume_date >= $1 OR updated_at >= $1)
+      `, [startOfMonth])
     ]);
+
     res.json({
       success: true,
       data: {
-        hold: parseInt(hold.rows[0].count),
-        vacation: parseInt(vacation.rows[0].count),
-        change: parseInt(change.rows[0].count),
+        activePauses: parseInt(activeRes.rows[0].count) || 0,
+        upcomingPauses: parseInt(upcomingRes.rows[0].count) || 0,
+        hold: parseInt(holdRes.rows[0].count) || 0,
+        vacation: parseInt(vacationRes.rows[0].count) || 0,
+        change: parseInt(changeRes.rows[0].count) || 0,
+        pendingTotal: (parseInt(holdRes.rows[0].count) || 0) + (parseInt(vacationRes.rows[0].count) || 0),
+        resumedThisMonth: parseInt(resumedRes.rows[0].count) || 0,
       },
     });
   } catch (err) { next(err); }
 };
 
-module.exports = { getPauseRequests, createHoldRequest, updateRequestStatus, getPauseSummary };
+module.exports = {
+  getPauseRequests,
+  getCustomerSubscriptions,
+  createPause,
+  resumePause,
+  bulkResumePauses,
+  bulkCancelPauses,
+  cancelPause,
+  extendPause,
+  createHoldRequest,
+  updateRequestStatus,
+  getPauseSummary
+};
+

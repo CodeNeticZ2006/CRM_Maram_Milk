@@ -5,9 +5,9 @@ import toast from 'react-hot-toast';
 import api from '../../services/api';
 
 const STATUS_TABS = [
-  { key: 'Pending', label: '🕐 Pending' },
-  { key: 'Approved', label: '✅ Approved' },
-  { key: 'Rejected', label: '❌ Rejected' },
+  { key: 'Pending', label: 'Pending' },
+  { key: 'Approved', label: 'Approved' },
+  { key: 'Rejected', label: 'Rejected' },
 ];
 
 export default function WhatsAppPage() {

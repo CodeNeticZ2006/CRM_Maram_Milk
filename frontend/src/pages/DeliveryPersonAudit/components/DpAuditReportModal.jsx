@@ -53,7 +53,7 @@ export default function DpAuditReportModal({
     switch (section) {
       case 'attendance':
         return {
-          title: '📋 Attendance Report:',
+          title: 'Attendance Report:',
           desc: 'Columns mirror Attendance tab: DP Code, Name, Vehicle No, Assigned Route, Total Days, Present Days, Absent Days, Standby Days, Not Marked Days, Attendance %.',
           color: '#10b981',
           bg: 'rgba(16,185,129,0.06)',
@@ -61,7 +61,7 @@ export default function DpAuditReportModal({
         };
       case 'route':
         return {
-          title: '🛵 Route & Logistics Report:',
+          title: 'Route & Logistics Report:',
           desc: 'Columns mirror Route tab: Route ID/Name, DP Code & Name, Assigned Date, Stops Assigned, Stops Completed, Geofence Compliance %, Distance Covered (km).',
           color: '#3b82f6',
           bg: 'rgba(59,130,246,0.06)',
@@ -69,7 +69,7 @@ export default function DpAuditReportModal({
         };
       case 'daily_audit':
         return {
-          title: '📊 Daily Audit Report:',
+          title: 'Daily Audit Report:',
           desc: 'Columns mirror Daily Audit tab: DP Code & Name, Assigned Route, Route Status, Milk Taken (L), Milk Delivered (L), Undelivered Milk (L), Petrol Paid (₹), Extra Paid (₹), Short Paid (₹), plus AdHoc products summary.',
           color: '#d97706',
           bg: 'rgba(217,119,6,0.06)',
@@ -77,7 +77,7 @@ export default function DpAuditReportModal({
         };
       case 'overview':
         return {
-          title: '👤 DP Overview Report:',
+          title: 'DP Overview Report:',
           desc: 'Summary sheet: DP Code, Name, Mobile Number, Vehicle Number, Assigned Route/Zone, Account Status (Active/Inactive), Total Deliveries & Performance Metrics.',
           color: '#7c3aed',
           bg: 'rgba(124,58,237,0.06)',
@@ -85,7 +85,7 @@ export default function DpAuditReportModal({
         };
       default:
         return {
-          title: '📊 Audit Report:',
+          title: 'Audit Report:',
           desc: 'Comprehensive Delivery Person audit metrics exported directly from live DB2 & DB1 stores.',
           color: '#3b82f6',
           bg: 'rgba(59,130,246,0.06)',
@@ -331,10 +331,10 @@ export default function DpAuditReportModal({
                 value={dpId}
                 onChange={(e) => setDpId(e.target.value)}
               >
-                <option value="all">👥 All Delivery Persons</option>
+                <option value="all">All Delivery Persons</option>
                 {deliveryPersons.map((dp) => (
                   <option key={dp.id || dp.dpCode} value={dp.id || dp.dpCode}>
-                    🛵 {dp.name} ({dp.dpCode || 'DP'}) — {dp.assignedRoute || dp.zone || 'Unassigned'}
+                    {dp.name} ({dp.dpCode || 'DP'}) — {dp.assignedRoute || dp.zone || 'Unassigned'}
                   </option>
                 ))}
               </select>

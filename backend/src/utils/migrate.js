@@ -10,6 +10,7 @@ const { runMigration007: runMigration007RouteCustomers } = require('../migration
 const { runMigration007: runMigration007InventoryItems } = require('../migrations/007_seed_missing_inventory_items');
 const { runMigration008 } = require('../migrations/008_add_packing_type');
 const { runMigration009 } = require('../migrations/009_subscription_items');
+const { runMigration010 } = require('../migrations/010_wallet_method_check');
 const { seedSuperAdmin } = require('./seed');
 
 async function runAllMigrations() {
@@ -42,10 +43,13 @@ async function runAllMigrations() {
     console.log('\n[8/10] Running Migration 008 (Packing Type)...');
     await runMigration008();
 
-    console.log('\n[9/10] Running Migration 009 (Multi-product Subscriptions, Schedules, Pauses, Price History)...');
+    console.log('\n[9/11] Running Migration 009 (Multi-product Subscriptions, Schedules, Pauses, Price History)...');
     await runMigration009();
 
-    console.log('\n[10/10] Seeding Super Admin Account...');
+    console.log('\n[10/11] Running Migration 010 (Wallet transactions method check constraint)...');
+    await runMigration010();
+
+    console.log('\n[11/11] Seeding Super Admin Account...');
     await seedSuperAdmin();
 
     console.log('\n🎉 ALL MIGRATIONS COMPLETED SUCCESSFULLY!');

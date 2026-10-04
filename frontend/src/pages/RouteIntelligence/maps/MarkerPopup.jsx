@@ -26,13 +26,13 @@ export default function MarkerPopup({ title, type, route, territory, status, isO
 
       {route && (
         <div style={{ fontSize: 12, color: 'var(--primary, #3b82f6)', fontWeight: 600, marginBottom: 4 }}>
-          📍 {route}
+          {route}
         </div>
       )}
 
       {territory && (
         <div style={{ fontSize: 11, color: '#64748b', fontWeight: 600, marginBottom: 6 }}>
-          🗺️ Territory: <strong>{territory}</strong>
+          Territory: <strong>{territory}</strong>
         </div>
       )}
 

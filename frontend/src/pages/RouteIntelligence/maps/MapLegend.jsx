@@ -5,11 +5,11 @@ export default function MapLegend({ items }) {
   const [collapsed, setCollapsed] = useState(false);
 
   const defaultItems = [
-    { label: 'Head Office',      color: '#8b5cf6', icon: '🏢' },
-    { label: 'Delivery Partner', color: '#10b981', icon: '🛵' },
-    { label: 'Customer',         color: '#f59e0b', icon: '🏠' },
-    { label: 'Assigned Route',   color: '#3b82f6', icon: '➖' },
-    { label: 'Completed Route',  color: '#64748b', icon: '➖' },
+    { label: 'Head Office',      color: '#8b5cf6' },
+    { label: 'Delivery Partner', color: '#10b981', shape: 'circle' },
+    { label: 'Customer',         color: '#f59e0b' },
+    { label: 'Assigned Route',   color: '#3b82f6' },
+    { label: 'Completed Route',  color: '#64748b' },
   ];
 
   const legendList = items || defaultItems;

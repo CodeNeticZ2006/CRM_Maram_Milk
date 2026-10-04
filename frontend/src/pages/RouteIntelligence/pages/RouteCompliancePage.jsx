@@ -25,7 +25,7 @@ export default function RouteCompliancePage() {
         setIsDb2Loaded(true);
       }
     } catch (err) {
-      console.warn('⚠️ Failed to load DB2 Compliance data:', err.message);
+      console.warn('Failed to load DB2 Compliance data:', err.message);
     } finally {
       setLoading(false);
     }

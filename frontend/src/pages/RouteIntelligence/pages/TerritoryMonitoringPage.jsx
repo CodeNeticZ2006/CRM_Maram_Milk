@@ -61,7 +61,7 @@ export default function TerritoryMonitoringPage() {
         setIsDb2Loaded(true);
       }
     } catch (err) {
-      console.warn('⚠️ Failed to load DB2 Territories:', err.message);
+      console.warn('Failed to load DB2 Territories:', err.message);
     } finally {
       setLoading(false);
     }
@@ -79,7 +79,7 @@ export default function TerritoryMonitoringPage() {
         setCustomers([]);
       }
     } catch (err) {
-      console.error('❌ Error loading customer locations:', err.message);
+      console.error('Error loading customer locations:', err.message);
       setCustomerError('Failed to load customer locations from CRM.');
     } finally {
       setLoadingCustomers(false);
@@ -233,8 +233,8 @@ export default function TerritoryMonitoringPage() {
         {/* Location Unavailable Customer List */}
         {showUnmappedDrawer && (
           <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', background: 'rgba(245,158,11,0.05)', padding: 12, borderRadius: 8 }}>
-            <div style={{ fontWeight: 700, fontSize: 13, color: '#d97706', marginBottom: 8 }}>
-              ⚠️ Customers without GPS Coordinates ("Location unavailable"):
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#d97706', marginBottom: 8 }}>
+              <MdWarning /> Customers without GPS Coordinates ("Location unavailable"):
             </div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
               {unmappedCustomers.map(c => (

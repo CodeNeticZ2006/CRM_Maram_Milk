@@ -1,5 +1,6 @@
 import { motion } from 'framer-motion';
 import { MdHexagon, MdLogin, MdLogout, MdBolt, MdAdd, MdRefresh } from 'react-icons/md';
+import { MapPin, Building, ShieldAlert } from 'lucide-react';
 import { useState, useEffect, useCallback } from 'react';
 import { SectionHeader, AnalyticsCard, StatusBadge, EventSeverityIcon } from '../components/index.jsx';
 import api from '../../../services/api';
@@ -14,9 +15,9 @@ import '../components/RouteIntelligence.css';
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
 const GEOFENCE_TYPE_META = {
-  route:      { icon: '📍', bg: 'rgba(59,130,246,0.10)',  color: 'var(--primary)'  },
-  depot:      { icon: '🏭', bg: 'rgba(16,185,129,0.10)',  color: 'var(--success)'  },
-  restricted: { icon: '🚫', bg: 'rgba(239,68,68,0.10)',   color: 'var(--danger)'   },
+  route:      { Icon: MapPin, bg: 'rgba(59,130,246,0.10)',  color: 'var(--primary)'  },
+  depot:      { Icon: Building, bg: 'rgba(16,185,129,0.10)',  color: 'var(--success)'  },
+  restricted: { Icon: ShieldAlert, bg: 'rgba(239,68,68,0.10)',   color: 'var(--danger)'   },
 };
 
 export default function GeofencingPage() {
@@ -33,7 +34,7 @@ export default function GeofencingPage() {
         setIsDb2Loaded(true);
       }
     } catch (err) {
-      console.warn('⚠️ Failed to fetch DB2 geofences:', err.message);
+      console.warn('Failed to fetch DB2 geofences:', err.message);
     } finally {
       setLoading(false);
     }
@@ -131,8 +132,8 @@ export default function GeofencingPage() {
                 const meta = GEOFENCE_TYPE_META[gf.type] || GEOFENCE_TYPE_META.route;
                 return (
                   <div key={gf.id} className="ri-geofence-item">
-                    <div className="ri-geofence-icon" style={{ background: meta.bg, color: meta.color }}>
-                      {meta.icon}
+                    <div className="ri-geofence-icon" style={{ background: meta.bg, color: meta.color, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                      <meta.Icon size={16} />
                     </div>
                     <div className="ri-geofence-info">
                       <div className="ri-geofence-name">{gf.name}</div>

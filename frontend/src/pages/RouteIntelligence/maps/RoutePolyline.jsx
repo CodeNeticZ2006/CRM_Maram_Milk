@@ -26,7 +26,7 @@ export default function RoutePolyline({
       {routeName && (
         <Tooltip sticky>
           <span style={{ fontWeight: 600, fontSize: 12 }}>
-            {completed ? '✅ Completed Segment' : `📍 ${routeName}`}
+            {completed ? 'Completed Segment' : routeName}
           </span>
         </Tooltip>
       )}

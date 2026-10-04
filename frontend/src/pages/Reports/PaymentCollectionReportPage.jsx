@@ -483,7 +483,7 @@ export default function PaymentCollectionReportPage() {
               className="btn btn-primary"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 8, padding: '8px 20px', borderRadius: 8, fontWeight: 600, fontSize: 14 }}
             >
-              <FiSearch size={16} /> 🔍 Search
+              <FiSearch size={16} /> Search
             </button>
             <button
               type="button"

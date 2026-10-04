@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MdAdd, MdClose, MdSearch, MdRefresh, MdAccountBalanceWallet } from 'react-icons/md';
+import {
+  Wallet,
+  CreditCard,
+  Search,
+  RefreshCw,
+  X,
+  ArrowLeft,
+  ArrowRight,
+  TrendingUp,
+  AlertTriangle,
+  MinusCircle
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 
@@ -25,11 +36,16 @@ function RechargeModal({ customer, onClose, onSaved }) {
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div className="modal" initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
         <div className="modal-header">
-          <div>
-            <h2 className="modal-title">💳 Recharge Wallet</h2>
-            <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{customer.customer_name} · {customer.customer_code}</p>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ background: 'rgba(59,130,246,0.1)', color: '#3b82f6', padding: 8, borderRadius: 8 }}>
+              <Wallet size={20} />
+            </div>
+            <div>
+              <h2 className="modal-title">Recharge Wallet</h2>
+              <p style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>{customer.customer_name} · {customer.customer_code}</p>
+            </div>
           </div>
-          <button className="icon-btn" onClick={onClose}><MdClose /></button>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
         </div>
         <form onSubmit={handleSubmit}>
           <div className="modal-body">
@@ -62,8 +78,8 @@ function RechargeModal({ customer, onClose, onSaved }) {
           </div>
           <div className="modal-footer">
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
-            <button id="recharge-submit-btn" type="submit" className="btn btn-success" disabled={loading}>
-              {loading ? <span className="loading-spinner" /> : '✅ Recharge Wallet'}
+            <button id="recharge-submit-btn" type="submit" className="btn btn-success" disabled={loading} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              {loading ? <span className="loading-spinner" /> : <><CreditCard size={16} /> Confirm Recharge</>}
             </button>
           </div>
         </form>
@@ -111,25 +127,31 @@ export default function WalletPage() {
       {/* Summary Cards */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginBottom: 20 }}>
         {[
-          { label: 'Total Wallet Balance', value: `₹${parseFloat(summary.total_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, color: '#3b82f6', bg: 'rgba(59,130,246,0.06)' },
-          { label: 'Positive Balances', value: summary.positive_count || 0, color: '#10b981', bg: 'rgba(16,185,129,0.06)' },
-          { label: 'Zero Balances', value: summary.zero_count || 0, color: '#f59e0b', bg: 'rgba(245,158,11,0.06)' },
-          { label: 'Negative Balances', value: summary.negative_count || 0, color: '#ef4444', bg: 'rgba(239,68,68,0.06)' },
-        ].map(card => (
-          <div key={card.label} className="card" style={{ background: card.bg, borderColor: card.color + '30' }}>
-            <div className="card-body" style={{ textAlign: 'center' }}>
-              <div style={{ fontSize: 26, fontWeight: 800, color: card.color }}>{card.value}</div>
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{card.label}</div>
+          { label: 'Total Wallet Balance', value: `₹${parseFloat(summary.total_balance || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`, color: '#3b82f6', bg: 'rgba(59,130,246,0.06)', icon: Wallet },
+          { label: 'Positive Balances', value: summary.positive_count || 0, color: '#10b981', bg: 'rgba(16,185,129,0.06)', icon: TrendingUp },
+          { label: 'Zero Balances', value: summary.zero_count || 0, color: '#f59e0b', bg: 'rgba(245,158,11,0.06)', icon: MinusCircle },
+          { label: 'Negative Balances', value: summary.negative_count || 0, color: '#ef4444', bg: 'rgba(239,68,68,0.06)', icon: AlertTriangle },
+        ].map(card => {
+          const IconComp = card.icon;
+          return (
+            <div key={card.label} className="card" style={{ background: card.bg, borderColor: card.color + '30' }}>
+              <div className="card-body" style={{ textAlign: 'center' }}>
+                <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 6, color: card.color }}>
+                  <IconComp size={22} />
+                </div>
+                <div style={{ fontSize: 26, fontWeight: 800, color: card.color }}>{card.value}</div>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4, fontWeight: 600, textTransform: 'uppercase', letterSpacing: 0.5 }}>{card.label}</div>
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* Filter Bar */}
       <div className="card" style={{ marginBottom: 16 }}>
         <div className="card-body" style={{ padding: '12px 20px', display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
-          <div className="input-with-icon" style={{ flex: 1, minWidth: 200 }}>
-            <MdSearch className="input-icon" />
+          <div className="input-with-icon" style={{ flex: 1, minWidth: 200, position: 'relative' }}>
+            <Search className="input-icon" size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
             <input id="wallet-search" className="form-input" style={{ paddingLeft: 38, width: '100%' }}
               placeholder="Search customer..." value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
           </div>
@@ -139,7 +161,7 @@ export default function WalletPage() {
             <option value="zero">Zero Balance</option>
             <option value="negative">Negative (₹-)</option>
           </select>
-          <button className="btn btn-secondary btn-sm" onClick={fetchWallets}><MdRefresh /></button>
+          <button className="btn btn-secondary btn-sm" onClick={fetchWallets} title="Refresh"><RefreshCw size={15} /></button>
         </div>
       </div>
 
@@ -172,8 +194,8 @@ export default function WalletPage() {
                   <td style={{ color: 'var(--primary)', fontWeight: 600 }}>₹{parseFloat(w.total_recharged || 0).toLocaleString('en-IN')}</td>
                   <td style={{ color: 'var(--warning)', fontWeight: 600 }}>₹{parseFloat(w.total_debited || 0).toLocaleString('en-IN')}</td>
                   <td>
-                    <button id={`wallet-recharge-${w.customer_id}`} className="btn btn-primary btn-sm" onClick={() => setRechargeTarget(w)}>
-                      <MdAccountBalanceWallet /> Recharge
+                    <button id={`wallet-recharge-${w.customer_id}`} className="btn btn-primary btn-sm" onClick={() => setRechargeTarget(w)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                      <Wallet size={15} /> Recharge
                     </button>
                   </td>
                 </motion.tr>
@@ -183,9 +205,13 @@ export default function WalletPage() {
         </div>
         {totalPages > 1 && (
           <div style={{ display: 'flex', justifyContent: 'center', gap: 12, padding: '16px 24px', borderTop: '1px solid var(--border)' }}>
-            <button className="btn btn-secondary btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)}>← Prev</button>
+            <button className="btn btn-secondary btn-sm" disabled={page === 1} onClick={() => setPage(p => p - 1)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <ArrowLeft size={14} /> Prev
+            </button>
             <span style={{ fontSize: 13, color: 'var(--text-muted)', alignSelf: 'center' }}>Page {page} of {totalPages}</span>
-            <button className="btn btn-secondary btn-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>Next →</button>
+            <button className="btn btn-secondary btn-sm" disabled={page === totalPages} onClick={() => setPage(p => p + 1)} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              Next <ArrowRight size={14} />
+            </button>
           </div>
         )}
       </div>

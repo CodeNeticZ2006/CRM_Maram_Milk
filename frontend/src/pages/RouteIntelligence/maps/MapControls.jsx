@@ -1,8 +1,8 @@
 import React from 'react';
 import {
   MdPeople, MdDirectionsBike, MdMap, MdTimeline,
-  MdCenterFocusWeak, MdFilterList
 } from 'react-icons/md';
+import { MapPin, AlertTriangle } from 'lucide-react';
 
 export default function MapControls({
   showCustomers,
@@ -77,8 +77,9 @@ export default function MapControls({
             onClick={() => setShowGeofences(prev => !prev)}
             title="Toggle Geofences"
             id="map-ctrl-geofences"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
-            📍 Geofences
+            <MapPin size={13} /> Geofences
           </button>
         )}
 
@@ -88,8 +89,9 @@ export default function MapControls({
             onClick={() => setShowDeviations(prev => !prev)}
             title="Toggle Deviations"
             id="map-ctrl-deviations"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}
           >
-            ⚠️ Deviations
+            <AlertTriangle size={13} /> Deviations
           </button>
         )}
 

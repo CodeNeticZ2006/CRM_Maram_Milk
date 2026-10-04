@@ -134,7 +134,7 @@ function CustomerModal({ customer, routes, onClose, onSaved }) {
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <motion.div className="modal" style={{ maxWidth: 620 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
         <div className="modal-header">
-          <h2 className="modal-title">{isEdit ? '✏️ Edit Customer' : '➕ Add New Customer'}</h2>
+          <h2 className="modal-title">{isEdit ? 'Edit Customer' : 'Add New Customer'}</h2>
           <button className="icon-btn" onClick={onClose}><MdClose /></button>
         </div>
         <form onSubmit={handleSubmit}>

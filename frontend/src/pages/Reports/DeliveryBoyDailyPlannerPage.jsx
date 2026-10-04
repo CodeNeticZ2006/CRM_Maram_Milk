@@ -199,7 +199,7 @@ export default function DeliveryBoyDailyPlannerPage() {
                   cursor: 'pointer'
                 }}
               >
-                <MdSearch style={{ fontSize: 18 }} /> {loading ? 'Loading...' : '🔍 View'}
+                <MdSearch style={{ fontSize: 18 }} /> {loading ? 'Loading...' : 'View'}
               </button>
 
               <button
@@ -343,7 +343,7 @@ export default function DeliveryBoyDailyPlannerPage() {
           <MdCalendarToday style={{ fontSize: 48, color: '#94a3b8', marginBottom: 12 }} />
           <h3 style={{ fontSize: 16, fontWeight: 700, color: 'var(--text-main)' }}>Select Date & Delivery Boy</h3>
           <p style={{ fontSize: 13, marginTop: 4 }}>
-            Select a Date and Delivery Boy above, then click <strong>🔍 View</strong> to generate the summary report and access Excel export options.
+            Select a Date and Delivery Boy above, then click <strong>View</strong> to generate the summary report and access Excel export options.
           </p>
         </div>
       )}

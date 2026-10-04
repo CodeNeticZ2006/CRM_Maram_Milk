@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { Star } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 
@@ -20,7 +21,21 @@ export default function FeedbackPage() {
     fetch();
   }, [statusFilter]);
 
-  const stars = (n) => '★'.repeat(n) + '☆'.repeat(5 - n);
+  const renderStars = (n) => {
+    const count = parseInt(n) || 0;
+    return (
+      <div style={{ display: 'inline-flex', gap: 2 }}>
+        {[1, 2, 3, 4, 5].map(i => (
+          <Star
+            key={i}
+            size={14}
+            fill={i <= count ? '#f59e0b' : 'none'}
+            color={i <= count ? '#f59e0b' : '#cbd5e1'}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <div>
@@ -52,7 +67,7 @@ export default function FeedbackPage() {
                       <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{f.phone}</div>
                     </td>
                     <td><span className="badge badge-blue">{f.category || '—'}</span></td>
-                    <td><span style={{ color: '#f59e0b', fontSize: 14 }}>{f.rating ? stars(f.rating) : '—'}</span></td>
+                    <td>{f.rating ? renderStars(f.rating) : '—'}</td>
                     <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 250 }}>{f.message?.slice(0, 100) || '—'}</td>
                     <td><span className={`badge ${f.status === 'Open' ? 'badge-warning' : 'badge-success'}`}>{f.status}</span></td>
                     <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{new Date(f.created_at).toLocaleDateString('en-IN')}</td>

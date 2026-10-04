@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { MdTrendingUp, MdTrendingDown } from 'react-icons/md';
+import { TrendingUp, TrendingDown, RefreshCw } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
 import api from '../../services/api';
 import toast from 'react-hot-toast';
@@ -16,7 +16,7 @@ const StatCard = ({ label, value, color, change, changeDir }) => (
     {change !== undefined && (
       <div className="stat-card-header" style={{ justifyContent: 'flex-end', marginBottom: 8 }}>
         <div className={`stat-change ${changeDir}`}>
-          {changeDir === 'up' ? <MdTrendingUp /> : <MdTrendingDown />}
+          {changeDir === 'up' ? <TrendingUp size={14} /> : <TrendingDown size={14} />}
           {change}
         </div>
       </div>
@@ -74,8 +74,8 @@ export default function DashboardPage() {
           <h1 className="page-title">Dashboard</h1>
           <p className="page-subtitle">Welcome to Maram Milk Super Admin Control Center</p>
         </div>
-        <div style={{ fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)' }}>
-          🔄 Auto-refresh: 60s
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--text-muted)', background: 'var(--bg-card)', padding: '6px 14px', borderRadius: 8, border: '1px solid var(--border)' }}>
+          <RefreshCw size={13} /> Auto-refresh: 60s
         </div>
       </div>
 

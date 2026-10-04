@@ -394,7 +394,7 @@ export default function DeliveryAreaReportPage() {
                   cursor: 'pointer'
                 }}
               >
-                <MdSearch style={{ fontSize: 18 }} /> {loading ? 'Loading...' : '🔍 Search'}
+                <MdSearch style={{ fontSize: 18 }} /> {loading ? 'Loading...' : 'Search'}
               </button>
 
               <button

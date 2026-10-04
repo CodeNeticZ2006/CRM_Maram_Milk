@@ -27,7 +27,7 @@ export default function RoutePolygon({
       <Circle center={coordinates} radius={radius} pathOptions={pathOptions}>
         {title && (
           <Tooltip sticky>
-            <span style={{ fontWeight: 600, fontSize: 12 }}>🛡️ {title}</span>
+            <span style={{ fontWeight: 600, fontSize: 12 }}>{title}</span>
           </Tooltip>
         )}
         {title && (
@@ -52,7 +52,7 @@ export default function RoutePolygon({
       <Polygon positions={coordinates} pathOptions={pathOptions}>
         {title && (
           <Tooltip sticky>
-            <span style={{ fontWeight: 600, fontSize: 12 }}>🗺️ {title}</span>
+            <span style={{ fontWeight: 600, fontSize: 12 }}>{title}</span>
           </Tooltip>
         )}
         {title && (

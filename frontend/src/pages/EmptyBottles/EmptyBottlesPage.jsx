@@ -5,8 +5,8 @@ import {
   MdReportProblem, MdPerson, MdSearch, MdClose, MdLocalShipping,
   MdFactCheck, MdAssignmentTurnedIn, MdFilterList,
   MdCalendarToday, MdExpandMore, MdExpandLess, MdHistory, MdDirectionsBike,
-  MdDateRange, MdInfoOutline
 } from 'react-icons/md';
+import { Package } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useOperationalDay from '../../hooks/useOperationalDay';
@@ -321,8 +321,8 @@ export default function EmptyBottlesPage() {
               {periodLabel}
             </span>
             {isActiveDay && (
-              <span style={{ background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', borderRadius: 16, padding: '3px 12px', fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
-                ✓ ACTIVE OPERATIONAL DAY
+              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, background: 'rgba(16,185,129,0.12)', border: '1px solid rgba(16,185,129,0.35)', borderRadius: 16, padding: '3px 12px', fontSize: 11.5, fontWeight: 700, color: '#10b981' }}>
+                <MdCheckCircle style={{ fontSize: 13 }} /> ACTIVE OPERATIONAL DAY
               </span>
             )}
             {filterMode === 'daily' && selectedDate && !isActiveDay && selectedDate < (operationalDate || '') && (
@@ -407,7 +407,7 @@ export default function EmptyBottlesPage() {
                 ) : filteredLogs.length === 0 ? (
                   <tr>
                     <td colSpan={8} style={{ textAlign: 'center', padding: 48, color: 'var(--text-muted)' }}>
-                      <div style={{ fontSize: 32, marginBottom: 8 }}>📦</div>
+                      <div style={{ display: 'flex', justifyContent: 'center', marginBottom: 8 }}><Package size={32} /></div>
                       <div style={{ fontWeight: 700, marginBottom: 4 }}>No empty bottle records found</div>
                       <div style={{ fontSize: 13 }}>for {periodLabel}{isActiveDay ? ' — no data recorded yet for this operational day.' : '.'}</div>
                     </td>

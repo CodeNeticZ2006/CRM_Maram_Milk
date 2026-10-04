@@ -62,7 +62,7 @@ export default function RevenuePage() {
 
       {/* Revenue vs Recharge */}
       <div className="card" style={{ marginBottom: 16 }}>
-        <div className="card-header"><h3 className="card-title">📈 Revenue vs Wallet Recharge</h3></div>
+        <div className="card-header"><h3 className="card-title">Revenue vs Wallet Recharge</h3></div>
         <div className="card-body">
           <ResponsiveContainer width="100%" height={280}>
             <AreaChart data={data?.revenue_by_month || []}>
@@ -85,7 +85,7 @@ export default function RevenuePage() {
 
       {/* Customer Growth */}
       <div className="card">
-        <div className="card-header"><h3 className="card-title">👥 New Customer Registrations</h3></div>
+        <div className="card-header"><h3 className="card-title">New Customer Registrations</h3></div>
         <div className="card-body">
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={data?.customers_by_month || []}>

@@ -5,7 +5,7 @@ import MarkerPopup from './MarkerPopup.jsx';
 
 export const customerIcon = L.divIcon({
   className: 'custom-leaflet-marker customer-marker-wrap',
-  html: `<div class="marker-pin orange"><span class="marker-icon-symbol">🏠</span></div>`,
+  html: `<div class="marker-pin orange"><span class="marker-icon-symbol"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg></span></div>`,
   iconSize: [28, 28],
   iconAnchor: [14, 28],
   popupAnchor: [0, -28],
