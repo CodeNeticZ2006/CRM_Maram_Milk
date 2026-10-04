@@ -44,7 +44,7 @@ const getSubscriptions = async (req, res, next) => {
 
     const whereStr = where.join(' AND ');
 
-    const [rows, count] = await Promise.all([
+    const [rows, count, statusCountsRes] = await Promise.all([
       readFromCRM(
         `SELECT
           s.*,
@@ -69,9 +69,22 @@ const getSubscriptions = async (req, res, next) => {
         [...params, parseInt(limit), offset]
       ),
       readFromCRM(`SELECT COUNT(*) FROM subscriptions s LEFT JOIN customers c ON c.id = s.customer_id WHERE ${whereStr}`, params),
+      readFromCRM(`
+        SELECT
+          COUNT(*) FILTER (WHERE status = 'Active') AS active,
+          COUNT(*) FILTER (WHERE status = 'Paused') AS paused,
+          COUNT(*) FILTER (WHERE status = 'Cancelled') AS cancelled
+        FROM subscriptions
+      `),
     ]);
 
-    res.json({ success: true, data: rows.rows, total: parseInt(count.rows[0].count) });
+    const counts = {
+      Active: parseInt(statusCountsRes.rows[0]?.active || 0),
+      Paused: parseInt(statusCountsRes.rows[0]?.paused || 0),
+      Cancelled: parseInt(statusCountsRes.rows[0]?.cancelled || 0),
+    };
+
+    res.json({ success: true, data: rows.rows, total: parseInt(count.rows[0].count), counts });
   } catch (err) { next(err); }
 };
 
@@ -368,6 +381,45 @@ const updateSubscriptionStatus = async (req, res, next) => {
     const vals = [...Object.values(updates), id];
     await writeToCRM(`UPDATE subscriptions SET ${setClauses.join(',')}, updated_at=NOW() WHERE id=$${vals.length}`, vals);
 
+    // Sync with subscription_pauses and hold_requests
+    const subCheck = await readFromCRM('SELECT customer_id FROM subscriptions WHERE id=$1', [id]);
+    if (subCheck.rows.length > 0) {
+      const custId = subCheck.rows[0].customer_id;
+      const today = new Date().toISOString().slice(0, 10);
+      const nextYear = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+      const adminName = req.admin?.name || 'Super Admin';
+
+      if (status === 'Paused') {
+        // Create an active pause in subscription_pauses
+        await writeToCRM(
+          `INSERT INTO subscription_pauses
+            (subscription_id, customer_id, pause_start_date, pause_end_date,
+             pause_date, resume_date, reason, status, is_active, pause_type, created_by)
+           VALUES ($1,$2,$3,$4,$3,$4,'Direct pause by Super Admin','Active',TRUE,'Temporary Hold',$5)`,
+          [id, custId, today, nextYear, adminName]
+        );
+        // Create an approved record in hold_requests so Pause module displays it
+        await writeToCRM(
+          `INSERT INTO hold_requests (customer_id, hold_from, hold_to, reason, status, approved_by)
+           VALUES ($1,$2,$3,'Direct pause by Super Admin','Approved',$4)`,
+          [custId, today, nextYear, adminName]
+        );
+      } else if (status === 'Active') {
+        // Cancel active subscription_pauses for this subscription
+        await writeToCRM(
+          `UPDATE subscription_pauses SET is_active=FALSE, status='Cancelled', updated_at=NOW()
+           WHERE subscription_id=$1 AND is_active=TRUE`,
+          [id]
+        );
+        // Complete any active hold requests for this customer
+        await writeToCRM(
+          `UPDATE hold_requests SET status='Completed'
+           WHERE customer_id=$1 AND status='Approved' AND hold_to >= CURRENT_DATE`,
+          [custId]
+        );
+      }
+    }
+
     res.json({ success: true, message: `Subscription ${status.toLowerCase()}.` });
   } catch (err) { next(err); }
 };
@@ -397,13 +449,22 @@ const createPause = async (req, res, next) => {
     if (subCheck.rows[0].status === 'Cancelled')
       return res.status(400).json({ success: false, message: 'Cannot pause a cancelled subscription.' });
 
+    const adminName = req.admin?.name || 'Super Admin';
+    const pauseReason = reason || 'Super Admin Pause';
+
     const result = await writeToCRM(
       `INSERT INTO subscription_pauses
         (subscription_id, customer_id, pause_start_date, pause_end_date,
          pause_date, resume_date, reason, status, is_active, pause_type, created_by)
        VALUES ($1,$2,$3,$4,$3,$4,$5,'Active',TRUE,'Vacation',$6) RETURNING *`,
-      [id, subCheck.rows[0].customer_id, pause_start_date, endDate,
-       reason || '', req.admin?.name || 'Super Admin']
+      [id, subCheck.rows[0].customer_id, pause_start_date, endDate, pauseReason, adminName]
+    );
+
+    // Sync to hold_requests so it is immediately visible in Pause Management
+    await writeToCRM(
+      `INSERT INTO hold_requests (customer_id, hold_from, hold_to, reason, status, approved_by)
+       VALUES ($1, $2, $3, $4, 'Approved', $5)`,
+      [subCheck.rows[0].customer_id, pause_start_date, endDate, pauseReason, adminName]
     );
 
     res.status(201).json({
@@ -436,11 +497,21 @@ const getPauses = async (req, res, next) => {
 const deletePause = async (req, res, next) => {
   try {
     const { id, pauseId } = req.params;
-    await writeToCRM(
+    const pauseRes = await writeToCRM(
       `UPDATE subscription_pauses SET is_active=FALSE, status='Cancelled', updated_at=NOW()
-       WHERE id=$1 AND subscription_id=$2`,
+       WHERE id=$1 AND subscription_id=$2 RETURNING customer_id, pause_start_date`,
       [pauseId, id]
     );
+    if (pauseRes.rows.length > 0) {
+      const { customer_id, pause_start_date } = pauseRes.rows[0];
+      if (pause_start_date) {
+        await writeToCRM(
+          `UPDATE hold_requests SET status='Cancelled'
+           WHERE customer_id=$1 AND hold_from=$2 AND status='Approved'`,
+          [customer_id, pause_start_date]
+        );
+      }
+    }
     res.json({ success: true, message: 'Pause cancelled.' });
   } catch (err) { next(err); }
 };

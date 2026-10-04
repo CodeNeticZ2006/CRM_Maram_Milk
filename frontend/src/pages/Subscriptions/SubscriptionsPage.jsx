@@ -964,6 +964,7 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
 export default function SubscriptionsPage() {
   const [subs, setSubs] = useState([]);
   const [total, setTotal] = useState(0);
+  const [counts, setCounts] = useState({ Active: 0, Paused: 0, Cancelled: 0 });
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [freqFilter, setFreqFilter] = useState('');
@@ -982,6 +983,9 @@ export default function SubscriptionsPage() {
       });
       setSubs(res.data.data || []);
       setTotal(res.data.total || 0);
+      if (res.data.counts) {
+        setCounts(res.data.counts);
+      }
     } catch {
       toast.error('Failed to load subscriptions.');
     } finally {
@@ -1005,11 +1009,6 @@ export default function SubscriptionsPage() {
 
   const toggleRow = (id) => setExpandedRows(prev => ({ ...prev, [id]: !prev[id] }));
 
-  const statusCounts = subs.reduce((acc, s) => {
-    acc[s.status] = (acc[s.status] || 0) + 1;
-    return acc;
-  }, {});
-
   return (
     <div>
       <div className="page-header">
@@ -1031,7 +1030,11 @@ export default function SubscriptionsPage() {
         ].map(pill => (
           <div
             key={pill.key}
-            onClick={() => setStatusFilter(statusFilter === pill.key ? '' : pill.key)}
+            id={`sub-filter-pill-${pill.key.toLowerCase()}`}
+            onClick={() => {
+              setStatusFilter(prev => prev === pill.key ? '' : pill.key);
+              setPage(1);
+            }}
             style={{
               background: pill.bg,
               border: `1px solid ${pill.color}30`,
@@ -1044,7 +1047,7 @@ export default function SubscriptionsPage() {
               outline: statusFilter === pill.key ? `2px solid ${pill.color}` : 'none'
             }}
           >
-            <span style={{ fontSize: 22, fontWeight: 800, color: pill.color }}>{statusCounts[pill.key] || 0}</span>
+            <span style={{ fontSize: 22, fontWeight: 800, color: pill.color }}>{counts[pill.key] ?? 0}</span>
             <span style={{ fontSize: 13, color: pill.color, fontWeight: 600 }}>{pill.label}</span>
           </div>
         ))}

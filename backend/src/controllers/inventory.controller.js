@@ -341,6 +341,17 @@ const updateInventory = async (req, res, next) => {
       }
     }
 
+    // Audit log DB2 write to DB1
+    try {
+      await writeToCRM(
+        `INSERT INTO audit_logs (user_type, user_ref_id, action, entity, detail_json, ip_address, timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        ['SUPER_ADMIN', req.admin?.id || null, 'DB2_STOCK_UPDATE', 'InventoryDailyRecord', JSON.stringify({ inventoryItemId, itemName, targetDate, currStock, newAdded }), req.ip || null]
+      );
+    } catch (auditErr) {
+      console.warn('⚠️ DB1 audit log write skipped in updateInventory:', auditErr.message);
+    }
+
     res.json({
       success: true,
       message: `Stock updated in DB2 and CRM DB for target date ${targetDate}`,
@@ -600,6 +611,17 @@ const addStock = async (req, res, next) => {
 
     console.log(`✅ [Stock Addition] ${itemName} +${added} ${itemUnit} by ${addedBy}. Prev: ${previousStock} -> New: ${updatedStock}`);
 
+    // Audit log DB2 write to DB1
+    try {
+      await writeToCRM(
+        `INSERT INTO audit_logs (user_type, user_ref_id, action, entity, detail_json, ip_address, timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        ['SUPER_ADMIN', req.admin?.id || null, 'DB2_STOCK_ADD', 'InventoryDailyRecord', JSON.stringify({ inventoryItemId, itemName, added, updatedStock, date: dateStr, addedBy }), req.ip || null]
+      );
+    } catch (auditErr) {
+      console.warn('⚠️ DB1 audit log write skipped in addStock:', auditErr.message);
+    }
+
     res.status(201).json({
       success: true,
       message: `Successfully added ${added} ${itemUnit} for ${itemName}. Manager App DB2 synchronized!`,
@@ -701,6 +723,16 @@ const correctStock = async (req, res, next) => {
       }
     } catch (e) { /* silent */ }
 
+    // Audit log DB2 write to DB1
+    try {
+      await writeToCRM(
+        `INSERT INTO audit_logs (user_type, user_ref_id, action, entity, detail_json, ip_address, timestamp)
+         VALUES ($1, $2, $3, $4, $5, $6, NOW())`,
+        ['SUPER_ADMIN', req.admin?.id || null, 'DB2_STOCK_CORRECT', 'InventoryDailyRecord', JSON.stringify({ inventoryItemId, itemName, newStock, previousStock, date: dateStr, addedBy }), req.ip || null]
+      );
+    } catch (auditErr) {
+      console.warn('⚠️ DB1 audit log write skipped in correctStock:', auditErr.message);
+    }
 
     res.json({
       success: true,
