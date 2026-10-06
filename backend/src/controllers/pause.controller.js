@@ -1,6 +1,64 @@
 const { readFromCRM, writeToCRM } = require('../config/database');
 
 // ─────────────────────────────────────────────
+// Audit Logger Helper for pause history & logs
+// ─────────────────────────────────────────────
+const logPauseEvent = async ({
+  pause_id,
+  subscription_id,
+  customer_id,
+  customer_name,
+  customer_code,
+  customer_phone,
+  action,
+  pause_type,
+  start_date,
+  end_date,
+  resume_date,
+  reason,
+  details = {},
+  performed_by = 'Super Admin'
+}) => {
+  try {
+    let name = customer_name;
+    let code = customer_code;
+    let phone = customer_phone;
+    if (customer_id && (!name || !code)) {
+      const cRes = await readFromCRM('SELECT name, customer_code, phone FROM customers WHERE id = $1', [customer_id]);
+      if (cRes.rows[0]) {
+        name = name || cRes.rows[0].name;
+        code = code || cRes.rows[0].customer_code;
+        phone = phone || cRes.rows[0].phone;
+      }
+    }
+
+    await writeToCRM(`
+      INSERT INTO pause_logs (
+        pause_id, subscription_id, customer_id, customer_name, customer_code, customer_phone,
+        action, pause_type, start_date, end_date, resume_date, reason, details, performed_by
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+    `, [
+      pause_id || null,
+      subscription_id || null,
+      customer_id || null,
+      name || 'Customer',
+      code || null,
+      phone || null,
+      action,
+      pause_type || 'Temporary Hold',
+      start_date || null,
+      end_date || null,
+      resume_date || null,
+      reason || null,
+      JSON.stringify(details || {}),
+      performed_by || 'Super Admin'
+    ]);
+  } catch (err) {
+    console.warn('⚠️ Failed to write to pause_logs:', err.message);
+  }
+};
+
+// ─────────────────────────────────────────────
 // GET /api/pause — aggregated view of all pause requests & subscription pauses
 // ─────────────────────────────────────────────
 const getPauseRequests = async (req, res, next) => {
@@ -22,13 +80,13 @@ const getPauseRequests = async (req, res, next) => {
       }
 
       if (status_filter === 'active') {
-        where.push(`sp.is_active = TRUE AND COALESCE(sp.pause_start_date, sp.pause_date) <= '${today}' AND COALESCE(sp.pause_end_date, sp.resume_date, '9999-12-31') >= '${today}' AND sp.status != 'Cancelled'`);
+        where.push(`sp.is_active = TRUE AND COALESCE(sp.pause_start_date, sp.pause_date) <= '${today}' AND COALESCE(sp.pause_end_date, sp.resume_date, '9999-12-31') >= '${today}' AND sp.status NOT IN ('Cancelled', 'Resumed')`);
       } else if (status_filter === 'upcoming') {
-        where.push(`sp.is_active = TRUE AND COALESCE(sp.pause_start_date, sp.pause_date) > '${today}' AND sp.status != 'Cancelled'`);
+        where.push(`sp.is_active = TRUE AND COALESCE(sp.pause_start_date, sp.pause_date) > '${today}' AND sp.status NOT IN ('Cancelled', 'Resumed')`);
       } else if (status_filter === 'completed') {
-        where.push(`(sp.status = 'Completed' OR (sp.is_active = TRUE AND COALESCE(sp.pause_end_date, sp.resume_date) < '${today}'))`);
+        where.push(`(sp.status IN ('Completed', 'Resumed') OR (sp.is_active = TRUE AND COALESCE(sp.pause_end_date, sp.resume_date) < '${today}'))`);
       } else if (status_filter === 'cancelled') {
-        where.push(`(sp.is_active = FALSE OR sp.status = 'Cancelled')`);
+        where.push(`(sp.status = 'Cancelled' OR (sp.is_active = FALSE AND sp.status NOT IN ('Completed', 'Resumed')))`);
       }
 
       const whereClause = where.join(' AND ');
@@ -56,8 +114,10 @@ const getPauseRequests = async (req, res, next) => {
             s.frequency_type,
             s.status as subscription_status,
             CASE
-              WHEN sp.is_active = FALSE OR sp.status = 'Cancelled' THEN 'Cancelled'
-              WHEN sp.status = 'Completed' THEN 'Completed'
+              WHEN sp.status = 'Resumed' THEN 'Resumed'
+              WHEN sp.status = 'Completed' THEN 'Resumed'
+              WHEN sp.status = 'Cancelled' THEN 'Cancelled'
+              WHEN sp.is_active = FALSE AND sp.status NOT IN ('Resumed', 'Completed') THEN 'Cancelled'
               WHEN COALESCE(sp.pause_start_date, sp.pause_date) > '${today}' THEN 'Upcoming'
               WHEN COALESCE(sp.pause_start_date, sp.pause_date) <= '${today}' AND COALESCE(sp.pause_end_date, sp.resume_date, '9999-12-31') >= '${today}' THEN 'Active'
               ELSE 'Completed'
@@ -113,7 +173,13 @@ const getPauseRequests = async (req, res, next) => {
               COALESCE(sp.pause_start_date, sp.pause_date)::text as hold_from,
               COALESCE(sp.pause_end_date, sp.resume_date, sp.pause_start_date, sp.pause_date)::text as hold_to,
               COALESCE(sp.reason, 'Subscription Pause') as reason,
-              CASE WHEN sp.is_active = FALSE OR sp.status = 'Cancelled' THEN 'Cancelled' ELSE 'Approved' END as status,
+              CASE
+                WHEN sp.status = 'Resumed' THEN 'Resumed'
+                WHEN sp.status = 'Completed' THEN 'Resumed'
+                WHEN sp.status = 'Cancelled' THEN 'Cancelled'
+                WHEN sp.is_active = FALSE AND sp.status NOT IN ('Resumed', 'Completed') THEN 'Cancelled'
+                ELSE 'Approved'
+              END as status,
               COALESCE(sp.created_by, 'Super Admin') as approved_by,
               sp.created_at,
               'subscription_pause' as source,
@@ -166,7 +232,13 @@ const getPauseRequests = async (req, res, next) => {
               COALESCE(sp.pause_start_date, sp.pause_date)::text as start_date,
               COALESCE(sp.pause_end_date, sp.resume_date, sp.pause_start_date, sp.pause_date)::text as end_date,
               COALESCE(sp.reason, 'Vacation') as reason,
-              CASE WHEN sp.is_active = FALSE OR sp.status = 'Cancelled' THEN 'Cancelled' ELSE 'Approved' END as status,
+              CASE
+                WHEN sp.status = 'Resumed' THEN 'Resumed'
+                WHEN sp.status = 'Completed' THEN 'Resumed'
+                WHEN sp.status = 'Cancelled' THEN 'Cancelled'
+                WHEN sp.is_active = FALSE AND sp.status NOT IN ('Resumed', 'Completed') THEN 'Cancelled'
+                ELSE 'Approved'
+              END as status,
               COALESCE(sp.created_by, 'Super Admin') as approved_by,
               sp.created_at,
               'subscription_pause' as source,
@@ -213,40 +285,62 @@ const getPauseRequests = async (req, res, next) => {
 
     // ── TAB: History & Archive ──
     if (tab === 'history') {
+      const historyWhere = ['1=1'];
+      const historyParams = [];
+      let hPi = 1;
+
+      if (search && search.trim()) {
+        historyWhere.push(`(pl.customer_name ILIKE $${hPi} OR pl.customer_code ILIKE $${hPi} OR pl.action ILIKE $${hPi} OR pl.reason ILIKE $${hPi})`);
+        historyParams.push(`%${search.trim()}%`);
+        hPi++;
+      }
+
+      const historyWhereClause = historyWhere.join(' AND ');
+
       const [rows, count] = await Promise.all([
         readFromCRM(
           `SELECT
-            sp.id,
-            sp.subscription_id,
-            sp.customer_id,
-            COALESCE(sp.pause_type, 'Temporary Hold') as pause_type,
-            COALESCE(sp.pause_start_date, sp.pause_date)::text as pause_start_date,
-            COALESCE(sp.pause_end_date, sp.resume_date, sp.pause_start_date, sp.pause_date)::text as pause_end_date,
-            sp.resume_date::text as resume_date,
-            sp.reason,
+            pl.id,
+            pl.pause_id,
+            pl.subscription_id,
+            pl.customer_id,
+            COALESCE(pl.customer_name, c.name, 'Customer') as customer_name,
+            COALESCE(pl.customer_code, c.customer_code, '—') as customer_code,
+            COALESCE(pl.customer_phone, c.phone, '—') as customer_phone,
+            COALESCE(pl.action, 'PAUSE_LOGGED') as action,
+            COALESCE(pl.pause_type, 'Temporary Hold') as pause_type,
+            pl.start_date::text as pause_start_date,
+            pl.end_date::text as pause_end_date,
+            pl.resume_date::text as resume_date,
+            COALESCE(pl.reason, '—') as reason,
             CASE
-              WHEN sp.is_active = FALSE OR sp.status = 'Cancelled' THEN 'Cancelled'
-              ELSE 'Completed'
+              WHEN pl.action IN ('DELIVERY_RESUMED', 'RESUMED') THEN 'Resumed'
+              WHEN pl.action IN ('PAUSE_CANCELLED', 'CANCELLED', 'PAUSE_DELETED') THEN 'Cancelled'
+              WHEN pl.action IN ('HOLD_APPROVED', 'VACATION_APPROVED', 'CHANGE_APPROVED') THEN 'Approved'
+              WHEN pl.action IN ('HOLD_REJECTED', 'VACATION_REJECTED', 'CHANGE_REJECTED') THEN 'Rejected'
+              ELSE 'Active'
             END as status,
-            sp.created_by,
-            sp.created_at,
-            sp.updated_at,
-            c.name as customer_name,
-            c.customer_code,
-            c.phone as customer_phone
-          FROM subscription_pauses sp
-          LEFT JOIN customers c ON c.id = sp.customer_id
-          WHERE sp.is_active = FALSE OR sp.status IN ('Cancelled', 'Completed') OR COALESCE(sp.pause_end_date, sp.resume_date) < '${today}'
-          ORDER BY COALESCE(sp.updated_at, sp.created_at) DESC
-          LIMIT $1 OFFSET $2`,
-          [limit, offset]
+            COALESCE(pl.performed_by, 'Super Admin') as created_by,
+            pl.created_at
+          FROM pause_logs pl
+          LEFT JOIN customers c ON c.id = pl.customer_id
+          WHERE ${historyWhereClause}
+          ORDER BY pl.created_at DESC
+          LIMIT $${hPi} OFFSET $${hPi + 1}`,
+          [...historyParams, limit, offset]
         ),
         readFromCRM(
-          `SELECT COUNT(*) FROM subscription_pauses sp
-           WHERE sp.is_active = FALSE OR sp.status IN ('Cancelled', 'Completed') OR COALESCE(sp.pause_end_date, sp.resume_date) < '${today}'`
+          `SELECT COUNT(*) FROM pause_logs pl
+           WHERE ${historyWhereClause}`,
+          historyParams
         )
       ]);
-      return res.json({ success: true, data: rows.rows, total: parseInt(count.rows[0].count) });
+
+      return res.json({
+        success: true,
+        data: rows.rows,
+        total: parseInt(count.rows[0].count)
+      });
     }
 
     res.status(400).json({ success: false, message: 'Invalid tab.' });
@@ -348,6 +442,19 @@ const createPause = async (req, res, next) => {
       );
       createdRecords.push(pauseRes.rows[0]);
 
+      // Log to pause_logs audit trail
+      await logPauseEvent({
+        pause_id: pauseRes.rows[0].id,
+        subscription_id: subId,
+        customer_id,
+        action: 'PAUSE_CREATED',
+        pause_type,
+        start_date: startDate,
+        end_date: endDate,
+        reason: pauseReason,
+        performed_by: adminName
+      });
+
       // If effective today, mark subscription as Paused
       if (isEffectiveToday) {
         await writeToCRM(`UPDATE subscriptions SET status = 'Paused', updated_at = NOW() WHERE id = $1`, [subId]);
@@ -389,7 +496,7 @@ const resumePause = async (req, res, next) => {
     // Update the pause record
     const updateRes = await writeToCRM(
       `UPDATE subscription_pauses
-       SET is_active = FALSE, status = 'Completed', resume_date = $1, updated_at = NOW()
+       SET is_active = FALSE, status = 'Resumed', resume_date = $1, updated_at = NOW()
        WHERE id = $2
        RETURNING subscription_id, customer_id, pause_start_date`,
       [resumeDate, id]
@@ -428,9 +535,27 @@ const resumePause = async (req, res, next) => {
       );
     }
 
+    let customerName = 'customer';
+    if (customer_id) {
+      const custRes = await readFromCRM('SELECT name FROM customers WHERE id = $1', [customer_id]);
+      if (custRes.rows[0]?.name) customerName = custRes.rows[0].name;
+    }
+
+    // Log resume event
+    await logPauseEvent({
+      pause_id: id,
+      subscription_id,
+      customer_id,
+      customer_name: customerName,
+      action: 'DELIVERY_RESUMED',
+      resume_date: resumeDate,
+      reason: `Deliveries resumed effective ${resumeDate}`,
+      performed_by: req.admin?.name || 'Super Admin'
+    });
+
     res.json({
       success: true,
-      message: `Delivery resumed successfully (Effective: ${resumeDate}). Subscription is now Active.`
+      message: `Deliveries for ${customerName} successfully resumed (Effective: ${resumeDate}). Subscription dispatch is now Active.`
     });
   } catch (err) { next(err); }
 };
@@ -451,7 +576,7 @@ const bulkResumePauses = async (req, res, next) => {
     for (const id of ids) {
       const updateRes = await writeToCRM(
         `UPDATE subscription_pauses
-         SET is_active = FALSE, status = 'Completed', resume_date = $1, updated_at = NOW()
+         SET is_active = FALSE, status = 'Resumed', resume_date = $1, updated_at = NOW()
          WHERE id = $2
          RETURNING subscription_id, customer_id, pause_start_date`,
         [resumeDate, id]
@@ -481,10 +606,21 @@ const bulkResumePauses = async (req, res, next) => {
             [customer_id, pause_start_date]
           );
         }
+
+        // Log bulk resume
+        await logPauseEvent({
+          pause_id: id,
+          subscription_id,
+          customer_id,
+          action: 'DELIVERY_RESUMED',
+          resume_date: resumeDate,
+          reason: `Bulk delivery resumed effective ${resumeDate}`,
+          performed_by: req.admin?.name || 'Super Admin'
+        });
       }
     }
 
-    res.json({ success: true, message: `Successfully resumed deliveries for ${count} subscription pause(s).` });
+    res.json({ success: true, message: `Successfully resumed deliveries for ${count} subscription(s). Dispatch schedules are now Active.` });
   } catch (err) { next(err); }
 };
 
@@ -533,6 +669,16 @@ const bulkCancelPauses = async (req, res, next) => {
             [customer_id, pause_start_date]
           );
         }
+
+        // Log bulk cancel
+        await logPauseEvent({
+          pause_id: id,
+          subscription_id,
+          customer_id,
+          action: 'PAUSE_CANCELLED',
+          reason: 'Bulk pause cancelled by admin',
+          performed_by: req.admin?.name || 'Super Admin'
+        });
       }
     }
 
@@ -598,7 +744,24 @@ const cancelPause = async (req, res, next) => {
       );
     }
 
-    res.json({ success: true, message: 'Pause cancelled. Delivery schedule restored.' });
+    let customerName = 'customer';
+    if (customer_id) {
+      const custRes = await readFromCRM('SELECT name FROM customers WHERE id = $1', [customer_id]);
+      if (custRes.rows[0]?.name) customerName = custRes.rows[0].name;
+    }
+
+    // Log cancel event
+    await logPauseEvent({
+      pause_id: id,
+      subscription_id,
+      customer_id,
+      customer_name: customerName,
+      action: 'PAUSE_CANCELLED',
+      reason: 'Pause schedule cancelled by admin',
+      performed_by: req.admin?.name || 'Super Admin'
+    });
+
+    res.json({ success: true, message: `Pause schedule for ${customerName} cancelled. Regular delivery schedule restored.` });
   } catch (err) { next(err); }
 };
 
@@ -628,6 +791,18 @@ const extendPause = async (req, res, next) => {
 
     if (updateRes.rows.length === 0)
       return res.status(404).json({ success: false, message: 'Pause record not found.' });
+
+    // Log modification event
+    await logPauseEvent({
+      pause_id: id,
+      customer_id: updateRes.rows[0].customer_id,
+      subscription_id: updateRes.rows[0].subscription_id,
+      action: 'PAUSE_MODIFIED',
+      start_date: pause_start_date,
+      end_date: pause_end_date,
+      reason: reason || 'Pause schedule dates modified',
+      performed_by: req.admin?.name || 'Super Admin'
+    });
 
     res.json({ success: true, message: 'Pause dates updated successfully.', data: updateRes.rows[0] });
   } catch (err) { next(err); }
@@ -739,7 +914,51 @@ const updateRequestStatus = async (req, res, next) => {
       }
     }
 
-    res.json({ success: true, message: `Request ${status.toLowerCase()}.` });
+    const typeLabels = {
+      hold: action === 'approve' ? 'Customer hold request approved and delivery pause activated.' : 'Customer hold request rejected.',
+      vacation: action === 'approve' ? 'Vacation request approved and delivery schedule paused.' : 'Vacation request rejected.',
+      change: action === 'approve' ? 'Customer subscription change request approved and applied.' : 'Customer subscription change request rejected.'
+    };
+
+    res.json({ success: true, message: typeLabels[type] || `Request ${status.toLowerCase()}.` });
+
+    if (updatedRes.rows.length > 0) {
+      await logPauseEvent({
+        action: `${type.toUpperCase()}_${status.toUpperCase()}`,
+        customer_id: updatedRes.rows[0]?.customer_id,
+        reason: `${type} request ${status.toLowerCase()}`,
+        performed_by: approved_by
+      });
+    }
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// DELETE /api/pause/:id/record — Permanently remove a pause record
+// ─────────────────────────────────────────────
+const deletePauseRecord = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const existing = await readFromCRM('SELECT * FROM subscription_pauses WHERE id = $1', [id]);
+    if (existing.rows.length > 0) {
+      await logPauseEvent({
+        pause_id: id,
+        customer_id: existing.rows[0].customer_id,
+        subscription_id: existing.rows[0].subscription_id,
+        action: 'PAUSE_DELETED',
+        pause_type: existing.rows[0].pause_type,
+        start_date: existing.rows[0].pause_start_date,
+        end_date: existing.rows[0].pause_end_date,
+        reason: 'Pause record deleted by admin',
+        performed_by: req.admin?.name || 'Super Admin'
+      });
+    }
+
+    const deleteRes = await writeToCRM('DELETE FROM subscription_pauses WHERE id = $1 RETURNING id', [id]);
+    if (deleteRes.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Pause record not found.' });
+    }
+    res.json({ success: true, message: 'Pause record permanently removed from active list.' });
   } catch (err) { next(err); }
 };
 
@@ -809,6 +1028,7 @@ module.exports = {
   bulkResumePauses,
   bulkCancelPauses,
   cancelPause,
+  deletePauseRecord,
   extendPause,
   createHoldRequest,
   updateRequestStatus,

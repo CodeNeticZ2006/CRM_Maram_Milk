@@ -28,15 +28,16 @@ const getDailyDeliveries = async (req, res, next) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const getSubscriptions = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, status = '', customer_id = '', frequency_type = '', search = '' } = req.query;
+    const { page = 1, limit = 20, status = '', customer_id = '', frequency_type = '', customer_type = '', search = '' } = req.query;
     const offset = (parseInt(page) - 1) * parseInt(limit);
     const where = ['1=1'];
     const params = [];
     let pi = 1;
 
-    if (status)       { where.push(`s.status = $${pi++}`);             params.push(status); }
-    if (customer_id)  { where.push(`s.customer_id = $${pi++}`);        params.push(customer_id); }
-    if (frequency_type) { where.push(`s.frequency_type = $${pi++}`);   params.push(frequency_type.toUpperCase()); }
+    if (status)          { where.push(`s.status = $${pi++}`);             params.push(status); }
+    if (customer_id)     { where.push(`s.customer_id = $${pi++}`);        params.push(customer_id); }
+    if (frequency_type)  { where.push(`s.frequency_type = $${pi++}`);   params.push(frequency_type.toUpperCase()); }
+    if (customer_type)   { where.push(`s.customer_type = $${pi++}`);      params.push(customer_type); }
     if (search) {
       where.push(`(c.name ILIKE $${pi} OR c.customer_code ILIKE $${pi} OR c.phone ILIKE $${pi})`);
       params.push(`%${search}%`); pi++;
@@ -169,7 +170,7 @@ const createSubscription = async (req, res, next) => {
     const {
       customer_id, frequency_type = 'DAILY', start_date, first_delivery_date,
       billing_cycle_start, hub, area, delivery_person_name, delivery_person_id,
-      customer_type = 'Regular', delivery_type = 'Home Delivery', notes,
+      customer_type = 'Regular', delivery_type = 'Doorstep', notes,
       custom_weekdays, items,
       // Legacy single-product support
       product_id, quantity, frequency,
@@ -271,6 +272,7 @@ const updateSubscription = async (req, res, next) => {
   try {
     const { id } = req.params;
     const {
+      customer_id,
       frequency_type, start_date, first_delivery_date, billing_cycle_start,
       end_date, hub, area, delivery_person_name, delivery_person_id,
       customer_type, delivery_type, notes, custom_weekdays,
@@ -286,6 +288,7 @@ const updateSubscription = async (req, res, next) => {
     const updateParams = [];
     let pi = 1;
 
+    if (customer_id)           { setClauses.push(`customer_id=$${pi++}`);    updateParams.push(customer_id); }
     if (ft)                    { setClauses.push(`frequency_type=$${pi++}`); updateParams.push(ft); }
     if (start_date)            { setClauses.push(`start_date=$${pi++}`);     updateParams.push(start_date); }
     if (first_delivery_date)   { setClauses.push(`first_delivery_date=$${pi++}`); updateParams.push(first_delivery_date); }

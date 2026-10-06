@@ -326,8 +326,34 @@ const updateRoute = async (req, res, next) => {
 const deleteRoute = async (req, res, next) => {
   try {
     const { id } = req.params;
-    await writeToCRM('DELETE FROM routes WHERE id=$1', [id]);
-    res.json({ success: true, message: 'Route deleted successfully.' });
+    // Check if route exists in CRM routes by id or route_name
+    const routeRes = await readFromCRM('SELECT * FROM routes WHERE id::text = $1 OR LOWER(route_name) = LOWER($1)', [id]).catch(() => ({ rows: [] }));
+    const targetRoute = routeRes.rows[0];
+    const routeId = targetRoute?.id || id;
+    const routeName = targetRoute?.route_name || id;
+
+    // Check if any customers or subscriptions reference this route
+    const [custCheck, subCheck] = await Promise.all([
+      readFromCRM('SELECT COUNT(*) FROM customers WHERE assigned_route_id = $1::text OR LOWER(assigned_route_id) = LOWER($2)', [routeId, routeName]).catch(() => ({ rows: [{ count: 0 }] })),
+      readFromCRM('SELECT COUNT(*) FROM subscriptions WHERE area = $1::text OR LOWER(area) = LOWER($2)', [routeId, routeName]).catch(() => ({ rows: [{ count: 0 }] })),
+    ]);
+
+    const activeCustCount = parseInt(custCheck.rows[0]?.count || 0);
+    const activeSubCount = parseInt(subCheck.rows[0]?.count || 0);
+
+    if (activeCustCount > 0 || activeSubCount > 0) {
+      // Archive/set Inactive so relational data is preserved
+      await writeToCRM("UPDATE routes SET status = 'Inactive' WHERE id::text = $1 OR LOWER(route_name) = LOWER($2)", [routeId, routeName]).catch(() => {});
+      return res.json({
+        success: true,
+        archived: true,
+        message: `Route "${routeName}" archived as Inactive (${activeCustCount} customer(s), ${activeSubCount} subscription(s) linked).`,
+      });
+    }
+
+    // Unlinked route — perform hard delete
+    await writeToCRM('DELETE FROM routes WHERE id::text = $1 OR LOWER(route_name) = LOWER($2)', [routeId, routeName]).catch(() => {});
+    res.json({ success: true, archived: false, message: `Route "${routeName}" deleted successfully.` });
   } catch (err) { next(err); }
 };
 

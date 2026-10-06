@@ -23,7 +23,9 @@ import {
   CreditCard,
   CalendarOff,
   HelpCircle,
-  ChevronDown
+  ChevronDown,
+  Pause,
+  Trash2
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -113,7 +115,8 @@ function StatusBadge({ status }) {
     Upcoming: { cls: 'badge-info', label: 'Upcoming', pulse: false },
     Approved: { cls: 'badge-success', label: 'Approved', pulse: false },
     Pending: { cls: 'badge-warning', label: 'Pending Review', pulse: false },
-    Completed: { cls: 'badge-gray', label: 'Completed', pulse: false },
+    Resumed: { cls: 'badge-success', label: 'Resumed', pulse: false },
+    Completed: { cls: 'badge-success', label: 'Resumed', pulse: false },
     Cancelled: { cls: 'badge-danger', label: 'Cancelled', pulse: false },
     Rejected: { cls: 'badge-danger', label: 'Rejected', pulse: false },
   };
@@ -170,7 +173,7 @@ const getDaysDifference = (from, to) => {
 };
 
 // ── New Pause / Hold Modal ───────────────────────────────────────
-function NewPauseModal({ onClose, onSaved }) {
+function NewPauseModal({ onClose, onSaved, initialCustomer = null }) {
   const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const dayAfter = new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString().slice(0, 10);
 
@@ -192,6 +195,21 @@ function NewPauseModal({ onClose, onSaved }) {
   const [loadingSubs, setLoadingSubs] = useState(false);
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // Auto-select initial customer if provided (e.g. from Pause Again action)
+  useEffect(() => {
+    if (initialCustomer) {
+      const cid = initialCustomer.customer_id || initialCustomer.id;
+      if (cid) {
+        handleSelectCustomer({
+          id: cid,
+          name: initialCustomer.customer_name || initialCustomer.name,
+          customer_code: initialCustomer.customer_code,
+          phone: initialCustomer.customer_phone || initialCustomer.phone
+        });
+      }
+    }
+  }, [initialCustomer]);
 
   // When pauseType changes, adapt form dates and defaults dynamically
   useEffect(() => {
@@ -892,6 +910,125 @@ function EditPauseModal({ pause, onClose, onSaved }) {
   );
 }
 
+// ── Confirmation Modal (Dedicated in-app confirm dialog, replaces browser alerts) ──
+function ConfirmModal({ isOpen, title, message, confirmText = 'Confirm', confirmStyle = 'danger', onConfirm, onCancel, loading = false }) {
+  if (!isOpen) return null;
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onCancel()}>
+      <motion.div
+        className="modal"
+        style={{ maxWidth: 440, width: '92%', background: '#ffffff', borderRadius: 16 }}
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+      >
+        <div className="modal-header" style={{ padding: '20px 24px 16px', borderBottom: '1px solid #f1f5f9' }}>
+          <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 16.5, fontWeight: 700, color: confirmStyle === 'danger' ? '#ef4444' : '#16a34a' }}>
+            {confirmStyle === 'danger' ? <AlertTriangle size={18} /> : <Play size={18} />} {title}
+          </h2>
+          <button className="icon-btn" onClick={onCancel}><X size={18} /></button>
+        </div>
+        <div style={{ padding: '20px 24px' }}>
+          <p style={{ fontSize: 13.5, color: '#334155', lineHeight: 1.5, margin: 0 }}>
+            {message}
+          </p>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 22 }}>
+            <button type="button" className="btn btn-secondary" onClick={onCancel} disabled={loading}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className={`btn btn-${confirmStyle}`}
+              onClick={onConfirm}
+              disabled={loading}
+              style={{ fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              {loading ? <span className="loading-spinner" /> : confirmText}
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
+// ── Pause Details & Audit Modal ──
+function PauseDetailsModal({ pause, onClose, onRePause }) {
+  if (!pause) return null;
+  return (
+    <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <motion.div
+        className="modal"
+        style={{ maxWidth: 520, width: '92%', background: '#ffffff', borderRadius: 16 }}
+        initial={{ opacity: 0, scale: 0.96 }}
+        animate={{ opacity: 1, scale: 1 }}
+      >
+        <div className="modal-header" style={{ padding: '20px 24px 16px', borderBottom: '1px solid #f1f5f9' }}>
+          <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 17, fontWeight: 700 }}>
+            <Clock size={18} style={{ color: 'var(--primary)' }} /> Pause Audit & History Details
+          </h2>
+          <button className="icon-btn" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div style={{ padding: '20px 24px' }}>
+          <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 10, padding: 14, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+              <div style={{ fontWeight: 700, fontSize: 15, color: '#0f172a' }}>{pause.customer_name}</div>
+              <StatusBadge status={pause.computed_status || pause.status || pause.raw_status} />
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              Code: {pause.customer_code || '—'} · Phone: {pause.customer_phone || pause.phone || '—'}
+            </div>
+            {pause.items_summary && (
+              <div style={{ marginTop: 8, fontSize: 12, color: 'var(--primary)', fontWeight: 600 }}>
+                Items: {pause.items_summary}
+              </div>
+            )}
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16, fontSize: 12.5 }}>
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Pause Window</div>
+              <div style={{ fontWeight: 600, marginTop: 4 }}>
+                {formatDate(pause.pause_start_date || pause.hold_from || pause.start_date)} → {formatDate(pause.pause_end_date || pause.hold_to || pause.end_date)}
+              </div>
+            </div>
+            <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12 }}>
+              <div style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Resume Effective Date</div>
+              <div style={{ fontWeight: 600, marginTop: 4, color: pause.resume_date ? '#16a34a' : 'inherit' }}>
+                {pause.resume_date ? formatDate(pause.resume_date) : 'Pending / Not Resumed'}
+              </div>
+            </div>
+          </div>
+
+          <div style={{ background: '#ffffff', border: '1px solid #e2e8f0', borderRadius: 8, padding: 12, marginBottom: 16, fontSize: 12.5 }}>
+            <div style={{ color: 'var(--text-muted)', fontSize: 11, fontWeight: 600, textTransform: 'uppercase' }}>Reason / Notes</div>
+            <div style={{ marginTop: 4, color: '#334155' }}>{pause.reason || 'No specific notes recorded'}</div>
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11.5, color: 'var(--text-muted)', borderTop: '1px solid #f1f5f9', paddingTop: 14 }}>
+            <span>Logged by: <strong>{pause.created_by || pause.approved_by || 'Super Admin'}</strong></span>
+            {pause.created_at && <span>{formatDate(pause.created_at)}</span>}
+          </div>
+
+          <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 20 }}>
+            <button type="button" className="btn btn-secondary" onClick={onClose}>Close</button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={() => {
+                onClose();
+                onRePause(pause);
+              }}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <Pause size={13} /> Schedule New Pause
+            </button>
+          </div>
+        </div>
+      </motion.div>
+    </div>
+  );
+}
+
 // ── Main RequestTable Component ──────────────────────────────────
 function RequestTable({ tab, onRefresh }) {
   const [items, setItems] = useState([]);
@@ -903,6 +1040,15 @@ function RequestTable({ tab, onRefresh }) {
   const [selectedIds, setSelectedIds] = useState([]);
   const [editingPause, setEditingPause] = useState(null);
   const [resumingPause, setResumingPause] = useState(null);
+
+  // In-app dedicated action states (replaces browser confirm alerts)
+  const [cancelConfirmPause, setCancelConfirmPause] = useState(null);
+  const [deleteConfirmPause, setDeleteConfirmPause] = useState(null);
+  const [bulkConfirm, setBulkConfirm] = useState(null); // { type: 'resume' | 'cancel' }
+  const [detailsModalPause, setDetailsModalPause] = useState(null);
+  const [rePauseCustomer, setRePauseCustomer] = useState(null);
+  const [actionLoading, setActionLoading] = useState(false);
+
   const limit = 15;
 
   const fetch = useCallback(async () => {
@@ -926,31 +1072,24 @@ function RequestTable({ tab, onRefresh }) {
   }, [fetch]);
 
   // Bulk Actions
-  const handleBulkResume = async () => {
-    if (selectedIds.length === 0) return;
-    if (!window.confirm(`Resume deliveries immediately for ${selectedIds.length} selected subscriptions?`)) return;
-
+  const handleConfirmBulkAction = async () => {
+    if (!bulkConfirm || selectedIds.length === 0) return;
+    setActionLoading(true);
     try {
-      const res = await api.post('/pause/bulk-resume', { ids: selectedIds });
-      toast.success(res.data?.message || 'Deliveries resumed!');
+      if (bulkConfirm.type === 'resume') {
+        const res = await api.post('/pause/bulk-resume', { ids: selectedIds });
+        toast.success(res.data?.message || `Deliveries resumed for ${selectedIds.length} subscriptions!`);
+      } else {
+        const res = await api.post('/pause/bulk-cancel', { ids: selectedIds });
+        toast.success(res.data?.message || `Cancelled ${selectedIds.length} pauses!`);
+      }
+      setBulkConfirm(null);
       fetch();
       onRefresh();
-    } catch {
-      toast.error('Failed to resume selected pauses.');
-    }
-  };
-
-  const handleBulkCancel = async () => {
-    if (selectedIds.length === 0) return;
-    if (!window.confirm(`Cancel ${selectedIds.length} selected pauses?`)) return;
-
-    try {
-      const res = await api.post('/pause/bulk-cancel', { ids: selectedIds });
-      toast.success(res.data?.message || 'Pauses cancelled!');
-      fetch();
-      onRefresh();
-    } catch {
-      toast.error('Failed to cancel selected pauses.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Bulk operation failed.');
+    } finally {
+      setActionLoading(false);
     }
   };
 
@@ -968,36 +1107,56 @@ function RequestTable({ tab, onRefresh }) {
   };
 
   // Cancel pause
-  const handleCancelPause = async (pauseId) => {
-    if (!window.confirm('Are you sure you want to cancel this pause? Scheduled deliveries will resume.')) {
-      return;
-    }
+  const handleConfirmCancelPause = async () => {
+    if (!cancelConfirmPause) return;
+    setActionLoading(true);
     try {
-      const res = await api.post(`/pause/${pauseId}/cancel`);
-      toast.success(res.data?.message || 'Pause cancelled.');
+      const res = await api.post(`/pause/${cancelConfirmPause.id}/cancel`);
+      toast.success(res.data?.message || `Pause for ${cancelConfirmPause.customer_name || 'customer'} cancelled. Regular delivery schedule restored.`);
+      setCancelConfirmPause(null);
       fetch();
       onRefresh();
-    } catch {
-      toast.error('Failed to cancel pause.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to cancel pause.');
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Delete pause record permanently
+  const handleConfirmDeleteRecord = async () => {
+    if (!deleteConfirmPause) return;
+    setActionLoading(true);
+    try {
+      const res = await api.delete(`/pause/${deleteConfirmPause.id}/record`);
+      toast.success(res.data?.message || 'Pause record removed from logs.');
+      setDeleteConfirmPause(null);
+      fetch();
+      onRefresh();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete record.');
+    } finally {
+      setActionLoading(false);
     }
   };
 
   // Action for hold/vacation/change approval
-  const act = async (id, action) => {
+  const act = async (item, action) => {
     try {
-      await api.patch(`/pause/${tab}/${id}`, { action });
-      toast.success(`Request ${action === 'approve' ? 'approved & activated' : 'rejected'}.`);
+      const res = await api.patch(`/pause/${tab}/${item.id}`, { action });
+      const actionName = action === 'approve' ? 'approved' : 'rejected';
+      toast.success(res.data?.message || `${item.customer_name || 'Request'} ${actionName} successfully.`);
       fetch();
       onRefresh();
-    } catch {
-      toast.error('Action failed.');
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update request.');
     }
   };
 
   return (
     <div>
       {/* Filter, Search & Bulk Actions Bar */}
-      {(tab === 'subscription_pauses' || tab === 'all_pauses') && (
+      {(tab === 'subscription_pauses' || tab === 'all_pauses' || tab === 'history') && (
         <div style={{
           display: 'flex',
           justifyContent: 'space-between',
@@ -1008,51 +1167,57 @@ function RequestTable({ tab, onRefresh }) {
           flexWrap: 'wrap',
           background: '#fdfdfe'
         }}>
-          {/* Status Pills */}
-          <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
-            {[
-              { key: 'all', label: 'All Pauses' },
-              { key: 'active', label: 'Currently Active' },
-              { key: 'upcoming', label: 'Upcoming' },
-              { key: 'completed', label: 'Completed' },
-              { key: 'cancelled', label: 'Cancelled' },
-            ].map(s => (
-              <button
-                key={s.key}
-                onClick={() => { setStatusFilter(s.key); setPage(1); }}
-                style={{
-                  background: statusFilter === s.key ? 'var(--primary)' : '#ffffff',
-                  color: statusFilter === s.key ? '#ffffff' : 'var(--text-secondary)',
-                  border: statusFilter === s.key ? '1px solid var(--primary)' : '1px solid var(--border)',
-                  borderRadius: 20,
-                  padding: '5px 12px',
-                  fontSize: 12,
-                  fontWeight: 600,
-                  cursor: 'pointer',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
+          {/* Status Pills for Subscriptions or Contextual Title for History */}
+          {(tab === 'subscription_pauses' || tab === 'all_pauses') ? (
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', alignItems: 'center' }}>
+              {[
+                { key: 'all', label: 'All Pauses' },
+                { key: 'active', label: 'Currently Active' },
+                { key: 'upcoming', label: 'Upcoming' },
+                { key: 'completed', label: 'Completed' },
+                { key: 'cancelled', label: 'Cancelled' },
+              ].map(s => (
+                <button
+                  key={s.key}
+                  onClick={() => { setStatusFilter(s.key); setPage(1); }}
+                  style={{
+                    background: statusFilter === s.key ? 'var(--primary)' : '#ffffff',
+                    color: statusFilter === s.key ? '#ffffff' : 'var(--text-secondary)',
+                    border: statusFilter === s.key ? '1px solid var(--primary)' : '1px solid var(--border)',
+                    borderRadius: 20,
+                    padding: '5px 12px',
+                    fontSize: 12,
+                    fontWeight: 600,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)', display: 'flex', alignItems: 'center', gap: 6 }}>
+              <History size={16} style={{ color: 'var(--primary)' }} /> Audit trail of all pause schedules, resumptions, cancellations, and modifications
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
             {/* Bulk Actions if items selected */}
-            {selectedIds.length > 0 && (
+            {(tab === 'subscription_pauses' || tab === 'all_pauses') && selectedIds.length > 0 && (
               <div style={{ display: 'flex', gap: 6, alignItems: 'center', background: '#eff6ff', border: '1px solid #bfdbfe', borderRadius: 8, padding: '3px 8px' }}>
                 <span style={{ fontSize: 11.5, fontWeight: 700, color: '#1e40af' }}>{selectedIds.length} selected:</span>
                 <button
                   className="btn btn-success btn-sm"
                   style={{ height: 26, fontSize: 11, padding: '0 8px', background: '#16a34a' }}
-                  onClick={handleBulkResume}
+                  onClick={() => setBulkConfirm({ type: 'resume', count: selectedIds.length })}
                 >
                   <Play size={11} fill="#ffffff" /> Resume Selected
                 </button>
                 <button
                   className="btn btn-danger btn-sm"
                   style={{ height: 26, fontSize: 11, padding: '0 8px' }}
-                  onClick={handleBulkCancel}
+                  onClick={() => setBulkConfirm({ type: 'cancel', count: selectedIds.length })}
                 >
                   <X size={11} /> Cancel Selected
                 </button>
@@ -1060,12 +1225,12 @@ function RequestTable({ tab, onRefresh }) {
             )}
 
             {/* Search Input */}
-            <div style={{ position: 'relative', minWidth: 240 }}>
+            <div style={{ position: 'relative', minWidth: 260 }}>
               <Search size={15} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
               <input
                 className="form-input"
                 style={{ height: 34, paddingLeft: 32, fontSize: 12.5 }}
-                placeholder="Search customer, phone, code..."
+                placeholder={tab === 'history' ? 'Search customer, action, reason...' : 'Search customer, phone, code...'}
                 value={search}
                 onChange={e => { setSearch(e.target.value); setPage(1); }}
               />
@@ -1133,11 +1298,12 @@ function RequestTable({ tab, onRefresh }) {
             {tab === 'history' && (
               <tr>
                 <th>Customer</th>
+                <th>Event / Action</th>
                 <th>Pause Type</th>
                 <th>Duration Window</th>
                 <th>Reason</th>
                 <th>Status</th>
-                <th>Created / Updated</th>
+                <th>Logged By / Date</th>
               </tr>
             )}
           </thead>
@@ -1234,69 +1400,211 @@ function RequestTable({ tab, onRefresh }) {
 
                         <td style={{ textAlign: 'right' }}>
                           <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
-                            {/* Super Admin Resume delivery button */}
+                            {/* Super Admin Resume delivery button (Active) */}
                             {item.computed_status === 'Active' && (
-                              <button
-                                className="btn btn-success btn-sm"
-                                onClick={() => setResumingPause(item)}
-                                title="Resume Delivery Immediately or on Date"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                  fontSize: 11.5,
-                                  padding: '4px 10px',
-                                  height: 28,
-                                  fontWeight: 700,
-                                  background: '#16a34a'
-                                }}
-                              >
-                                <Play size={12} fill="#ffffff" /> Resume Now
-                              </button>
+                              <>
+                                <button
+                                  className="btn btn-success btn-sm"
+                                  onClick={() => setResumingPause(item)}
+                                  title="Resume Delivery Immediately or on Date"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 10px',
+                                    height: 28,
+                                    fontWeight: 700,
+                                    background: '#16a34a'
+                                  }}
+                                >
+                                  <Play size={12} fill="#ffffff" /> Resume Now
+                                </button>
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => setEditingPause(item)}
+                                  title="Extend or edit pause dates"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 8px',
+                                    height: 28
+                                  }}
+                                >
+                                  <Calendar size={13} /> Edit
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => setCancelConfirmPause(item)}
+                                  title="Cancel this pause"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 8px',
+                                    height: 28
+                                  }}
+                                >
+                                  <XCircle size={13} /> Cancel
+                                </button>
+                              </>
                             )}
 
-                            {/* Edit / Extend dates button */}
-                            {(item.computed_status === 'Active' || item.computed_status === 'Upcoming') && (
-                              <button
-                                className="btn btn-secondary btn-sm"
-                                onClick={() => setEditingPause(item)}
-                                title="Extend or edit pause dates"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                  fontSize: 11.5,
-                                  padding: '4px 8px',
-                                  height: 28
-                                }}
-                              >
-                                <Calendar size={13} /> Edit
-                              </button>
+                            {/* Upcoming pause operations */}
+                            {item.computed_status === 'Upcoming' && (
+                              <>
+                                <button
+                                  className="btn btn-success btn-sm"
+                                  onClick={() => setResumingPause(item)}
+                                  title="Resume / Start Early"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 9px',
+                                    height: 28,
+                                    background: '#16a34a'
+                                  }}
+                                >
+                                  <Play size={12} fill="#ffffff" /> Resume Early
+                                </button>
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => setEditingPause(item)}
+                                  title="Modify scheduled dates"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 8px',
+                                    height: 28
+                                  }}
+                                >
+                                  <Calendar size={13} /> Edit
+                                </button>
+                                <button
+                                  className="btn btn-danger btn-sm"
+                                  onClick={() => setCancelConfirmPause(item)}
+                                  title="Cancel scheduled pause"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 8px',
+                                    height: 28
+                                  }}
+                                >
+                                  <XCircle size={13} /> Cancel
+                                </button>
+                              </>
                             )}
 
-                            {/* Cancel Pause button */}
-                            {(item.computed_status === 'Active' || item.computed_status === 'Upcoming') && (
-                              <button
-                                className="btn btn-danger btn-sm"
-                                onClick={() => handleCancelPause(item.id)}
-                                title="Cancel this pause"
-                                style={{
-                                  display: 'inline-flex',
-                                  alignItems: 'center',
-                                  gap: 4,
-                                  fontSize: 11.5,
-                                  padding: '4px 8px',
-                                  height: 28
-                                }}
-                              >
-                                <XCircle size={13} /> Cancel
-                              </button>
+                            {/* Resumed or Completed pause operations */}
+                            {(item.computed_status === 'Resumed' || item.computed_status === 'Completed') && (
+                              <>
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => setDetailsModalPause(item)}
+                                  title="View pause audit details"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 8px',
+                                    height: 28
+                                  }}
+                                >
+                                  <Clock size={12} /> Audit Log
+                                </button>
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => setRePauseCustomer(item)}
+                                  title="Schedule another pause for this customer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 9px',
+                                    height: 28
+                                  }}
+                                >
+                                  <Pause size={12} /> Pause Again
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setDeleteConfirmPause(item)}
+                                  title="Delete record from history"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    height: 28,
+                                    padding: '4px 6px',
+                                    color: '#ef4444'
+                                  }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
                             )}
 
-                            {item.computed_status === 'Completed' && (
-                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                                Resumed {item.resume_date ? formatDate(item.resume_date) : ''}
-                              </span>
+                            {/* Cancelled pause operations */}
+                            {item.computed_status === 'Cancelled' && (
+                              <>
+                                <button
+                                  className="btn btn-secondary btn-sm"
+                                  onClick={() => setDetailsModalPause(item)}
+                                  title="View cancellation audit details"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 8px',
+                                    height: 28
+                                  }}
+                                >
+                                  <Clock size={12} /> Details
+                                </button>
+                                <button
+                                  className="btn btn-primary btn-sm"
+                                  onClick={() => setRePauseCustomer(item)}
+                                  title="Schedule a pause for this customer"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    fontSize: 11.5,
+                                    padding: '4px 9px',
+                                    height: 28
+                                  }}
+                                >
+                                  <Pause size={12} /> Re-Pause
+                                </button>
+                                <button
+                                  className="btn btn-ghost btn-sm"
+                                  onClick={() => setDeleteConfirmPause(item)}
+                                  title="Delete cancelled record"
+                                  style={{
+                                    display: 'inline-flex',
+                                    alignItems: 'center',
+                                    gap: 4,
+                                    height: 28,
+                                    padding: '4px 6px',
+                                    color: '#ef4444'
+                                  }}
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </>
                             )}
                           </div>
                         </td>
@@ -1313,17 +1621,27 @@ function RequestTable({ tab, onRefresh }) {
                         <td style={{ textAlign: 'right' }}>
                           {item.status === 'Pending' ? (
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                              <button className="btn btn-success btn-sm" onClick={() => act(item.id, 'approve')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <button className="btn btn-success btn-sm" onClick={() => act(item, 'approve')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <CheckCircle2 size={13} /> Approve
                               </button>
-                              <button className="btn btn-danger btn-sm" onClick={() => act(item.id, 'reject')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <button className="btn btn-danger btn-sm" onClick={() => act(item, 'reject')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <XCircle size={13} /> Reject
                               </button>
                             </div>
                           ) : (
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              by {item.approved_by || 'Super Admin'}
-                            </span>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setDetailsModalPause(item)}
+                                title="View Details"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, padding: '3px 8px', height: 26 }}
+                              >
+                                <Clock size={12} /> Details
+                              </button>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                by {item.approved_by || 'Super Admin'}
+                              </span>
+                            </div>
                           )}
                         </td>
                       </>
@@ -1339,17 +1657,27 @@ function RequestTable({ tab, onRefresh }) {
                         <td style={{ textAlign: 'right' }}>
                           {item.status === 'Pending' ? (
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                              <button className="btn btn-success btn-sm" onClick={() => act(item.id, 'approve')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <button className="btn btn-success btn-sm" onClick={() => act(item, 'approve')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <CheckCircle2 size={13} /> Approve
                               </button>
-                              <button className="btn btn-danger btn-sm" onClick={() => act(item.id, 'reject')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <button className="btn btn-danger btn-sm" onClick={() => act(item, 'reject')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <XCircle size={13} /> Reject
                               </button>
                             </div>
                           ) : (
-                            <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                              by {item.approved_by || 'Super Admin'}
-                            </span>
+                            <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end', alignItems: 'center' }}>
+                              <button
+                                className="btn btn-secondary btn-sm"
+                                onClick={() => setDetailsModalPause(item)}
+                                title="View Details"
+                                style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11.5, padding: '3px 8px', height: 26 }}
+                              >
+                                <Clock size={12} /> Details
+                              </button>
+                              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                                by {item.approved_by || 'Super Admin'}
+                              </span>
+                            </div>
                           )}
                         </td>
                       </>
@@ -1365,10 +1693,10 @@ function RequestTable({ tab, onRefresh }) {
                         <td style={{ textAlign: 'right' }}>
                           {item.status === 'Pending' && (
                             <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
-                              <button className="btn btn-success btn-sm" onClick={() => act(item.id, 'approve')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <button className="btn btn-success btn-sm" onClick={() => act(item, 'approve')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <CheckCircle2 size={13} /> Approve
                               </button>
-                              <button className="btn btn-danger btn-sm" onClick={() => act(item.id, 'reject')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                              <button className="btn btn-danger btn-sm" onClick={() => act(item, 'reject')} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <XCircle size={13} /> Reject
                               </button>
                             </div>
@@ -1380,13 +1708,50 @@ function RequestTable({ tab, onRefresh }) {
                     {/* HISTORY VIEW */}
                     {tab === 'history' && (
                       <>
+                        <td>
+                          <span
+                            style={{
+                              fontSize: 11.5,
+                              fontWeight: 700,
+                              color: item.action?.includes('RESUME')
+                                ? '#15803d'
+                                : item.action?.includes('CANCEL') || item.action?.includes('DELETE') || item.action?.includes('REJECT')
+                                ? '#b91c1c'
+                                : item.action?.includes('MODIFY')
+                                ? '#b45309'
+                                : '#4338ca',
+                              background: item.action?.includes('RESUME')
+                                ? '#f0fdf4'
+                                : item.action?.includes('CANCEL') || item.action?.includes('DELETE') || item.action?.includes('REJECT')
+                                ? '#fef2f2'
+                                : item.action?.includes('MODIFY')
+                                ? '#fffbeb'
+                                : '#eef2ff',
+                              border: `1px solid ${
+                                item.action?.includes('RESUME')
+                                  ? '#bbf7d0'
+                                  : item.action?.includes('CANCEL') || item.action?.includes('DELETE') || item.action?.includes('REJECT')
+                                  ? '#fecaca'
+                                  : item.action?.includes('MODIFY')
+                                  ? '#fde68a'
+                                  : '#c7d2fe'
+                              }`,
+                              padding: '2px 8px',
+                              borderRadius: 4,
+                              display: 'inline-block',
+                              letterSpacing: '0.01em'
+                            }}
+                          >
+                            {(item.action || 'PAUSE_LOGGED').replace(/_/g, ' ')}
+                          </span>
+                        </td>
                         <td><span style={{ fontSize: 12, fontWeight: 600 }}>{item.pause_type}</span></td>
                         <td>
                           <div style={{ fontSize: 12.5, fontWeight: 600 }}>
                             {formatDate(item.pause_start_date)} → {formatDate(item.pause_end_date)}
                           </div>
                           {item.resume_date && (
-                            <div style={{ fontSize: 11, color: '#16a34a' }}>
+                            <div style={{ fontSize: 11, color: '#16a34a', marginTop: 2 }}>
                               Resumed on {formatDate(item.resume_date)}
                             </div>
                           )}
@@ -1394,7 +1759,8 @@ function RequestTable({ tab, onRefresh }) {
                         <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{item.reason || '—'}</td>
                         <td><StatusBadge status={item.status} /></td>
                         <td style={{ fontSize: 11.5, color: 'var(--text-muted)' }}>
-                          {item.created_by || 'Admin'} · {formatDate(item.created_at)}
+                          <div>{item.created_by || 'Super Admin'}</div>
+                          <div style={{ fontSize: 10.5, marginTop: 2 }}>{formatDate(item.created_at)}</div>
                         </td>
                       </>
                     )}
@@ -1434,6 +1800,71 @@ function RequestTable({ tab, onRefresh }) {
         <EditPauseModal
           pause={editingPause}
           onClose={() => setEditingPause(null)}
+          onSaved={() => {
+            fetch();
+            onRefresh();
+          }}
+        />
+      )}
+
+      {/* Dedicated In-App Confirmation Modal: Cancel Single Pause */}
+      {cancelConfirmPause && (
+        <ConfirmModal
+          isOpen={true}
+          title="Cancel Subscription Pause"
+          message={`Are you sure you want to cancel the pause for ${cancelConfirmPause.customer_name}? Daily milk delivery dispatches will resume immediately on regular schedule.`}
+          confirmText="Yes, Cancel Pause"
+          confirmStyle="danger"
+          onConfirm={handleConfirmCancelPause}
+          onCancel={() => setCancelConfirmPause(null)}
+          loading={actionLoading}
+        />
+      )}
+
+      {/* Dedicated In-App Confirmation Modal: Delete Pause Record */}
+      {deleteConfirmPause && (
+        <ConfirmModal
+          isOpen={true}
+          title="Delete Pause Record"
+          message={`Are you sure you want to permanently delete this pause record for ${deleteConfirmPause.customer_name}? This action cannot be undone.`}
+          confirmText="Yes, Delete Permanently"
+          confirmStyle="danger"
+          onConfirm={handleConfirmDeleteRecord}
+          onCancel={() => setDeleteConfirmPause(null)}
+          loading={actionLoading}
+        />
+      )}
+
+      {/* Dedicated In-App Confirmation Modal: Bulk Action */}
+      {bulkConfirm && (
+        <ConfirmModal
+          isOpen={true}
+          title={bulkConfirm.type === 'resume' ? 'Resume Selected Subscriptions' : 'Cancel Selected Pauses'}
+          message={bulkConfirm.type === 'resume'
+            ? `Resume morning and evening deliveries immediately for all ${bulkConfirm.count} selected subscriptions?`
+            : `Cancel all ${bulkConfirm.count} selected pauses? Regular delivery schedule will be restored.`}
+          confirmText={bulkConfirm.type === 'resume' ? 'Yes, Resume Deliveries' : 'Yes, Cancel Pauses'}
+          confirmStyle={bulkConfirm.type === 'resume' ? 'success' : 'danger'}
+          onConfirm={handleConfirmBulkAction}
+          onCancel={() => setBulkConfirm(null)}
+          loading={actionLoading}
+        />
+      )}
+
+      {/* Modal to view complete Pause Audit & Details */}
+      {detailsModalPause && (
+        <PauseDetailsModal
+          pause={detailsModalPause}
+          onClose={() => setDetailsModalPause(null)}
+          onRePause={(cust) => setRePauseCustomer(cust)}
+        />
+      )}
+
+      {/* Modal to schedule a new pause for this customer */}
+      {rePauseCustomer && (
+        <NewPauseModal
+          initialCustomer={rePauseCustomer}
+          onClose={() => setRePauseCustomer(null)}
           onSaved={() => {
             fetch();
             onRefresh();

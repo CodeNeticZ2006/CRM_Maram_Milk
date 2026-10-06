@@ -5,7 +5,7 @@ import {
   MdCalendarToday, MdFilterList, MdCheckCircle, MdCancel,
   MdEventNote, MdChevronLeft, MdChevronRight, MdClose,
   MdSearch, MdAssignment, MdDateRange, MdInfoOutline,
-  MdAdd, MdEdit, MdDownload
+  MdAdd, MdEdit, MdDownload, MdDelete, MdWarning
 } from 'react-icons/md';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -66,6 +66,13 @@ function DeliveryPersonAuditContent() {
   const [overviewStatusFilter, setOverviewStatusFilter] = useState('all');
   const [overviewRouteFilter, setOverviewRouteFilter] = useState('all');
   const [selectedDpDetail, setSelectedDpDetail] = useState(null); // Clicked DP profile for modal preview
+  const [editDpModal, setEditDpModal] = useState(null);
+  const [editDpForm, setEditDpForm] = useState({
+    name: '', mobileNumber: '', vehicleNumber: '', zone: '', assignedRoute: '', address: '', isActive: true
+  });
+  const [savingDp, setSavingDp] = useState(false);
+  const [deleteDpConfirm, setDeleteDpConfirm] = useState(null);
+  const [deletingDp, setDeletingDp] = useState(false);
 
   // DP Attendance Audit State (Used in Tab 2 & Tab 4)
   const [dpAttendance, setDpAttendance] = useState([]);
@@ -145,6 +152,55 @@ function DeliveryPersonAuditContent() {
       setDeliveryPersons([]);
     } finally {
       setDpLoading(false);
+    }
+  };
+
+  // DP Edit & Delete Handlers
+  const handleOpenEditDp = (dp) => {
+    setEditDpModal(dp);
+    setEditDpForm({
+      name: dp.name || '',
+      mobileNumber: dp.mobileNumber || '',
+      vehicleNumber: dp.vehicleNumber || '',
+      zone: dp.zone || '',
+      assignedRoute: dp.assignedRoute || dp.zone || '',
+      address: dp.address || '',
+      isActive: dp.isActive !== false,
+    });
+  };
+
+  const handleSaveEditDp = async (e) => {
+    e.preventDefault();
+    if (!editDpModal) return;
+    setSavingDp(true);
+    try {
+      await api.put(`/access-control/delivery-persons/${editDpModal.id}`, editDpForm);
+      toast.success(`Delivery Person "${editDpForm.name}" updated successfully!`);
+      setEditDpModal(null);
+      fetchDeliveryPersons();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update delivery person.');
+    } finally {
+      setSavingDp(false);
+    }
+  };
+
+  const handleConfirmDeleteDp = async () => {
+    if (!deleteDpConfirm) return;
+    setDeletingDp(true);
+    try {
+      const res = await api.delete(`/access-control/delivery-persons/${deleteDpConfirm.id}`);
+      if (res.data?.archived) {
+        toast.success(res.data.message || `Delivery Person "${deleteDpConfirm.name}" deactivated.`);
+      } else {
+        toast.success(res.data?.message || `Delivery Person "${deleteDpConfirm.name}" deleted.`);
+      }
+      setDeleteDpConfirm(null);
+      fetchDeliveryPersons();
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to delete delivery person.');
+    } finally {
+      setDeletingDp(false);
     }
   };
 
@@ -669,9 +725,33 @@ function DeliveryPersonAuditContent() {
                               {dp.isActive !== false ? 'Active' : 'Inactive'}
                             </span>
                           </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <button className="btn btn-secondary btn-sm" style={{ padding: '3px 10px', fontSize: 12 }}>
+                          <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ padding: '3px 8px', fontSize: 12, marginRight: 6 }}
+                              title="View DP Profile"
+                              onClick={(e) => { e.stopPropagation(); setSelectedDpDetail(dp); }}
+                            >
                               <MdInfoOutline /> View
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              style={{ padding: '3px 8px', fontSize: 12, marginRight: 6 }}
+                              title="Edit Delivery Person"
+                              onClick={(e) => { e.stopPropagation(); handleOpenEditDp(dp); }}
+                            >
+                              <MdEdit /> Edit
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-danger btn-sm"
+                              style={{ padding: '3px 8px', fontSize: 12 }}
+                              title="Delete Delivery Person"
+                              onClick={(e) => { e.stopPropagation(); setDeleteDpConfirm(dp); }}
+                            >
+                              <MdDelete /> Delete
                             </button>
                           </td>
                         </tr>
@@ -1623,6 +1703,142 @@ function DeliveryPersonAuditContent() {
               </div>
               <div className="modal-footer">
                 <button className="btn btn-secondary" onClick={() => setSelectedDpDetail(null)}>Close</button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── EDIT DELIVERY PERSON MODAL ── */}
+      <AnimatePresence>
+        {editDpModal && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setEditDpModal(null)}>
+            <motion.div className="modal" style={{ maxWidth: 560, width: '95%' }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ fontSize: 18, fontWeight: 800, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <MdEdit style={{ color: 'var(--primary)' }} /> Edit Delivery Person ({editDpModal.dpCode || 'DP'})
+                </h2>
+                <button className="icon-btn" onClick={() => setEditDpModal(null)}><MdClose /></button>
+              </div>
+              <form onSubmit={handleSaveEditDp}>
+                <div className="modal-body" style={{ padding: '20px 24px' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Full Name *</label>
+                      <input
+                        type="text"
+                        required
+                        className="form-input"
+                        value={editDpForm.name}
+                        onChange={e => setEditDpForm({ ...editDpForm, name: e.target.value })}
+                        placeholder="e.g. Samsudeen"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Mobile Number *</label>
+                      <input
+                        type="text"
+                        required
+                        className="form-input"
+                        value={editDpForm.mobileNumber}
+                        onChange={e => setEditDpForm({ ...editDpForm, mobileNumber: e.target.value })}
+                        placeholder="e.g. 9876543210"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Vehicle Number</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={editDpForm.vehicleNumber}
+                        onChange={e => setEditDpForm({ ...editDpForm, vehicleNumber: e.target.value })}
+                        placeholder="e.g. TN 01 AB 1234"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Assigned Route / Zone</label>
+                      <select
+                        className="form-input"
+                        value={editDpForm.assignedRoute}
+                        onChange={e => setEditDpForm({ ...editDpForm, assignedRoute: e.target.value, zone: e.target.value })}
+                      >
+                        <option value="">— Unassigned —</option>
+                        {Array.from(new Set([...availableRoutes, ...routesList.map(r => r.route_name)])).filter(Boolean).map(r => (
+                          <option key={r} value={r}>{r}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Status</label>
+                      <select
+                        className="form-input"
+                        value={editDpForm.isActive ? 'active' : 'inactive'}
+                        onChange={e => setEditDpForm({ ...editDpForm, isActive: e.target.value === 'active' })}
+                      >
+                        <option value="active">Active</option>
+                        <option value="inactive">Inactive</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                      <label className="form-label" style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>Address / Notes</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={editDpForm.address}
+                        onChange={e => setEditDpForm({ ...editDpForm, address: e.target.value })}
+                        placeholder="Address or special notes"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                <div className="modal-footer" style={{ padding: '14px 24px' }}>
+                  <button type="button" className="btn btn-secondary" onClick={() => setEditDpModal(null)}>Cancel</button>
+                  <button type="submit" className="btn btn-primary" disabled={savingDp}>
+                    {savingDp ? <span className="loading-spinner" /> : 'Save Delivery Person'}
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* ── DELETE DELIVERY PERSON CONFIRMATION MODAL ── */}
+      <AnimatePresence>
+        {deleteDpConfirm && (
+          <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setDeleteDpConfirm(null)}>
+            <motion.div className="modal" style={{ maxWidth: 460 }} initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}>
+              <div className="modal-header">
+                <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444' }}>
+                  <MdWarning /> Delete Delivery Person
+                </h2>
+                <button className="icon-btn" onClick={() => setDeleteDpConfirm(null)}><MdClose /></button>
+              </div>
+              <div className="modal-body" style={{ padding: '16px 24px' }}>
+                <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
+                  Are you sure you want to delete delivery person <strong>"{deleteDpConfirm.name}" ({deleteDpConfirm.dpCode || 'DP'})</strong>?
+                </p>
+                <div style={{ background: 'rgba(239,68,68,0.08)', border: '1px solid rgba(239,68,68,0.25)', borderRadius: 8, padding: 12, fontSize: 13, color: '#991b1b', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                  <MdWarning style={{ marginTop: 2, flexShrink: 0, color: '#dc2626' }} />
+                  <span>If this delivery person has assigned routes or active subscriptions, their route will be <strong>unassigned</strong> and account marked <strong>inactive</strong> to preserve past delivery logs.</span>
+                </div>
+              </div>
+              <div className="modal-footer" style={{ padding: '14px 24px' }}>
+                <button className="btn btn-secondary" onClick={() => setDeleteDpConfirm(null)}>Cancel</button>
+                <button
+                  type="button"
+                  className="btn btn-danger"
+                  onClick={handleConfirmDeleteDp}
+                  disabled={deletingDp}
+                >
+                  {deletingDp ? <span className="loading-spinner" /> : <><MdDelete /> Delete Delivery Person</>}
+                </button>
               </div>
             </motion.div>
           </div>

@@ -13,7 +13,7 @@ const TABS = [
 ];
 
 // ── Generic Modal ─────────────────────────────────────────────────
-function MasterModal({ title, fields, values, onClose, onSubmit, loading }) {
+function MasterModal({ title, fields, values, onClose, onSubmit, loading, submitText = 'Save' }) {
   const [form, setForm] = useState(values || {});
   return (
     <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -43,7 +43,7 @@ function MasterModal({ title, fields, values, onClose, onSubmit, loading }) {
           <div className="modal-footer" style={{ marginTop: 24, paddingTop: 16 }}>
             <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
             <button type="submit" className="btn btn-primary" style={{ padding: '10px 24px' }} disabled={loading}>
-              {loading ? <span className="loading-spinner" /> : 'Save Product'}
+              {loading ? <span className="loading-spinner" /> : submitText}
             </button>
           </div>
         </form>
@@ -207,7 +207,17 @@ function ProductsTab() {
       )}
 
       <AnimatePresence>
-        {modal && <MasterModal title={modal.item ? 'Edit Product' : 'Add Product'} fields={fields} values={modal.item} onClose={() => setModal(null)} onSubmit={save} loading={saving} />}
+        {modal && (
+          <MasterModal
+            title={modal.item ? 'Edit Product' : 'Add Product'}
+            submitText={modal.item ? 'Save Product' : 'Add Product'}
+            fields={fields}
+            values={modal.item}
+            onClose={() => setModal(null)}
+            onSubmit={save}
+            loading={saving}
+          />
+        )}
       </AnimatePresence>
     </div>
   );
@@ -219,6 +229,8 @@ function RoutesTab() {
   const [loading, setLoading] = useState(true);
   const [modal, setModal] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(null);
+  const [deleting, setDeleting] = useState(false);
 
   const fetchAll = async () => {
     setLoading(true);
@@ -243,6 +255,25 @@ function RoutesTab() {
     finally { setSaving(false); }
   };
 
+  const confirmDelete = async () => {
+    if (!deleteConfirm?.item) return;
+    setDeleting(true);
+    try {
+      const res = await api.delete(`/masters/routes/${deleteConfirm.item.id}`);
+      if (res.data?.archived) {
+        toast.success(res.data.message || `Route "${deleteConfirm.item.route_name}" archived as Inactive.`);
+      } else {
+        toast.success(res.data?.message || `Route "${deleteConfirm.item.route_name}" deleted.`);
+      }
+      setDeleteConfirm(null);
+      fetchAll();
+    } catch (e) {
+      toast.error(e.response?.data?.message || 'Failed to delete route.');
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   const fields = [
     { key: 'route_name', label: 'Route Name', required: true, placeholder: 'e.g. Chennai North Route' },
     { key: 'status', label: 'Status', type: 'select', options: [{ value: 'Active', label: 'Active' }, { value: 'Inactive', label: 'Inactive' }] },
@@ -261,7 +292,7 @@ function RoutesTab() {
         <table className="table">
           <thead>
             <tr>
-              <th>Route Name</th><th>Zone</th><th>Customers</th><th>Litres Dispatched</th><th>Petrol Allowance</th><th>Status</th><th>Source</th><th></th>
+              <th>Route Name</th><th>Zone</th><th>Customers</th><th>Litres Dispatched</th><th>Petrol Allowance</th><th>Status</th><th>Source</th><th style={{ textAlign: 'right' }}>Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -278,7 +309,7 @@ function RoutesTab() {
                       <span style={{ background: 'rgba(245,158,11,0.1)', color: '#d97706', padding: '2px 10px', borderRadius: 20, fontSize: 12, fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                         <MdLocalGasStation /> ₹{item.default_petrol_allowance}
                       </span>
-                    ) : '\u2014'}
+                    ) : '—'}
                   </td>
                   <td><span className={`badge ${item.status === 'Active' ? 'badge-success' : 'badge-danger'}`}>{item.status}</span></td>
                   <td>
@@ -286,14 +317,70 @@ function RoutesTab() {
                       {item.source === 'DB2' ? <><MdSensors /> Live DB2</> : item.source === 'DB1' ? <><MdStorage /> CRM</> : <><MdSync /> Cached</>}
                     </span>
                   </td>
-                  <td><button id={`edit-route-${item.id}`} className="btn btn-ghost btn-sm" onClick={() => setModal({ item })}><MdEdit /></button></td>
+                  <td style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
+                    <button id={`edit-route-${item.id}`} className="btn btn-ghost btn-sm" title="Edit Route" onClick={() => setModal({ item })}><MdEdit /></button>
+                    <button
+                      id={`delete-route-${item.id}`}
+                      className="btn btn-ghost btn-sm"
+                      title="Delete Route"
+                      style={{ color: '#ef4444' }}
+                      onClick={() => setDeleteConfirm({ item })}
+                    >
+                      <MdDelete />
+                    </button>
+                  </td>
                 </tr>
               ))}
           </tbody>
         </table>
       </div>
+
+      {/* Route Delete Confirmation Dialog */}
+      {deleteConfirm && (
+        <div className="modal-overlay" onClick={(e) => e.target === e.currentTarget && setDeleteConfirm(null)}>
+          <div className="modal" style={{ maxWidth: 460 }}>
+            <div className="modal-header">
+              <h2 className="modal-title" style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#ef4444' }}>
+                <MdWarning /> Delete Route
+              </h2>
+              <button className="icon-btn" onClick={() => setDeleteConfirm(null)}><MdClose /></button>
+            </div>
+            <div className="modal-body">
+              <p style={{ marginBottom: 12, color: 'var(--text-secondary)' }}>
+                Are you sure you want to delete route <strong>"{deleteConfirm.item.route_name}"</strong>?
+              </p>
+              <div style={{ background: 'rgba(245,158,11,0.08)', border: '1px solid rgba(245,158,11,0.3)', borderRadius: 8, padding: 12, fontSize: 13, color: '#92400e', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+                <MdArchive style={{ marginTop: 2, flexShrink: 0, color: '#d97706' }} />
+                <span>If any customers or subscriptions are actively mapped to this route, it will be <strong>archived as Inactive</strong> so historical delivery records remain accurate.</span>
+              </div>
+            </div>
+            <div className="modal-footer">
+              <button className="btn btn-secondary" onClick={() => setDeleteConfirm(null)}>Cancel</button>
+              <button
+                id={`delete-route-confirm-${deleteConfirm.item.id}`}
+                className="btn btn-danger"
+                onClick={confirmDelete}
+                disabled={deleting}
+              >
+                {deleting ? <span className="loading-spinner" /> : <><MdDelete /> Delete Route</>}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <AnimatePresence>
-        {modal && <MasterModal title={modal.item ? 'Edit Route' : 'Add Route'} fields={fields} values={modal.item} onClose={() => setModal(null)} onSubmit={save} loading={saving} />}
+        {modal && (
+          <MasterModal
+            title={modal.item ? 'Edit Route' : 'Add Route'}
+            submitText={modal.item ? 'Save Route' : 'Add Route'}
+            fields={fields}
+            values={modal.item}
+            onClose={() => setModal(null)}
+            onSubmit={save}
+            loading={saving}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

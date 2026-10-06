@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, Fragment } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus, X, Search, RefreshCw, Pause, Play, Trash2, Clock,
@@ -36,8 +36,27 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
   const [customerSearch, setCustomerSearch] = useState('');
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
-  const [selectedCustomer, setSelectedCustomer] = useState(null);
+  const [selectedCustomer, setSelectedCustomer] = useState(() => {
+    if (editData) {
+      const name = editData.customer_name || editData.name || editData.customer?.name;
+      const id = editData.customer_id || editData.id;
+      if (name || id) {
+        return {
+          id: id,
+          name: name || 'Selected Customer',
+          customer_code: editData.customer_code || editData.customer?.customer_code || '',
+          phone: editData.customer_phone || editData.phone || editData.customer?.phone || '',
+          address: editData.address || editData.customer?.address || '',
+          area: editData.area || editData.route_name || '',
+        };
+      }
+    }
+    return null;
+  });
   const [routes, setRoutes] = useState([]);
+  const [deliveryPersons, setDeliveryPersons] = useState([]);
+  const [customerLoading, setCustomerLoading] = useState(false);
+  const [showCustomerDropdown, setShowCustomerDropdown] = useState(false);
 
   const [form, setForm] = useState({
     customer_id: editData?.customer_id || '',
@@ -50,7 +69,7 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
     delivery_person_name: editData?.delivery_person_name || '',
     delivery_person_id: editData?.delivery_person_id || '',
     customer_type: editData?.customer_type || 'Regular',
-    delivery_type: editData?.delivery_type || 'Home Delivery',
+    delivery_type: editData?.delivery_type || 'Doorstep',
     notes: editData?.notes || '',
     custom_weekdays: editData?.schedule?.custom_weekdays || [],
     items: editData?.items && editData.items.length > 0
@@ -62,29 +81,62 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
     Promise.all([
       api.get('/masters/products').then(r => setProducts(r.data.data || [])),
       api.get('/masters/routes').then(r => setRoutes(r.data.data || [])),
+      api.get('/access-control/delivery-persons').then(r => setDeliveryPersons(r.data.data || [])),
     ]).catch(() => {});
   }, []);
 
   useEffect(() => {
-    if (editData && editData.customer_name) {
-      setSelectedCustomer({
-        id: editData.customer_id,
-        name: editData.customer_name,
-        customer_code: editData.customer_code,
-        phone: editData.customer_phone,
-        address: editData.address,
-        area: editData.area,
-      });
+    if (editData) {
+      const name = editData.customer_name || editData.name || editData.customer?.name;
+      const id = editData.customer_id;
+      if (name) {
+        setSelectedCustomer({
+          id: id,
+          name: name,
+          customer_code: editData.customer_code || editData.customer?.customer_code || '',
+          phone: editData.customer_phone || editData.phone || editData.customer?.phone || '',
+          address: editData.address || editData.customer?.address || '',
+          area: editData.area || editData.route_name || '',
+        });
+        setForm(f => ({ ...f, customer_id: id || f.customer_id }));
+      } else if (id) {
+        // Fetch customer details if name is missing from editData
+        api.get(`/customers/${id}`).then(r => {
+          const c = r.data?.data;
+          if (c) {
+            setSelectedCustomer({
+              id: c.id,
+              name: c.name,
+              customer_code: c.customer_code,
+              phone: c.phone,
+              address: c.address,
+              area: c.route_name || editData.area || '',
+            });
+            setForm(f => ({ ...f, customer_id: c.id }));
+          }
+        }).catch(() => {});
+      }
     }
   }, [editData]);
 
+  const fetchCustomers = (q = '') => {
+    setCustomerLoading(true);
+    const params = q.trim() ? { search: q.trim(), limit: 12 } : { limit: 12 };
+    api.get('/customers', { params })
+      .then(r => setCustomers(r.data.data || []))
+      .catch(() => {})
+      .finally(() => setCustomerLoading(false));
+  };
+
   useEffect(() => {
-    if (customerSearch.trim().length >= 2 && !selectedCustomer) {
-      api.get('/customers', { params: { search: customerSearch.trim(), limit: 8 } })
-        .then(r => setCustomers(r.data.data || []))
-        .catch(() => {});
+    if (!selectedCustomer) {
+      const timer = setTimeout(() => {
+        fetchCustomers(customerSearch);
+      }, customerSearch ? 250 : 0);
+      return () => clearTimeout(timer);
     } else {
       setCustomers([]);
+      setShowCustomerDropdown(false);
     }
   }, [customerSearch, selectedCustomer]);
 
@@ -126,6 +178,47 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
         ? f.custom_weekdays.filter(d => d !== day)
         : [...f.custom_weekdays, day],
     }));
+  };
+
+  const validateStep = (s) => {
+    if (s === 1) {
+      if (!selectedCustomer && !form.customer_id) {
+        toast.error('Please select a customer to proceed.');
+        return false;
+      }
+    }
+    if (s === 2) {
+      if (!form.start_date) {
+        toast.error('Please select a subscription start date.');
+        return false;
+      }
+      if (form.frequency_type === 'CUSTOM_WEEKLY' && (!form.custom_weekdays || form.custom_weekdays.length === 0)) {
+        toast.error('Please select at least one delivery weekday for Custom Weekly.');
+        return false;
+      }
+    }
+    if (s === 3) {
+      const validItems = form.items.filter(i => i.product_id && parseFloat(i.quantity) > 0);
+      if (validItems.length === 0) {
+        toast.error('Please configure at least one product with quantity > 0.');
+        return false;
+      }
+    }
+    return true;
+  };
+
+  const handleNext = () => {
+    if (!validateStep(step)) return;
+    setStep(s => Math.min(4, s + 1));
+  };
+
+  const handleStepClick = (targetStep) => {
+    if (targetStep > step) {
+      for (let s = step; s < targetStep; s++) {
+        if (!validateStep(s)) return;
+      }
+    }
+    setStep(targetStep);
   };
 
   const handleSubmit = async () => {
@@ -184,7 +277,7 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
             <button
               key={label}
               type="button"
-              onClick={() => setStep(i + 1)}
+              onClick={() => handleStepClick(i + 1)}
               style={{
                 background: 'none', border: 'none', padding: '12px 18px', fontSize: 13, fontWeight: 600, cursor: 'pointer',
                 color: step === i + 1 ? 'var(--primary)' : 'var(--text-muted)',
@@ -211,41 +304,56 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
           {step === 1 && (
             <div style={{ display: 'grid', gap: 16 }}>
               <div className="form-group" style={{ position: 'relative' }}>
-                <label className="form-label" style={{ fontSize: 13, fontWeight: 600 }}>Select Customer *</label>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
+                  <label className="form-label" style={{ fontSize: 13, fontWeight: 700, margin: 0 }}>
+                    Select Customer <span style={{ color: '#dc2626' }}>*</span>
+                  </label>
+                  {!selectedCustomer && (
+                    <span style={{ fontSize: 11.5, color: '#dc2626', fontWeight: 600 }}>
+                      Required to continue
+                    </span>
+                  )}
+                </div>
                 
                 {selectedCustomer ? (
                   <div style={{
                     background: '#f0fdf4',
-                    border: '1px solid #bbf7d0',
+                    border: '1.5px solid #86efac',
                     borderRadius: 12,
                     padding: '14px 16px',
                     display: 'flex',
                     justifyContent: 'space-between',
-                    alignItems: 'center'
+                    alignItems: 'center',
+                    boxShadow: '0 2px 8px rgba(34,197,94,0.08)'
                   }}>
                     <div>
                       <div style={{ fontWeight: 700, fontSize: 15, color: '#15803d', display: 'flex', alignItems: 'center', gap: 6 }}>
                         <User size={16} /> {selectedCustomer.name}
-                        <span style={{ fontSize: 11, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
-                          {selectedCustomer.customer_code}
-                        </span>
+                        {selectedCustomer.customer_code && (
+                          <span style={{ fontSize: 11, background: '#dcfce7', color: '#166534', padding: '2px 8px', borderRadius: 10, fontWeight: 600 }}>
+                            {selectedCustomer.customer_code}
+                          </span>
+                        )}
                       </div>
                       <div style={{ fontSize: 12, color: '#4b5563', marginTop: 4 }}>
-                        Phone: <strong>{selectedCustomer.phone}</strong>
+                        {selectedCustomer.phone && <>Phone: <strong>{selectedCustomer.phone}</strong></>}
                         {selectedCustomer.address && ` · ${selectedCustomer.address}`}
+                        {selectedCustomer.area && ` · Route: ${selectedCustomer.area}`}
                       </div>
                     </div>
                     <button
                       type="button"
                       className="btn btn-secondary btn-sm"
-                      style={{ fontSize: 12, height: 32, padding: '0 10px', background: '#ffffff' }}
+                      style={{ fontSize: 12, height: 32, padding: '0 12px', background: '#ffffff', border: '1px solid #cbd5e1' }}
                       onClick={() => {
                         setSelectedCustomer(null);
                         setCustomerSearch('');
                         setForm(f => ({ ...f, customer_id: '' }));
+                        setShowCustomerDropdown(true);
+                        fetchCustomers('');
                       }}
                     >
-                      <X size={14} /> Change
+                      <X size={14} /> Change Customer
                     </button>
                   </div>
                 ) : (
@@ -254,15 +362,31 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
                       <Search size={16} style={{ position: 'absolute', left: 12, top: '50%', transform: 'translateY(-50%)', color: 'var(--text-muted)' }} />
                       <input
                         className="form-input"
-                        style={{ paddingLeft: 36, width: '100%', height: 42 }}
+                        style={{
+                          paddingLeft: 36,
+                          paddingRight: customerLoading ? 36 : 12,
+                          width: '100%',
+                          height: 42,
+                          border: !form.customer_id ? '1.5px solid #93c5fd' : undefined
+                        }}
                         placeholder="Search by customer name, phone, or code (MM00...)"
                         value={customerSearch}
-                        onChange={e => setCustomerSearch(e.target.value)}
+                        onChange={e => {
+                          setCustomerSearch(e.target.value);
+                          setShowCustomerDropdown(true);
+                        }}
+                        onFocus={() => {
+                          setShowCustomerDropdown(true);
+                          if (customers.length === 0) fetchCustomers(customerSearch);
+                        }}
                         autoFocus
                       />
+                      {customerLoading && (
+                        <div className="loading-spinner" style={{ width: 16, height: 16, position: 'absolute', right: 12, top: '50%', transform: 'translateY(-50%)' }} />
+                      )}
                     </div>
 
-                    {customers.length > 0 && (
+                    {showCustomerDropdown && customers.length > 0 && (
                       <div style={{
                         position: 'absolute',
                         top: '100%',
@@ -277,6 +401,9 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
                         overflowY: 'auto',
                         marginTop: 4
                       }}>
+                        <div style={{ padding: '6px 12px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', background: '#f8fafc', borderBottom: '1px solid #f1f5f9' }}>
+                          CLICK TO SELECT A CUSTOMER:
+                        </div>
                         {customers.map(c => (
                           <div
                             key={c.id}
@@ -284,6 +411,7 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
                               setSelectedCustomer(c);
                               setForm(f => ({ ...f, customer_id: c.id, area: c.route_name || f.area }));
                               setCustomers([]);
+                              setShowCustomerDropdown(false);
                             }}
                             style={{
                               padding: '10px 14px',
@@ -294,7 +422,7 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
                               justifyContent: 'space-between',
                               alignItems: 'center'
                             }}
-                            onMouseEnter={(e) => e.currentTarget.style.background = '#f8fafc'}
+                            onMouseEnter={(e) => e.currentTarget.style.background = '#f0fdf4'}
                             onMouseLeave={(e) => e.currentTarget.style.background = '#ffffff'}
                           >
                             <div>
@@ -318,18 +446,14 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
                 <div className="form-group">
                   <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>Customer Type</label>
                   <select className="form-input" value={form.customer_type} onChange={e => setForm(f => ({ ...f, customer_type: e.target.value }))}>
-                    <option>Regular</option>
-                    <option>VIP</option>
-                    <option>Wholesale</option>
-                    <option>Trial</option>
+                    <option value="Regular">Regular</option>
+                    <option value="Trial">Trial</option>
                   </select>
                 </div>
                 <div className="form-group">
                   <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>Delivery Type</label>
                   <select className="form-input" value={form.delivery_type} onChange={e => setForm(f => ({ ...f, delivery_type: e.target.value }))}>
-                    <option>Home Delivery</option>
-                    <option>Pickup</option>
-                    <option>Bulk</option>
+                    <option value="Doorstep">DoorStep Delivery</option>
                   </select>
                 </div>
               </div>
@@ -553,14 +677,26 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>Delivery Person Name</label>
-                  <input
-                    type="text"
+                  <label className="form-label" style={{ fontSize: 12, fontWeight: 600 }}>Delivery Person (DP)</label>
+                  <select
                     className="form-input"
-                    placeholder="Assigned DP Name"
                     value={form.delivery_person_name}
-                    onChange={e => setForm(f => ({ ...f, delivery_person_name: e.target.value }))}
-                  />
+                    onChange={e => {
+                      const sel = deliveryPersons.find(dp => dp.name === e.target.value);
+                      setForm(f => ({
+                        ...f,
+                        delivery_person_name: e.target.value,
+                        delivery_person_id: sel?.id || ''
+                      }));
+                    }}
+                  >
+                    <option value="">— Select Delivery Person —</option>
+                    {deliveryPersons.map(dp => (
+                      <option key={dp.id} value={dp.name}>
+                        {dp.name} ({dp.dpCode || 'DP'}{dp.assignedRoute ? ` · ${dp.assignedRoute}` : ''})
+                      </option>
+                    ))}
+                  </select>
                 </div>
               </div>
               <div className="form-group">
@@ -596,7 +732,7 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
           )}
           <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
           {step < 4 ? (
-            <button type="button" className="btn btn-primary" onClick={() => setStep(s => s + 1)} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+            <button type="button" className="btn btn-primary" onClick={handleNext} style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
               Next <ChevronRight size={16} />
             </button>
           ) : (
@@ -611,10 +747,14 @@ function SubscriptionModal({ editData, onClose, onSaved }) {
 }
 
 // ── Detail Drawer ─────────────────────────────────────────────────
-function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
+function DetailDrawer({ subscriptionId, onClose, onRefresh, initialShowDp = false }) {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [showEdit, setShowEdit] = useState(false);
+  const [showDpPicker, setShowDpPicker] = useState(initialShowDp);
+  const [dpList, setDpList] = useState([]);
+  const [dpSearch, setDpSearch] = useState('');
+  const [assigningDp, setAssigningDp] = useState(false);
 
   const fetchDetail = async () => {
     setLoading(true);
@@ -630,7 +770,40 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
 
   useEffect(() => {
     fetchDetail();
+    api.get('/access-control/delivery-persons')
+      .then(r => setDpList(r.data.data || []))
+      .catch(() => {});
   }, [subscriptionId]);
+
+  const handleAssignDp = async (dp) => {
+    setAssigningDp(true);
+    try {
+      await api.put(`/subscriptions/${subscriptionId}`, {
+        delivery_person_name: dp ? dp.name : null,
+        delivery_person_id: dp ? dp.id : null,
+      });
+      toast.success(dp ? `Assigned DP: ${dp.name}` : 'DP unassigned');
+      await fetchDetail();
+      onRefresh();
+      setShowDpPicker(false);
+    } catch (err) {
+      toast.error(err.response?.data?.message || 'Failed to update Delivery Person.');
+    } finally {
+      setAssigningDp(false);
+    }
+  };
+
+  const filteredDps = dpList.filter(dp => {
+    if (!dpSearch.trim()) return true;
+    const q = dpSearch.toLowerCase();
+    return (
+      (dp.name && dp.name.toLowerCase().includes(q)) ||
+      (dp.dpCode && dp.dpCode.toLowerCase().includes(q)) ||
+      (dp.mobileNumber && dp.mobileNumber.toLowerCase().includes(q)) ||
+      (dp.assignedRoute && dp.assignedRoute.toLowerCase().includes(q)) ||
+      (dp.zone && dp.zone.toLowerCase().includes(q))
+    );
+  });
 
   if (loading) {
     return (
@@ -642,13 +815,7 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
 
   if (!data) return null;
 
-  const previewColors = {
-    Delivery: '#10b981',
-    Paused: '#f59e0b',
-    'No Delivery': '#94a3b8',
-    Ended: '#ef4444',
-    'Not Started': '#94a3b8'
-  };
+  const isTrial = data.customer_type === 'Trial';
 
   return (
     <div
@@ -662,7 +829,7 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
         transition={{ type: 'spring', damping: 28 }}
         style={{
           width: '100%',
-          maxWidth: 560,
+          maxWidth: 580,
           height: '100%',
           background: '#ffffff',
           boxShadow: '-10px 0 35px rgba(0,0,0,0.15)',
@@ -688,8 +855,25 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
 
         {/* Customer Info Card */}
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 8, display: 'flex', alignItems: 'center', gap: 5 }}>
-            <User size={14} /> Customer Information
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', display: 'flex', alignItems: 'center', gap: 5 }}>
+              <User size={14} /> Customer Information
+            </div>
+            {/* Customer Type Badge in Slider */}
+            <span style={{
+              fontSize: 11.5,
+              fontWeight: 700,
+              padding: '3px 10px',
+              borderRadius: 20,
+              background: isTrial ? '#fef3c7' : '#eff6ff',
+              color: isTrial ? '#b45309' : '#1d4ed8',
+              border: isTrial ? '1px solid #fde68a' : '1px solid #bfdbfe',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4
+            }}>
+              {isTrial ? '⏳ Trial Customer' : '👤 Regular Customer'}
+            </span>
           </div>
           <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>{data.customer_name}</div>
           <div style={{ fontSize: 13, color: 'var(--text-muted)', marginTop: 2 }}>{data.customer_code} · {data.customer_phone}</div>
@@ -701,17 +885,69 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
           <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase', marginBottom: 10, display: 'flex', alignItems: 'center', gap: 5 }}>
             <Calendar size={14} /> Schedule & Route
           </div>
-          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
             <FreqBadge type={data.frequency_type || 'DAILY'} />
             <span className={`badge ${data.status === 'Active' ? 'badge-success' : data.status === 'Paused' ? 'badge-warning' : 'badge-danger'}`}>
               {data.status}
             </span>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 700,
+              padding: '2px 8px',
+              borderRadius: 12,
+              background: isTrial ? '#fffbeb' : '#f0f9ff',
+              color: isTrial ? '#b45309' : '#0369a1',
+              border: isTrial ? '1px solid #fde68a' : '1px solid #bae6fd',
+            }}>
+              {isTrial ? 'Trial' : 'Regular'}
+            </span>
+            <span style={{
+              fontSize: 11,
+              fontWeight: 600,
+              padding: '2px 8px',
+              borderRadius: 12,
+              background: '#f8fafc',
+              color: '#475569',
+              border: '1px solid #e2e8f0',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 4
+            }}>
+              🚪 DoorStep Delivery
+            </span>
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 13 }}>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, fontSize: 13 }}>
             <div><span style={{ color: 'var(--text-muted)' }}>Start Date: </span><strong>{data.start_date ? data.start_date.split('T')[0] : '—'}</strong></div>
             <div><span style={{ color: 'var(--text-muted)' }}>First Delivery: </span><strong>{data.first_delivery_date ? data.first_delivery_date.split('T')[0] : (data.start_date ? data.start_date.split('T')[0] : '—')}</strong></div>
             {data.area && <div><span style={{ color: 'var(--text-muted)' }}>Route / Area: </span><strong>{data.area}</strong></div>}
-            {data.delivery_person_name && <div><span style={{ color: 'var(--text-muted)' }}>DP: </span><strong>{data.delivery_person_name}</strong></div>}
+            <div>
+              <span style={{ color: 'var(--text-muted)' }}>DP: </span>
+              <button
+                type="button"
+                id="drawer-dp-toggle-btn"
+                onClick={() => setShowDpPicker(v => !v)}
+                style={{
+                  background: data.delivery_person_name ? '#eff6ff' : '#fff7ed',
+                  border: data.delivery_person_name ? '1px solid #bfdbfe' : '1px solid #fed7aa',
+                  color: data.delivery_person_name ? '#1d4ed8' : '#c2410c',
+                  padding: '3px 8px',
+                  borderRadius: 6,
+                  fontWeight: 700,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 5,
+                  marginTop: 2
+                }}
+                title="Click to view delivery persons list and assign"
+              >
+                <Truck size={13} />
+                <span>{data.delivery_person_name || 'Unassigned — Click to Assign DP'}</span>
+                <Pencil size={11} style={{ opacity: 0.7 }} />
+              </button>
+            </div>
           </div>
           {data.schedule?.custom_weekdays?.length > 0 && (
             <div style={{ marginTop: 10, fontSize: 13, borderTop: '1px solid #e2e8f0', paddingTop: 8 }}>
@@ -720,6 +956,133 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh }) {
             </div>
           )}
         </div>
+
+        {/* DP Selection Drawer / Panel */}
+        <AnimatePresence>
+          {showDpPicker && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              exit={{ opacity: 0, height: 0 }}
+              style={{
+                background: '#f0fdf4',
+                border: '1.5px solid #86efac',
+                borderRadius: 12,
+                padding: 16,
+                overflow: 'hidden'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 13.5, fontWeight: 800, color: '#166534', display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <Truck size={16} /> Delivery Person List ({dpList.length})
+                  </div>
+                  <div style={{ fontSize: 11.5, color: '#15803d', marginTop: 2 }}>
+                    Click a delivery person below to assign immediately to this subscription
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="icon-btn"
+                  onClick={() => setShowDpPicker(false)}
+                  style={{ width: 26, height: 26 }}
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Search filter for DP */}
+              <div style={{ position: 'relative', marginBottom: 10 }}>
+                <Search size={14} style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: '#64748b' }} />
+                <input
+                  type="text"
+                  placeholder="Search DP by name, code, route, phone..."
+                  className="form-input"
+                  style={{ paddingLeft: 30, height: 34, fontSize: 12, background: '#ffffff' }}
+                  value={dpSearch}
+                  onChange={e => setDpSearch(e.target.value)}
+                />
+              </div>
+
+              {/* Scrollable list of DPs */}
+              <div style={{ maxHeight: 220, overflowY: 'auto', display: 'grid', gap: 6 }}>
+                {filteredDps.length === 0 ? (
+                  <div style={{ fontSize: 12, color: '#64748b', textAlign: 'center', padding: 16, background: '#ffffff', borderRadius: 8 }}>
+                    No delivery persons found.
+                  </div>
+                ) : (
+                  filteredDps.map(dp => {
+                    const isSelected = data.delivery_person_name === dp.name || String(data.delivery_person_id) === String(dp.id);
+                    return (
+                      <div
+                        key={dp.id}
+                        onClick={() => handleAssignDp(dp)}
+                        style={{
+                          display: 'flex',
+                          justifyContent: 'space-between',
+                          alignItems: 'center',
+                          padding: '8px 12px',
+                          borderRadius: 8,
+                          background: isSelected ? '#dcfce7' : '#ffffff',
+                          border: isSelected ? '1.5px solid #22c55e' : '1px solid #e2e8f0',
+                          cursor: 'pointer',
+                          transition: 'all 0.12s ease'
+                        }}
+                      >
+                        <div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: '#1e293b', display: 'flex', alignItems: 'center', gap: 6 }}>
+                            {dp.name}
+                            <span style={{ fontSize: 10.5, background: '#f1f5f9', color: '#475569', padding: '1px 6px', borderRadius: 6, fontWeight: 600 }}>
+                              {dp.dpCode || 'DP'}
+                            </span>
+                            {isSelected && (
+                              <span style={{ fontSize: 10.5, background: '#16a34a', color: '#ffffff', padding: '1px 6px', borderRadius: 6, fontWeight: 700 }}>
+                                Current
+                              </span>
+                            )}
+                          </div>
+                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
+                            {dp.mobileNumber && `📞 ${dp.mobileNumber}`}
+                            {(dp.assignedRoute || dp.zone) && ` · 📍 ${dp.assignedRoute || dp.zone}`}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          className={`btn btn-sm ${isSelected ? 'btn-success' : 'btn-secondary'}`}
+                          style={{ fontSize: 11, padding: '4px 10px', height: 28 }}
+                          disabled={assigningDp}
+                        >
+                          {isSelected ? 'Assigned' : 'Assign'}
+                        </button>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              {data.delivery_person_name && (
+                <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end' }}>
+                  <button
+                    type="button"
+                    onClick={() => handleAssignDp(null)}
+                    disabled={assigningDp}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#dc2626',
+                      fontSize: 11.5,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      padding: 0
+                    }}
+                  >
+                    Unassign current delivery person
+                  </button>
+                </div>
+              )}
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Products Card */}
         <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: 12, padding: 16 }}>
@@ -897,10 +1260,12 @@ export default function SubscriptionsPage() {
   const [page, setPage] = useState(1);
   const [statusFilter, setStatusFilter] = useState('');
   const [freqFilter, setFreqFilter] = useState('');
+  const [typeFilter, setTypeFilter] = useState('');
   const [search, setSearch] = useState('');
   const [loading, setLoading] = useState(true);
   const [showAdd, setShowAdd] = useState(false);
   const [selectedId, setSelectedId] = useState(null);
+  const [openWithDpPicker, setOpenWithDpPicker] = useState(false);
   const [expandedRows, setExpandedRows] = useState({});
   const limit = 20;
 
@@ -908,7 +1273,7 @@ export default function SubscriptionsPage() {
     setLoading(true);
     try {
       const res = await api.get('/subscriptions', {
-        params: { page, limit, status: statusFilter, frequency_type: freqFilter, search }
+        params: { page, limit, status: statusFilter, frequency_type: freqFilter, customer_type: typeFilter, search }
       });
       setSubs(res.data.data || []);
       setTotal(res.data.total || 0);
@@ -920,7 +1285,7 @@ export default function SubscriptionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, statusFilter, freqFilter, search]);
+  }, [page, statusFilter, freqFilter, typeFilter, search]);
 
   useEffect(() => {
     fetchSubs();
@@ -1009,6 +1374,17 @@ export default function SubscriptionsPage() {
             <option value="Cancelled">Cancelled</option>
           </select>
           <select
+            id="sub-type-filter"
+            className="form-input"
+            style={{ width: 150, height: 38 }}
+            value={typeFilter}
+            onChange={e => { setTypeFilter(e.target.value); setPage(1); }}
+          >
+            <option value="">All Customer Types</option>
+            <option value="Regular">Regular Customer</option>
+            <option value="Trial">Trial Customer</option>
+          </select>
+          <select
             id="sub-freq-filter"
             className="form-input"
             style={{ width: 160, height: 38 }}
@@ -1037,7 +1413,7 @@ export default function SubscriptionsPage() {
                 <th>Frequency</th>
                 <th>Products</th>
                 <th>Start Date</th>
-                <th>Area</th>
+                <th>Route / DP</th>
                 <th>Status</th>
                 <th>Actions</th>
               </tr>
@@ -1050,8 +1426,9 @@ export default function SubscriptionsPage() {
               ) : subs.map((s, i) => {
                 const items = s.items || [];
                 const isExpanded = expandedRows[s.id];
+                const isSubTrial = s.customer_type === 'Trial';
                 return (
-                  <div key={s.id} style={{ display: 'contents' }}>
+                  <Fragment key={s.id}>
                     <motion.tr
                       initial={{ opacity: 0 }}
                       animate={{ opacity: 1 }}
@@ -1064,7 +1441,20 @@ export default function SubscriptionsPage() {
                         </button>
                       </td>
                       <td>
-                        <div style={{ fontWeight: 600, fontSize: 13.5 }}>{s.customer_name}</div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                          <span style={{ fontWeight: 600, fontSize: 13.5 }}>{s.customer_name}</span>
+                          <span style={{
+                            fontSize: 10,
+                            fontWeight: 700,
+                            padding: '1px 7px',
+                            borderRadius: 10,
+                            background: isSubTrial ? '#fef3c7' : '#eff6ff',
+                            color: isSubTrial ? '#b45309' : '#1d4ed8',
+                            border: isSubTrial ? '1px solid #fde68a' : '1px solid #bfdbfe'
+                          }}>
+                            {isSubTrial ? '⏳ Trial' : 'Regular'}
+                          </span>
+                        </div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.customer_code} · {s.customer_phone}</div>
                       </td>
                       <td><FreqBadge type={s.frequency_type || 'DAILY'} /></td>
@@ -1075,7 +1465,35 @@ export default function SubscriptionsPage() {
                       <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
                         {s.start_date ? new Date(s.start_date + 'T00:00:00').toLocaleDateString('en-IN') : '—'}
                       </td>
-                      <td style={{ fontSize: 12 }}>{s.area || '—'}</td>
+                      <td style={{ fontSize: 12 }}>
+                        <div style={{ fontWeight: 600 }}>{s.area || '—'}</div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedId(s.id);
+                            setOpenWithDpPicker(true);
+                          }}
+                          style={{
+                            marginTop: 4,
+                            padding: '2px 8px',
+                            borderRadius: 6,
+                            fontSize: 11,
+                            fontWeight: 600,
+                            border: s.delivery_person_name ? '1px solid #bfdbfe' : '1px dashed #f59e0b',
+                            background: s.delivery_person_name ? '#eff6ff' : '#fffbeb',
+                            color: s.delivery_person_name ? '#1d4ed8' : '#b45309',
+                            cursor: 'pointer',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 4
+                          }}
+                          title="Click to view & assign Delivery Person in the slider"
+                        >
+                          <Truck size={11} />
+                          {s.delivery_person_name || 'Assign DP'}
+                        </button>
+                      </td>
                       <td>
                         <span className={`badge ${s.status === 'Active' ? 'badge-success' : s.status === 'Paused' ? 'badge-warning' : 'badge-danger'}`}>
                           {s.status}
@@ -1087,7 +1505,7 @@ export default function SubscriptionsPage() {
                             id={`sub-view-${s.id}`}
                             className="btn btn-ghost btn-sm"
                             title="View Details & 30-Day Calendar"
-                            onClick={() => setSelectedId(s.id)}
+                            onClick={() => { setSelectedId(s.id); setOpenWithDpPicker(false); }}
                             style={{ height: 32, width: 32, padding: 0, display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                           >
                             <Clock size={16} />
@@ -1146,7 +1564,7 @@ export default function SubscriptionsPage() {
                         </td>
                       </tr>
                     )}
-                  </div>
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -1170,7 +1588,14 @@ export default function SubscriptionsPage() {
 
       <AnimatePresence>
         {showAdd && <SubscriptionModal onClose={() => setShowAdd(false)} onSaved={fetchSubs} />}
-        {selectedId && <DetailDrawer subscriptionId={selectedId} onClose={() => setSelectedId(null)} onRefresh={fetchSubs} />}
+        {selectedId && (
+          <DetailDrawer
+            subscriptionId={selectedId}
+            initialShowDp={openWithDpPicker}
+            onClose={() => { setSelectedId(null); setOpenWithDpPicker(false); }}
+            onRefresh={fetchSubs}
+          />
+        )}
       </AnimatePresence>
     </div>
   );

@@ -9,6 +9,7 @@ const {
   bulkResumePauses,
   bulkCancelPauses,
   cancelPause,
+  deletePauseRecord,
   extendPause,
   createHoldRequest,
   updateRequestStatus,
@@ -27,6 +28,7 @@ router.post('/bulk-resume',                       bulkResumePauses);
 router.post('/bulk-cancel',                       bulkCancelPauses);
 router.post('/:id/resume',                        resumePause);
 router.post('/:id/cancel',                        cancelPause);
+router.delete('/:id/record',                      deletePauseRecord);
 router.delete('/:id',                             cancelPause);
 router.put('/:id',                                extendPause);
 router.patch('/:type/:id',                        updateRequestStatus);

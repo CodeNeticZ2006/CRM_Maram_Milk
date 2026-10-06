@@ -206,28 +206,32 @@ const start = async () => {
 
     await testConnections();
 
-    // Run migrations and seeding — non-fatal if DB unavailable
+    // Run migrations only if explicitly enabled via AUTO_MIGRATE=true
+    if (process.env.AUTO_MIGRATE === 'true') {
+      try {
+        console.log('🔄 Running database migrations (AUTO_MIGRATE=true)...');
+        await runMigrations();
+        await runMigration002();
+        await runMigration003();
+        await runMigration004();
+        await runAdhocMigrations();
+        await runMigration006();
+        await runMigration007RouteCustomers();
+        await runMigration007InventoryItems();
+        await runMigration008();
+        await runMigration009();
+        await seedSuperAdmin();
+        console.log('✅ Migrations completed.');
+      } catch (dbErr) {
+        console.warn('⚠️  Migration error:', dbErr.message);
+      }
+    }
+
+    // Initialize/verify active operational day on boot
     try {
-      await runMigrations();
-      await runMigration002();
-      await runMigration003();
-      await runMigration004();
-      await runAdhocMigrations();
-      await runMigration006();
-      await runMigration007RouteCustomers();
-      await runMigration007InventoryItems();
-      await runMigration008();
-      await runMigration009();
-      await seedSuperAdmin();
-
-      // Initialize/verify active operational day on boot
       await checkAndTriggerRollover();
-
     } catch (dbErr) {
-      console.warn(
-        '⚠️  DB setup skipped (DB unreachable):',
-        dbErr.message
-      );
+      console.warn('⚠️  Operational day check skipped:', dbErr.message);
     }
 
     // Schedule background 60s check for 7:00 PM IST rollover

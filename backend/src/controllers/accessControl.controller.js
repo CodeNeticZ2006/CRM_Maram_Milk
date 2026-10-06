@@ -1,5 +1,5 @@
 const bcrypt = require('bcryptjs');
-const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
+const { readFromCRM, writeToCRM, readFromApp, writeToApp } = require('../config/database');
 
 // ─────────────────────────────────────────────
 // GET /api/access-control/admin-profile — Root Super Admin from super_admin table
@@ -176,4 +176,113 @@ const updateUserPermissions = async (req, res, next) => {
   }
 };
 
-module.exports = { getAdminProfile, getUsers, getDeliveryPersons, createUser, updateUserPermissions };
+// ─────────────────────────────────────────────
+// PUT /api/access-control/delivery-persons/:id — Update DP profile in DB2
+// ─────────────────────────────────────────────
+const updateDeliveryPerson = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const {
+      name,
+      mobileNumber,
+      vehicleNumber,
+      zone,
+      isActive,
+      assignedRoute,
+      address,
+    } = req.body;
+
+    const setClauses = [];
+    const values = [];
+    let idx = 1;
+
+    if (name !== undefined)          { setClauses.push(`name=$${idx++}`);            values.push(name); }
+    if (mobileNumber !== undefined)  { setClauses.push(`"mobileNumber"=$${idx++}`);  values.push(mobileNumber); }
+    if (vehicleNumber !== undefined) { setClauses.push(`"vehicleNumber"=$${idx++}`); values.push(vehicleNumber); }
+    if (zone !== undefined)          { setClauses.push(`zone=$${idx++}`);            values.push(zone); }
+    if (address !== undefined)       { setClauses.push(`address=$${idx++}`);         values.push(address); }
+    if (isActive !== undefined)      { setClauses.push(`"isActive"=$${idx++}`);      values.push(Boolean(isActive)); }
+
+    setClauses.push(`"updatedAt"=NOW()`);
+
+    if (setClauses.length > 1) {
+      values.push(id);
+      await writeToApp(
+        `UPDATE "DeliveryPerson" SET ${setClauses.join(', ')} WHERE id=$${idx} OR "dpCode"=$${idx}`,
+        values
+      ).catch(e => console.warn('⚠️ DB2 DeliveryPerson update error:', e.message));
+    }
+
+    // If assignedRoute is updated, update the Route in DB2
+    if (assignedRoute !== undefined) {
+      // Unassign this DP from other routes
+      await writeToApp(`UPDATE "Route" SET "assignedDpId"=NULL WHERE "assignedDpId"=$1`, [id]).catch(() => {});
+      if (assignedRoute && assignedRoute !== 'Unassigned') {
+        // Assign to new route
+        await writeToApp(
+          `UPDATE "Route" SET "assignedDpId"=$1 WHERE LOWER(name)=LOWER($2)`,
+          [id, assignedRoute.trim()]
+        ).catch(() => {});
+      }
+    }
+
+    // Also update CRM subscriptions if name changed
+    if (name) {
+      await writeToCRM(
+        `UPDATE subscriptions SET delivery_person_name=$1 WHERE delivery_person_id=$2 OR delivery_person_name=(SELECT name FROM "DeliveryPerson" WHERE id=$2 LIMIT 1)`,
+        [name, id]
+      ).catch(() => {});
+    }
+
+    res.json({ success: true, message: 'Delivery Person updated successfully.' });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// DELETE /api/access-control/delivery-persons/:id — Delete/Deactivate DP in DB2
+// ─────────────────────────────────────────────
+const deleteDeliveryPerson = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+
+    // Check if DP has active subscriptions in CRM
+    const subCheck = await readFromCRM(
+      `SELECT COUNT(*) FROM subscriptions WHERE delivery_person_id=$1 OR delivery_person_name IN (SELECT name FROM "DeliveryPerson" WHERE id=$1 OR "dpCode"=$1)`,
+      [id]
+    ).catch(() => ({ rows: [{ count: 0 }] }));
+
+    const activeSubCount = parseInt(subCheck.rows[0]?.count || 0);
+
+    // Unassign DP from any routes
+    await writeToApp(`UPDATE "Route" SET "assignedDpId"=NULL WHERE "assignedDpId"=$1`, [id]).catch(() => {});
+
+    if (activeSubCount > 0) {
+      // Deactivate to preserve historical deliveries
+      await writeToApp(`UPDATE "DeliveryPerson" SET "isActive"=false, "updatedAt"=NOW() WHERE id=$1 OR "dpCode"=$1`, [id]).catch(() => {});
+      return res.json({
+        success: true,
+        archived: true,
+        message: `Delivery Person deactivated (${activeSubCount} subscription(s) linked). Route unassigned.`,
+      });
+    }
+
+    // Hard delete or deactivate if FK constraint exists
+    try {
+      await writeToApp(`DELETE FROM "DeliveryPerson" WHERE id=$1 OR "dpCode"=$1`, [id]);
+    } catch {
+      await writeToApp(`UPDATE "DeliveryPerson" SET "isActive"=false, "updatedAt"=NOW() WHERE id=$1 OR "dpCode"=$1`, [id]).catch(() => {});
+    }
+
+    res.json({ success: true, archived: false, message: 'Delivery Person deleted successfully.' });
+  } catch (err) { next(err); }
+};
+
+module.exports = {
+  getAdminProfile,
+  getUsers,
+  getDeliveryPersons,
+  createUser,
+  updateUserPermissions,
+  updateDeliveryPerson,
+  deleteDeliveryPerson,
+};
