@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { FiArrowLeft, FiDownload, FiSearch, FiRotateCcw } from 'react-icons/fi';
+import { PauseCircle, CalendarDays, ArrowRight } from 'lucide-react';
 import api from '../../services/api';
 import { exportPauseResumeRequestExcel, exportPauseResumeRequestPDF } from '../../utils/exportUtils';
 
@@ -12,6 +13,7 @@ export default function PauseResumeRequestReportPage() {
   const [selectedCustomer, setSelectedCustomer] = useState('');
   const [pauseDateFrom, setPauseDateFrom] = useState('');
   const [pauseDateTo, setPauseDateTo] = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
 
   // Dropdowns
   const [customers, setCustomers] = useState([]);
@@ -51,6 +53,7 @@ export default function PauseResumeRequestReportPage() {
         customer_id: selectedCustomer,
         pause_date_from: pauseDateFrom,
         pause_date_to: pauseDateTo,
+        status_filter: statusFilter,
         page: targetPage,
         limit,
       };
@@ -85,6 +88,7 @@ export default function PauseResumeRequestReportPage() {
     setSelectedCustomer('');
     setPauseDateFrom('');
     setPauseDateTo('');
+    setStatusFilter('');
     setPage(1);
     setLoading(true);
     api.get('/reports/pause-resume-report', {
@@ -220,9 +224,9 @@ export default function PauseResumeRequestReportPage() {
       {/* Filters Card */}
       <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)' }}>
         <form onSubmit={handleSearch}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 16 }}>
-            
-            {/* Pause Date Range Filter */}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 16 }}>
+
+            {/* Pause Start Date */}
             <div>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
                 Pause Start Date
@@ -236,6 +240,7 @@ export default function PauseResumeRequestReportPage() {
               />
             </div>
 
+            {/* Pause End Date */}
             <div>
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
                 Pause End Date
@@ -260,12 +265,29 @@ export default function PauseResumeRequestReportPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Customer ▼ ]</option>
+                <option value="">[ All Customers ]</option>
                 {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
+                  <option key={c.id} value={c.id}>{c.label}</option>
                 ))}
+              </select>
+            </div>
+
+            {/* Status Filter */}
+            <div>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+                Status
+              </label>
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="form-control"
+                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+              >
+                <option value="">[ All Statuses ]</option>
+                <option value="Active">Active (Currently Paused)</option>
+                <option value="Upcoming">Upcoming</option>
+                <option value="Completed">Completed / Resumed</option>
+                <option value="Cancelled">Cancelled</option>
               </select>
             </div>
           </div>
@@ -306,48 +328,92 @@ export default function PauseResumeRequestReportPage() {
         <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
           <thead>
             <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid var(--border)' }}>
-              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Customer Name</th>
-              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Plan</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>#</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Customer</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Products / Plan</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Type</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Pause Period</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Reason</th>
+              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Requested On</th>
               <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Status</th>
-              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Pause Request Date</th>
-              <th style={{ padding: '12px 16px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Pause Date</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
+                <td colSpan={8} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
                   Loading pause request records...
                 </td>
               </tr>
             ) : rows.length === 0 ? (
               <tr>
-                <td colSpan={5} style={{ padding: 32, textAlign: 'center', color: 'var(--text-muted)' }}>
-                  No results found.
+                <td colSpan={8} style={{ padding: 40, textAlign: 'center', color: 'var(--text-muted)' }}>
+                  <PauseCircle size={36} style={{ opacity: 0.3, display: 'block', margin: '0 auto 8px' }} />
+                  No pause records found.
                 </td>
               </tr>
             ) : (
-              rows.map((row, idx) => (
-                <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
-                  <td style={{ padding: '14px 16px', fontSize: 13, fontWeight: 600, color: 'var(--text-main)' }}>
-                    {row.customer_name}
-                  </td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-main)' }}>
-                    {row.plan}
-                  </td>
-                  <td style={{ padding: '14px 16px', fontSize: 13 }}>
-                    <span style={{ display: 'inline-block', padding: '3px 10px', backgroundColor: '#fee2e2', color: '#991b1b', borderRadius: 4, fontWeight: 600, fontSize: 12 }}>
-                      {row.status}
-                    </span>
-                  </td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-main)' }}>
-                    {row.pause_request_date}
-                  </td>
-                  <td style={{ padding: '14px 16px', fontSize: 13, color: 'var(--text-main)', fontWeight: 600 }}>
-                    {row.pause_date}
-                  </td>
-                </tr>
-              ))
+              rows.map((row, idx) => {
+                // Compute badge colors based on status
+                const statusColors = {
+                  Active:    { bg: '#fee2e2', color: '#991b1b' },
+                  Upcoming:  { bg: '#fef9c3', color: '#854d0e' },
+                  Completed: { bg: '#dcfce7', color: '#166534' },
+                  Resumed:   { bg: '#dcfce7', color: '#166534' },
+                  Cancelled: { bg: '#f1f5f9', color: '#64748b' },
+                };
+                const sc = statusColors[row.status] || { bg: '#f1f5f9', color: '#64748b' };
+
+                // Pause period display
+                const startDate = row.pause_start_date || row.pause_date || '—';
+                const endDate   = row.pause_end_date   || row.pause_date || '—';
+                const sameDay   = startDate === endDate;
+
+                return (
+                  <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
+                    <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)', fontWeight: 600 }}>
+                      {(page - 1) * pageSize + idx + 1}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <div style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-main)' }}>{row.customer_name}</div>
+                      {row.customer_phone && (
+                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>{row.customer_phone}</div>
+                      )}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, color: 'var(--text-main)' }}>
+                      {row.plan}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: 12 }}>
+                      <span style={{ display: 'inline-block', padding: '2px 8px', background: '#ede9fe', color: '#4c1d95', borderRadius: 4, fontWeight: 600 }}>
+                        {row.pause_type || 'Pause'}
+                      </span>
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: 13, whiteSpace: 'nowrap' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                        <CalendarDays size={13} style={{ color: 'var(--text-muted)', flexShrink: 0 }} />
+                        <span style={{ fontWeight: 600 }}>{startDate}</span>
+                        {!sameDay && (
+                          <>
+                            <ArrowRight size={12} style={{ color: 'var(--text-muted)' }} />
+                            <span style={{ fontWeight: 600 }}>{endDate}</span>
+                          </>
+                        )}
+                      </div>
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)', maxWidth: 180 }}>
+                      {row.reason || '—'}
+                    </td>
+                    <td style={{ padding: '12px 16px', fontSize: 12, color: 'var(--text-muted)' }}>
+                      {row.pause_request_date}
+                    </td>
+                    <td style={{ padding: '12px 16px' }}>
+                      <span style={{ display: 'inline-block', padding: '3px 10px', backgroundColor: sc.bg, color: sc.color, borderRadius: 4, fontWeight: 600, fontSize: 12 }}>
+                        {row.status}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
         </table>

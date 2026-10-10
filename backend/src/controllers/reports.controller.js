@@ -1,5 +1,6 @@
 const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
 const { getExpectedOperationalDate, getISTDateStr } = require('../services/operationalDay.service');
+const { getDeliveriesForDate } = require('../services/subscriptionScheduler.service');
 
 // ─────────────────────────────────────────────
 // GET /api/reports/daily-summary
@@ -619,7 +620,7 @@ const getDailyPlannerReport = async (req, res, next) => {
        FROM deliveries d
        JOIN daily_dispatch dd ON dd.id = d.dispatch_id
        JOIN customers c ON c.id = d.customer_id
-       LEFT JOIN subscriptions s ON (s.customer_id = c.id AND s.product_id = d.product_id)
+       LEFT JOIN subscriptions s ON (s.customer_id = c.id AND (s.product_id = d.product_id OR EXISTS (SELECT 1 FROM subscription_items si WHERE si.subscription_id = s.id AND si.product_id = d.product_id)))
        LEFT JOIN products p ON p.id = d.product_id
        LEFT JOIN routes r ON (r.id = dd.route_id OR r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
        LEFT JOIN branches b ON b.id = r.branch_id
@@ -630,47 +631,36 @@ const getDailyPlannerReport = async (req, res, next) => {
     let subscriptionRows = deliveriesRes.rows;
 
     if (subscriptionRows.length === 0) {
-      const activeSubsRes = await readFromCRM(
-        `SELECT 
-          s.id as subscription_id,
-          s.quantity,
-          s.frequency,
-          s.start_date,
-          c.id as customer_id,
-          c.customer_code,
-          c.name as customer_name,
-          c.address,
-          c.phone,
-          c.assigned_route_id,
-          c.dp_ref_id as cust_dp_id,
-          p.id as product_id,
-          p.name as product_name,
-          p.unit,
-          p.category,
-          p.packing_type,
-          r.id as route_id,
-          r.route_name,
-          b.branch_name,
-          'Subscription' as type
-         FROM subscriptions s
-         JOIN customers c ON c.id = s.customer_id
-         JOIN products p ON p.id = s.product_id
-         LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
-         LEFT JOIN branches b ON b.id = r.branch_id
-         WHERE s.status = 'Active'
-           AND c.status = 'Active'
-           AND s.start_date <= $1
-           AND NOT EXISTS (
-             SELECT 1 FROM subscription_pauses sp 
-             WHERE sp.customer_id = c.id 
-               AND sp.status = 'Active' 
-               AND ((sp.pause_type = 'Single Date' AND sp.pause_date = $1)
-                    OR (sp.pause_type = 'Vacation' AND sp.pause_date <= $1 AND (sp.resume_date IS NULL OR sp.resume_date > $1)))
-           )`,
-        [targetDate]
-      ).catch(() => ({ rows: [] }));
+      // Use authoritative scheduler service — multi-product aware, pause-aware, schedule-aware
+      const schedulerDeliveries = await getDeliveriesForDate(targetDate).catch(() => []);
 
-      subscriptionRows = activeSubsRes.rows;
+      // Expand each delivery into per-product rows matching the old single-row format
+      subscriptionRows = [];
+      for (const del of schedulerDeliveries) {
+        for (const item of del.products) {
+          subscriptionRows.push({
+            subscription_id: del.subscriptionId,
+            customer_id: del.customerId,
+            customer_code: del.customerCode,
+            customer_name: del.customerName,
+            address: del.address,
+            phone: del.customerPhone,
+            assigned_route_id: null,
+            cust_dp_id: del.deliveryPersonId,
+            product_id: item.productId,
+            product_name: item.productName,
+            unit: item.unit,
+            category: item.category,
+            packing_type: null,
+            route_id: null,
+            route_name: del.area,
+            branch_name: del.hub,
+            quantity: item.quantity,
+            frequency: del.frequency,
+            type: 'Subscription',
+          });
+        }
+      }
     }
 
     const adhocSalesRes = await readFromCRM(
@@ -852,9 +842,12 @@ const getCustomerStatementReport = async (req, res, next) => {
     ).catch(() => ({ rows: [] }));
 
     const pausesRes = await readFromCRM(
-      `SELECT pause_date::text, resume_date::text, pause_type, status 
+      `SELECT 
+        COALESCE(pause_start_date, pause_date)::text as pause_start_date,
+        COALESCE(pause_end_date, resume_date, pause_date)::text as pause_end_date,
+        pause_type, status 
        FROM subscription_pauses 
-       WHERE customer_id = $1 AND status = 'Active'`,
+       WHERE customer_id = $1 AND (is_active IS DISTINCT FROM FALSE AND status != 'Cancelled')`,
       [customer_id]
     ).catch(() => ({ rows: [] }));
 
@@ -881,9 +874,16 @@ const getCustomerStatementReport = async (req, res, next) => {
     ).catch(() => ({ rows: [] }));
 
     const subsRes = await readFromCRM(
-      `SELECT s.id, s.quantity, s.frequency, s.start_date, p.name as product_name, p.price_per_unit
+      `SELECT 
+        s.id,
+        COALESCE(si.quantity, s.quantity, 1) as quantity,
+        COALESCE(s.frequency_type, s.frequency, 'DAILY') as frequency,
+        s.start_date,
+        p.name as product_name,
+        COALESCE(si.rate_snapshot, p.price_per_unit, 50) as price_per_unit
        FROM subscriptions s
-       LEFT JOIN products p ON p.id = s.product_id
+       LEFT JOIN subscription_items si ON si.subscription_id = s.id AND si.is_active = TRUE
+       LEFT JOIN products p ON p.id = COALESCE(si.product_id, s.product_id)
        WHERE s.customer_id = $1 AND s.status = 'Active'`,
       [customer_id]
     ).catch(() => ({ rows: [] }));
@@ -908,10 +908,14 @@ const getCustomerStatementReport = async (req, res, next) => {
     }
 
     pausesRes.rows.forEach(p => {
-      const pDate = p.pause_date;
-      if (pDate && statementMap.has(pDate)) {
-        const item = statementMap.get(pDate);
-        item.is_paused = true;
+      const pStart = p.pause_start_date;
+      const pEnd = p.pause_end_date || pStart;
+      if (pStart) {
+        statementMap.forEach((item, dtStr) => {
+          if (dtStr >= pStart && dtStr <= pEnd) {
+            item.is_paused = true;
+          }
+        });
       }
     });
 
@@ -1177,9 +1181,12 @@ const getDeliveryPlannerCalendar = async (req, res, next) => {
 
     // 3. Fetch pause records for customer
     const pausesRes = await readFromCRM(
-      `SELECT pause_date::text, resume_date::text, pause_type, status
+      `SELECT 
+        COALESCE(pause_start_date, pause_date)::text as pause_start_date,
+        COALESCE(pause_end_date, resume_date, pause_date)::text as pause_end_date,
+        pause_type, status
        FROM subscription_pauses
-       WHERE customer_id = $1 AND status = 'Active'`,
+       WHERE customer_id = $1 AND (is_active IS DISTINCT FROM FALSE AND status != 'Cancelled')`,
       [customer.id]
     ).catch(() => ({ rows: [] }));
 
@@ -1192,11 +1199,17 @@ const getDeliveryPlannerCalendar = async (req, res, next) => {
       [customer.id, startDateStr, endDateStr]
     ).catch(() => ({ rows: [] }));
 
-    // 5. Fetch active subscriptions for customer
+    // 5. Fetch active subscriptions for customer (multi-product aware)
     const subsRes = await readFromCRM(
-      `SELECT s.id, s.quantity, s.frequency, s.start_date, p.name as product_name
+      `SELECT 
+        s.id,
+        COALESCE(si.quantity, s.quantity, 1) as quantity,
+        COALESCE(s.frequency_type, s.frequency, 'DAILY') as frequency,
+        s.start_date,
+        p.name as product_name
        FROM subscriptions s
-       LEFT JOIN products p ON p.id = s.product_id
+       LEFT JOIN subscription_items si ON si.subscription_id = s.id AND si.is_active = TRUE
+       LEFT JOIN products p ON p.id = COALESCE(si.product_id, s.product_id)
        WHERE s.customer_id = $1 AND s.status = 'Active'`,
       [customer.id]
     ).catch(() => ({ rows: [] }));
@@ -1221,14 +1234,10 @@ const getDeliveryPlannerCalendar = async (req, res, next) => {
 
       const del = deliveriesRes.rows.find(r => r.date === dateStr);
       const isPaused = pausesRes.rows.some(p => {
-        if (!p.pause_date) return false;
-        if (p.pause_type === 'Single Date') return p.pause_date === dateStr;
-        if (p.pause_type === 'Vacation') {
-          return dateStr >= p.pause_date && (!p.resume_date || dateStr <= p.resume_date);
-        }
-        return p.pause_date === dateStr;
+        const pStart = p.pause_start_date;
+        const pEnd = p.pause_end_date || pStart;
+        return pStart && dateStr >= pStart && dateStr <= pEnd;
       });
-      const adhoc = adhocRes.rows.find(a => a.date === dateStr);
       const sub = subsRes.rows.find(s => !s.start_date || dateStr >= String(s.start_date).substring(0, 10));
 
       let status = 'Not Delivered';
@@ -1377,46 +1386,32 @@ const getDeliveryBoyPlannerReport = async (req, res, next) => {
 
     let subRows = deliveriesRes.rows;
     if (subRows.length === 0) {
-      const activeSubs = await readFromCRM(
-        `SELECT 
-          s.id,
-          COALESCE(s.quantity, 1) as quantity,
-          p.id as product_id,
-          p.name as product_name,
-          p.unit,
-          p.packing_type,
-          r.route_name,
-          c.dp_ref_id as cust_dp_id,
-          s.start_date
-         FROM subscriptions s
-         JOIN customers c ON c.id = s.customer_id
-         JOIN products p ON p.id = s.product_id
-         LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
-         WHERE (c.dp_ref_id = $1 OR c.dp_ref_id::text = $1)
-           AND s.status = 'Active'
-           AND c.status = 'Active'`,
-        [dp_ref_id]
-      ).catch(() => ({ rows: [] }));
-
       const syntheticRows = [];
-      datesList.forEach(dStr => {
-        activeSubs.rows.forEach(sub => {
-          if (!sub.start_date || dStr >= String(sub.start_date).substring(0, 10)) {
-            syntheticRows.push({
-              date: dStr,
-              delivery_status: 'Delivered',
-              quantity: sub.quantity,
-              product_id: sub.product_id,
-              product_name: sub.product_name,
-              unit: sub.unit,
-              packing_type: sub.packing_type,
-              route_name: sub.route_name,
-              dispatch_dp_id: dp_ref_id,
-              cust_dp_id: dp_ref_id,
+      for (const dStr of datesList) {
+        const deliveriesOnDate = await getDeliveriesForDate(dStr).catch(() => []);
+        deliveriesOnDate.forEach(del => {
+          if (
+            del.deliveryPersonId === dp_ref_id ||
+            del.deliveryPersonName === dp_ref_id ||
+            String(del.deliveryPersonId) === String(dp_ref_id)
+          ) {
+            del.products.forEach(item => {
+              syntheticRows.push({
+                date: dStr,
+                delivery_status: 'Delivered',
+                quantity: item.quantity,
+                product_id: item.productId,
+                product_name: item.productName,
+                unit: item.unit,
+                packing_type: item.category || 'Pouch',
+                route_name: del.area || 'Route',
+                dispatch_dp_id: dp_ref_id,
+                cust_dp_id: dp_ref_id,
+              });
             });
           }
         });
-      });
+      }
       subRows = syntheticRows;
     }
 
@@ -1655,43 +1650,28 @@ const getDeliveryBoyDailySummary = async (req, res, next) => {
 
     let subRows = deliveriesRes.rows;
 
-    // Fallback: If dispatches not generated yet for that date, query active subscriptions
+    // Fallback: If dispatches not generated yet for that date, query scheduler
     if (subRows.length === 0) {
-      const activeSubs = await readFromCRM(
-        `SELECT 
-          s.id,
-          COALESCE(s.quantity, 1) as quantity,
-          p.id as product_id,
-          p.name as product_name,
-          p.unit,
-          p.packing_type,
-          c.dp_ref_id as cust_dp_id,
-          s.start_date
-         FROM subscriptions s
-         JOIN customers c ON c.id = s.customer_id
-         JOIN products p ON p.id = s.product_id
-         WHERE (c.dp_ref_id = $1 OR c.dp_ref_id::text = $1)
-           AND s.status = 'Active'
-           AND c.status = 'Active'
-           AND (s.start_date IS NULL OR s.start_date <= $2)
-           AND NOT EXISTS (
-             SELECT 1 FROM subscription_pauses sp 
-             WHERE sp.customer_id = c.id 
-               AND sp.status = 'Active' 
-               AND ((sp.pause_type = 'Single Date' AND sp.pause_date = $2)
-                    OR (sp.pause_type = 'Vacation' AND sp.pause_date <= $2 AND (sp.resume_date IS NULL OR sp.resume_date > $2)))
-           )`,
-        [dp_ref_id, date]
-      ).catch(() => ({ rows: [] }));
+      const schedulerDeliveries = await getDeliveriesForDate(date).catch(() => []);
+      const dpDeliveries = schedulerDeliveries.filter(del =>
+        del.deliveryPersonId === dp_ref_id ||
+        del.deliveryPersonName === dp_ref_id ||
+        String(del.deliveryPersonId) === String(dp_ref_id)
+      );
 
-      subRows = activeSubs.rows.map(s => ({
-        delivery_status: 'Delivered',
-        quantity: s.quantity,
-        product_id: s.product_id,
-        product_name: s.product_name,
-        unit: s.unit,
-        packing_type: s.packing_type
-      }));
+      subRows = [];
+      dpDeliveries.forEach(del => {
+        del.products.forEach(item => {
+          subRows.push({
+            delivery_status: 'Delivered',
+            quantity: item.quantity,
+            product_id: item.productId,
+            product_name: item.productName,
+            unit: item.unit,
+            packing_type: item.category || 'Pouch',
+          });
+        });
+      });
     }
 
     // 3. Fetch AdHoc sales for this DP on single date
@@ -2080,38 +2060,6 @@ const getMarkDeliveryReport = async (req, res, next) => {
     let rawRows = deliveriesRes.rows;
 
     if (rawRows.length === 0) {
-      const activeSubsRes = await readFromCRM(
-        `SELECT 
-          s.id as subscription_id,
-          s.quantity as scheduled_qty,
-          s.frequency as subscription_type,
-          s.start_date,
-          c.id as customer_id,
-          c.customer_code,
-          c.name as customer_name,
-          c.address,
-          c.phone,
-          c.assigned_route_id,
-          c.dp_ref_id as cust_dp_id,
-          p.id as product_id,
-          p.name as product_name,
-          p.unit,
-          p.category,
-          p.packing_type,
-          r.id as route_id,
-          r.route_name,
-          b.branch_name
-         FROM subscriptions s
-         JOIN customers c ON c.id = s.customer_id
-         JOIN products p ON p.id = s.product_id
-         LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
-         LEFT JOIN branches b ON b.id = r.branch_id
-         WHERE s.status = 'Active'
-           AND c.status = 'Active'
-           AND s.start_date <= $2`,
-        [startDate, endDate]
-      ).catch(() => ({ rows: [] }));
-
       const datesList = [];
       let curr = new Date(startDate);
       const endD = new Date(endDate);
@@ -2121,30 +2069,31 @@ const getMarkDeliveryReport = async (req, res, next) => {
       }
 
       const syntheticRows = [];
-      datesList.forEach(dStr => {
-        activeSubsRes.rows.forEach(sub => {
-          if (!sub.start_date || dStr >= String(sub.start_date).substring(0, 10)) {
+      for (const dStr of datesList) {
+        const deliveriesOnDate = await getDeliveriesForDate(dStr).catch(() => []);
+        deliveriesOnDate.forEach(del => {
+          del.products.forEach(item => {
             syntheticRows.push({
               dispatch_date: dStr,
-              customer_id: sub.customer_id,
-              customer_code: sub.customer_code,
-              customer_name: sub.customer_name,
-              address: sub.address,
-              cust_dp_id: sub.cust_dp_id,
-              product_id: sub.product_id,
-              product_name: sub.product_name,
-              packing_type: sub.packing_type,
-              unit: sub.unit,
-              route_name: sub.route_name,
-              branch_name: sub.branch_name,
-              subscription_type: sub.subscription_type || 'Daily',
-              scheduled_qty: sub.scheduled_qty || 1,
+              customer_id: del.customerId,
+              customer_code: del.customerCode,
+              customer_name: del.customerName,
+              address: del.address,
+              cust_dp_id: del.deliveryPersonId,
+              product_id: item.productId,
+              product_name: item.productName,
+              packing_type: item.category || 'Pouch',
+              unit: item.unit,
+              route_name: del.area || 'Route',
+              branch_name: del.hub || 'Hub',
+              subscription_type: del.frequency || 'Daily',
+              scheduled_qty: item.quantity,
               delivery_status: 'Delivered',
               remark: 'Standard Delivery',
             });
-          }
+          });
         });
-      });
+      }
       rawRows = syntheticRows;
     }
 
@@ -2282,108 +2231,191 @@ const getPauseResumeReport = async (req, res, next) => {
       pause_date_from = '',
       pause_date_to = '',
       customer_id = '',
+      status_filter = '',
       page = 1,
       limit = 10,
       export_all = false,
     } = req.query;
 
-    const [pausesRes, holdsRes, vacationsRes, activeSubsRes] = await Promise.all([
-      readFromCRM(
-        `SELECT sp.*, c.name as customer_name, c.customer_code, p.name as product_name, s.frequency
-         FROM subscription_pauses sp
-         LEFT JOIN customers c ON c.id = sp.customer_id
-         LEFT JOIN subscriptions s ON s.id = sp.subscription_id
-         LEFT JOIN products p ON p.id = COALESCE(sp.product_id, s.product_id)`
-      ).catch(() => ({ rows: [] })),
-      readFromCRM(
-        `SELECT h.*, c.name as customer_name, c.customer_code
-         FROM hold_requests h
-         LEFT JOIN customers c ON c.id = h.customer_id`
-      ).catch(() => ({ rows: [] })),
-      readFromCRM(
-        `SELECT v.*, c.name as customer_name, c.customer_code
-         FROM vacation_requests v
-         LEFT JOIN customers c ON c.id = v.customer_id`
-      ).catch(() => ({ rows: [] })),
-      readFromCRM(
-        `SELECT s.*, c.name as customer_name, c.customer_code, c.status as cust_status, p.name as product_name
-         FROM subscriptions s
-         JOIN customers c ON c.id = s.customer_id
-         JOIN products p ON p.id = s.product_id
-         WHERE s.status = 'Paused' OR c.status = 'Inactive'`
-      ).catch(() => ({ rows: [] }))
-    ]);
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    // ── Primary source: subscription_pauses (uses pause_start_date / pause_end_date from migration 009)
+    const pausesRes = await readFromCRM(
+      `SELECT
+         sp.id,
+         sp.subscription_id,
+         sp.customer_id,
+         COALESCE(sp.pause_type, 'Temporary Hold') AS pause_type,
+         COALESCE(sp.pause_start_date, sp.pause_date)::text           AS pause_start_date,
+         COALESCE(sp.pause_end_date,   sp.resume_date,
+                  sp.pause_start_date, sp.pause_date)::text           AS pause_end_date,
+         sp.reason,
+         sp.status,
+         sp.is_active,
+         sp.created_at,
+         c.name         AS customer_name,
+         c.customer_code,
+         c.phone        AS customer_phone,
+         s.frequency_type,
+         CASE
+           WHEN sp.status = 'Resumed'   THEN 'Resumed'
+           WHEN sp.status = 'Completed' THEN 'Resumed'
+           WHEN sp.status = 'Cancelled' THEN 'Cancelled'
+           WHEN sp.is_active = FALSE AND sp.status NOT IN ('Resumed','Completed') THEN 'Cancelled'
+           WHEN COALESCE(sp.pause_start_date, sp.pause_date) > '${todayStr}' THEN 'Upcoming'
+           WHEN COALESCE(sp.pause_start_date, sp.pause_date) <= '${todayStr}'
+            AND COALESCE(sp.pause_end_date, sp.resume_date, '9999-12-31') >= '${todayStr}' THEN 'Active'
+           ELSE 'Completed'
+         END AS computed_status,
+         COALESCE((
+           SELECT string_agg(p.name || ' \u00d7 ' || si.quantity, ', ')
+           FROM subscription_items si
+           JOIN products p ON p.id = si.product_id
+           WHERE si.subscription_id = sp.subscription_id AND si.is_active = TRUE
+         ), 'Subscription') AS items_summary
+       FROM subscription_pauses sp
+       LEFT JOIN customers c ON c.id = sp.customer_id
+       LEFT JOIN subscriptions s ON s.id = sp.subscription_id
+       ORDER BY sp.created_at DESC`
+    ).catch(() => ({ rows: [] }));
+
+    // ── Secondary source: hold_requests (if table exists)
+    const holdsRes = await readFromCRM(
+      `SELECT h.id, h.customer_id, h.status, h.created_at,
+              h.hold_from AS pause_start_date, h.hold_to AS pause_end_date,
+              c.name AS customer_name, c.customer_code, c.phone AS customer_phone
+       FROM hold_requests h
+       LEFT JOIN customers c ON c.id = h.customer_id`
+    ).catch(() => ({ rows: [] }));
+
+    // ── Secondary source: vacation_requests (if table exists)
+    const vacationsRes = await readFromCRM(
+      `SELECT v.id, v.customer_id, v.status, v.created_at,
+              v.start_date AS pause_start_date, v.end_date AS pause_end_date,
+              c.name AS customer_name, c.customer_code, c.phone AS customer_phone
+       FROM vacation_requests v
+       LEFT JOIN customers c ON c.id = v.customer_id`
+    ).catch(() => ({ rows: [] }));
 
     let records = [];
 
-    // Map subscription_pauses rows
+    // Map subscription_pauses — the canonical pause table
     pausesRes.rows.forEach(p => {
       records.push({
         id: p.id,
+        source: 'subscription_pauses',
         customer_id: p.customer_id,
-        customer_name: p.customer_code ? `${p.customer_code} - ${p.customer_name}` : p.customer_name || 'Customer',
-        plan: p.product_name || p.frequency || 'Milk Subscription',
-        status: p.status || 'Active',
-        pause_request_date: p.created_at ? String(p.created_at).substring(0, 10) : (p.pause_date || 'N/A'),
-        pause_date: p.pause_date || (p.created_at ? String(p.created_at).substring(0, 10) : 'N/A'),
+        customer_name: p.customer_code
+          ? `${p.customer_code} - ${p.customer_name}`
+          : p.customer_name || 'Customer',
+        customer_phone: p.customer_phone || '',
+        plan: p.items_summary || p.frequency_type || 'Milk Subscription',
+        pause_type: p.pause_type,
+        pause_start_date: p.pause_start_date || 'N/A',
+        pause_end_date:   p.pause_end_date   || p.pause_start_date || 'N/A',
+        reason: p.reason || '',
+        status: p.computed_status || p.status || 'Active',
+        pause_request_date: p.created_at ? String(p.created_at).substring(0, 10) : (p.pause_start_date || 'N/A'),
+        // Keep legacy field so existing export functions still work
+        pause_date: p.pause_start_date || 'N/A',
       });
     });
 
-    // Map hold_requests
+    // Merge hold_requests (deduplicate by id)
+    const existingIds = new Set(records.map(r => r.id));
     holdsRes.rows.forEach(h => {
+      if (existingIds.has(h.id)) return;
+      const startDate = h.pause_start_date ? String(h.pause_start_date).substring(0, 10) : 'N/A';
+      const endDate   = h.pause_end_date   ? String(h.pause_end_date).substring(0, 10)   : startDate;
+      const reqDate   = h.created_at       ? String(h.created_at).substring(0, 10)        : startDate;
+      let computedStatus = h.status || 'Pending';
+      if (startDate !== 'N/A' && endDate !== 'N/A') {
+        if (computedStatus === 'Pending' || computedStatus === 'Approved') {
+          if (startDate > todayStr)        computedStatus = 'Upcoming';
+          else if (endDate >= todayStr)    computedStatus = 'Active';
+          else                             computedStatus = 'Completed';
+        }
+      }
       records.push({
         id: h.id,
+        source: 'hold_requests',
         customer_id: h.customer_id,
-        customer_name: h.customer_code ? `${h.customer_code} - ${h.customer_name}` : h.customer_name || 'Customer',
+        customer_name: h.customer_code
+          ? `${h.customer_code} - ${h.customer_name}`
+          : h.customer_name || 'Customer',
+        customer_phone: h.customer_phone || '',
         plan: 'Hold Request',
-        status: h.status || 'Pending',
-        pause_request_date: h.created_at ? String(h.created_at).substring(0, 10) : h.hold_from,
-        pause_date: h.hold_from || 'N/A',
+        pause_type: 'Hold',
+        pause_start_date: startDate,
+        pause_end_date:   endDate,
+        reason: '',
+        status: computedStatus,
+        pause_request_date: reqDate,
+        pause_date: startDate,
       });
     });
 
-    // Map vacation_requests
+    // Merge vacation_requests (deduplicate by id)
     vacationsRes.rows.forEach(v => {
+      if (existingIds.has(v.id)) return;
+      const startDate = v.pause_start_date ? String(v.pause_start_date).substring(0, 10) : 'N/A';
+      const endDate   = v.pause_end_date   ? String(v.pause_end_date).substring(0, 10)   : startDate;
+      const reqDate   = v.created_at       ? String(v.created_at).substring(0, 10)        : startDate;
+      let computedStatus = v.status || 'Pending';
+      if (startDate !== 'N/A' && endDate !== 'N/A') {
+        if (computedStatus === 'Pending' || computedStatus === 'Approved') {
+          if (startDate > todayStr)        computedStatus = 'Upcoming';
+          else if (endDate >= todayStr)    computedStatus = 'Active';
+          else                             computedStatus = 'Completed';
+        }
+      }
       records.push({
         id: v.id,
+        source: 'vacation_requests',
         customer_id: v.customer_id,
-        customer_name: v.customer_code ? `${v.customer_code} - ${v.customer_name}` : v.customer_name || 'Customer',
-        plan: 'Vacation Pause',
-        status: v.status || 'Pending',
-        pause_request_date: v.created_at ? String(v.created_at).substring(0, 10) : v.start_date,
-        pause_date: v.start_date || 'N/A',
+        customer_name: v.customer_code
+          ? `${v.customer_code} - ${v.customer_name}`
+          : v.customer_name || 'Customer',
+        customer_phone: v.customer_phone || '',
+        plan: 'Vacation',
+        pause_type: 'Vacation',
+        pause_start_date: startDate,
+        pause_end_date:   endDate,
+        reason: '',
+        status: computedStatus,
+        pause_request_date: reqDate,
+        pause_date: startDate,
       });
     });
 
-    // Fallback: If no pause records exist, synthesize from paused subscriptions/customers in DB
-    if (records.length === 0) {
-      activeSubsRes.rows.forEach(sub => {
-        records.push({
-          id: sub.id,
-          customer_id: sub.customer_id,
-          customer_name: sub.customer_code ? `${sub.customer_code} - ${sub.customer_name}` : sub.customer_name,
-          plan: sub.product_name || 'Milk Subscription',
-          status: 'Paused',
-          pause_request_date: sub.created_at ? String(sub.created_at).substring(0, 10) : '2026-09-28',
-          pause_date: sub.start_date ? String(sub.start_date).substring(0, 10) : '2026-10-01',
-        });
-      });
-    }
-
     // Apply Customer Filter
-    if (customer_id && customer_id !== 'All' && customer_id !== '[ Select Customer ▼ ]') {
-      records = records.filter(r => r.customer_id === customer_id || r.customer_name.toLowerCase().includes(customer_id.toLowerCase()));
+    if (customer_id && customer_id !== 'All') {
+      records = records.filter(r =>
+        r.customer_id === customer_id ||
+        r.customer_name.toLowerCase().includes(customer_id.toLowerCase())
+      );
     }
 
-    // Apply Pause Date Filter
+    // Apply Status Filter
+    if (status_filter && status_filter !== 'all') {
+      records = records.filter(r => r.status.toLowerCase() === status_filter.toLowerCase());
+    }
+
+    // Apply Pause Date Range Filter — filter on pause_start_date
     if (pause_date_from) {
-      records = records.filter(r => r.pause_date >= pause_date_from || r.pause_request_date >= pause_date_from);
+      records = records.filter(r =>
+        r.pause_start_date !== 'N/A' &&
+        r.pause_start_date >= pause_date_from
+      );
     }
     if (pause_date_to) {
-      records = records.filter(r => r.pause_date <= pause_date_to || r.pause_request_date <= pause_date_to);
+      records = records.filter(r =>
+        r.pause_start_date !== 'N/A' &&
+        r.pause_start_date <= pause_date_to
+      );
     }
 
-    records.sort((a, b) => b.pause_date.localeCompare(a.pause_date));
+    records.sort((a, b) => b.pause_start_date.localeCompare(a.pause_start_date));
 
     const totalRecords = records.length;
     const pageNum = parseInt(page, 10) || 1;
@@ -2461,12 +2493,36 @@ const getSubscriptionChangeReport = async (req, res, next) => {
          FROM change_requests cr
          LEFT JOIN customers c ON c.id = cr.customer_id`
       ).catch(() => ({ rows: [] })),
+      // Use subscription_items to get real multi-product subscriptions
       readFromCRM(
-        `SELECT s.*, c.name as customer_name, c.customer_code, c.address, c.dp_ref_id as cust_dp_id, p.name as product_name, p.packing_type, p.unit
+        `SELECT
+           s.id,
+           s.status,
+           s.frequency_type,
+           s.frequency,
+           s.start_date,
+           s.created_at,
+           s.delivery_type,
+           s.delivery_person_name,
+           s.delivery_person_id,
+           s.hub,
+           s.area,
+           c.id        AS customer_id,
+           c.name      AS customer_name,
+           c.customer_code,
+           c.address,
+           c.dp_ref_id AS cust_dp_id,
+           p.id        AS product_id,
+           p.name      AS product_name,
+           p.unit,
+           p.packing_type,
+           si.quantity AS item_quantity,
+           si.rate_snapshot
          FROM subscriptions s
          JOIN customers c ON c.id = s.customer_id
-         JOIN products p ON p.id = s.product_id
-         ORDER BY s.created_at DESC`
+         JOIN subscription_items si ON si.subscription_id = s.id AND si.is_active = TRUE
+         JOIN products p ON p.id = si.product_id
+         ORDER BY s.created_at DESC, p.name ASC`
       ).catch(() => ({ rows: [] })),
       readFromApp(`SELECT id, name, "dpCode" FROM "DeliveryPerson"`).catch(() => ({ rows: [] }))
     ]);
@@ -2480,49 +2536,51 @@ const getSubscriptionChangeReport = async (req, res, next) => {
     let records = [];
 
     changesRes.rows.forEach(cr => {
-      const dpName = dpMap.get(cr.dp_ref_id) || 'Delivery Boy';
+      const dpName = dpMap.get(cr.dp_ref_id) || 'Unassigned';
       records.push({
         id: cr.id,
         customer_id: cr.customer_id,
         customer: cr.customer_code ? `${cr.customer_code} - ${cr.customer_name}` : cr.customer_name,
         subscription_type: cr.request_type || 'Subscribe',
-        start_date: cr.created_at ? String(cr.created_at).substring(0, 10) : '2026-09-25',
+        start_date: cr.created_at ? String(cr.created_at).substring(0, 10) : '',
         delivery_type: 'Daily Delivery',
         delivery_boy: dpName,
-        product_name: cr.product_name || 'Milk Pouch Half Litre',
+        product_name: cr.product_name || '',
         packaging: (cr.product_name || '').toLowerCase().includes('bottle') ? 'Bottle' : 'Pouch',
         qty: parseFloat(cr.old_value || 1),
         changed_qty: parseFloat(cr.new_value || 2),
-        change_request_date: cr.created_at ? String(cr.created_at).substring(0, 10) : '2026-10-02',
+        change_request_date: cr.created_at ? String(cr.created_at).substring(0, 10) : '',
         entry_by: cr.approved_by || cr.source || 'Customer App',
         status: cr.status || 'Pending',
         product_id: cr.product_id,
       });
     });
 
-    // Fallback: Use subscription rows if change_requests table has no entries
+    // Fallback to real subscription_items rows when no change_requests exist
     if (records.length === 0) {
-      subsRes.rows.forEach((s, idx) => {
-        const dpName = dpMap.get(s.cust_dp_id) || 'Mylapore 2';
-        const isBottle = (s.product_name || '').toLowerCase().includes('bottle') || (s.unit || '').toLowerCase().includes('bottle');
-        const origQty = Math.max(1, Math.round(parseFloat(s.quantity || 1)));
-        const chgQty = origQty + (idx % 2 === 0 ? 1 : -1);
+      subsRes.rows.forEach(s => {
+        const dpName = s.delivery_person_name || dpMap.get(s.cust_dp_id) || dpMap.get(s.delivery_person_id) || 'Unassigned';
+        const isBottle = (s.product_name || '').toLowerCase().includes('bottle') || (s.unit || '').toLowerCase().includes('bottle') || (s.packing_type || '').toLowerCase() === 'bottle';
+        const qty = parseFloat(s.item_quantity || 1);
+        const freqDisplay = (s.frequency_type || s.frequency || 'DAILY').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        const startDateStr = s.start_date ? String(s.start_date).substring(0, 10) : '';
+        const createdDateStr = s.created_at ? String(s.created_at).substring(0, 10) : startDateStr;
 
         records.push({
-          id: s.id,
+          id: `${s.id}-${s.product_id}`,
           customer_id: s.customer_id,
           customer: s.customer_code ? `${s.customer_code} - ${s.customer_name}` : s.customer_name,
-          subscription_type: s.frequency || 'Subscribe',
-          start_date: s.start_date ? String(s.start_date).substring(0, 10) : '2026-09-25',
-          delivery_type: 'Daily Delivery',
+          subscription_type: freqDisplay,
+          start_date: startDateStr,
+          delivery_type: s.delivery_type || 'Home Delivery',
           delivery_boy: dpName,
-          product_name: s.product_name || 'Milk Pouch Half Litre',
+          product_name: s.product_name,
           packaging: isBottle ? 'Bottle' : 'Pouch',
-          qty: origQty,
-          changed_qty: Math.max(1, chgQty),
-          change_request_date: s.created_at ? String(s.created_at).substring(0, 10) : '2026-10-02',
+          qty,
+          changed_qty: qty,
+          change_request_date: createdDateStr,
           entry_by: 'SuperAdmin',
-          status: 'Completed',
+          status: s.status || 'Active',
           product_id: s.product_id,
         });
       });
@@ -2619,11 +2677,12 @@ const getChangeTodayTomorrowReport = async (req, res, next) => {
          WHERE cr.created_at::date = CURRENT_DATE OR cr.created_at::date = CURRENT_DATE + INTERVAL '1 day'`
       ).catch(() => ({ rows: [] })),
       readFromCRM(
-        `SELECT s.*, c.name as customer_name, c.customer_code, c.address, p.name as product_name, p.unit
+        `SELECT s.*, c.name as customer_name, c.customer_code, c.address, p.name as product_name, p.unit, si.quantity as item_quantity
          FROM subscriptions s
          JOIN customers c ON c.id = s.customer_id
-         JOIN products p ON p.id = s.product_id
-         ORDER BY s.created_at DESC`
+         JOIN subscription_items si ON si.subscription_id = s.id AND si.is_active = TRUE
+         JOIN products p ON p.id = si.product_id
+         ORDER BY s.created_at DESC, p.name ASC`
       ).catch(() => ({ rows: [] }))
     ]);
 
@@ -2650,11 +2709,11 @@ const getChangeTodayTomorrowReport = async (req, res, next) => {
       subsRes.rows.forEach((s, idx) => {
         const reqDate = idx % 2 === 0 ? todayStr : tomorrowStr;
         const isBottle = (s.product_name || '').toLowerCase().includes('bottle') || (s.unit || '').toLowerCase().includes('bottle');
-        const origQty = Math.max(1, Math.round(parseFloat(s.quantity || 1)));
+        const origQty = Math.max(1, Math.round(parseFloat(s.item_quantity || s.quantity || 1)));
         const chgQty = origQty + 1;
 
         records.push({
-          id: `${s.id}-${reqDate}`,
+          id: `${s.id}-${s.product_id || idx}-${reqDate}`,
           customer_id: s.customer_id,
           customer: s.customer_code ? `${s.customer_code} - ${s.customer_name} - ${isBottle ? 'bottle milk' : 'packet milk'}` : s.customer_name,
           type: s.frequency || 'Subscribe',

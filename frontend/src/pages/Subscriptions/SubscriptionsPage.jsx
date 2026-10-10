@@ -4,7 +4,7 @@ import {
   Plus, X, Search, RefreshCw, Pause, Play, Trash2, Clock,
   Pencil, Calendar, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
   User, Package, MapPin, Truck, AlertCircle, CheckCircle2, Zap,
-  ClipboardList, Check
+  ClipboardList, Check, Home, Phone, PauseCircle
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -872,7 +872,17 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh, initialShowDp = fals
               alignItems: 'center',
               gap: 4
             }}>
-              {isTrial ? '⏳ Trial Customer' : '👤 Regular Customer'}
+              {isTrial ? (
+                <>
+                  <Clock size={12} />
+                  <span>Trial Customer</span>
+                </>
+              ) : (
+                <>
+                  <User size={12} />
+                  <span>Regular Customer</span>
+                </>
+              )}
             </span>
           </div>
           <div style={{ fontWeight: 700, fontSize: 16, color: 'var(--text-primary)' }}>{data.customer_name}</div>
@@ -913,7 +923,7 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh, initialShowDp = fals
               alignItems: 'center',
               gap: 4
             }}>
-              🚪 DoorStep Delivery
+              <Home size={12} /> DoorStep Delivery
             </span>
           </div>
 
@@ -1041,9 +1051,17 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh, initialShowDp = fals
                               </span>
                             )}
                           </div>
-                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2 }}>
-                            {dp.mobileNumber && `📞 ${dp.mobileNumber}`}
-                            {(dp.assignedRoute || dp.zone) && ` · 📍 ${dp.assignedRoute || dp.zone}`}
+                          <div style={{ fontSize: 11, color: '#64748b', marginTop: 2, display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            {dp.mobileNumber && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <Phone size={10} /> {dp.mobileNumber}
+                              </span>
+                            )}
+                            {(dp.assignedRoute || dp.zone) && (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                · <MapPin size={10} /> {dp.assignedRoute || dp.zone}
+                              </span>
+                            )}
                           </div>
                         </div>
                         <button
@@ -1118,7 +1136,9 @@ function DetailDrawer({ subscriptionId, onClose, onRefresh, initialShowDp = fals
         {data.status === 'Paused' && (
           <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: 12, padding: '12px 16px', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <div>
-              <div style={{ fontWeight: 700, fontSize: 13, color: '#b45309' }}>⏸️ Subscription Currently Paused</div>
+              <div style={{ fontWeight: 700, fontSize: 13, color: '#b45309', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <PauseCircle size={15} /> Subscription Currently Paused
+              </div>
               <div style={{ fontSize: 11.5, color: '#92400e', marginTop: 2 }}>
                 Deliveries are suspended. All pause schedules and resumptions are managed in the Pause module.
               </div>
@@ -1452,7 +1472,13 @@ export default function SubscriptionsPage() {
                             color: isSubTrial ? '#b45309' : '#1d4ed8',
                             border: isSubTrial ? '1px solid #fde68a' : '1px solid #bfdbfe'
                           }}>
-                            {isSubTrial ? '⏳ Trial' : 'Regular'}
+                            {isSubTrial ? (
+                              <span style={{ display: 'inline-flex', alignItems: 'center', gap: 3 }}>
+                                <Clock size={10} /> Trial
+                              </span>
+                            ) : (
+                              'Regular'
+                            )}
                           </span>
                         </div>
                         <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{s.customer_code} · {s.customer_phone}</div>

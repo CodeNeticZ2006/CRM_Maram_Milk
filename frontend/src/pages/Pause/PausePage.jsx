@@ -25,7 +25,9 @@ import {
   HelpCircle,
   ChevronDown,
   Pause,
-  Trash2
+  Trash2,
+  Info,
+  Lock
 } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
@@ -501,8 +503,8 @@ function NewPauseModal({ onClose, onSaved, initialCustomer = null }) {
                   </button>
                 </div>
               </div>
-              <p style={{ margin: '8px 0 0', fontSize: 11, color: '#3b82f6' }}>
-                ℹ️ Delivery will be suspended for this single day only and will resume automatically on the next scheduled delivery day.
+              <p style={{ margin: '8px 0 0', fontSize: 11, color: '#3b82f6', display: 'flex', alignItems: 'center', gap: 4 }}>
+                <Info size={13} style={{ flexShrink: 0 }} /> Delivery will be suspended for this single day only and will resume automatically on the next scheduled delivery day.
               </p>
             </div>
           )}
@@ -638,8 +640,8 @@ function NewPauseModal({ onClose, onSaved, initialCustomer = null }) {
                   required
                 />
               </div>
-              <div style={{ background: '#ffffff', border: '1px solid #d8b4fe', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: '#6b21a8' }}>
-                🔒 <strong>No end date required.</strong> Deliveries will remain suspended indefinitely. The Super Admin can resume deliveries at any moment by clicking <strong>"Resume Now"</strong> in the Pause Management table.
+              <div style={{ background: '#ffffff', border: '1px solid #d8b4fe', borderRadius: 8, padding: '10px 12px', fontSize: 11.5, color: '#6b21a8', display: 'flex', alignItems: 'center', gap: 6 }}>
+                <Lock size={14} style={{ flexShrink: 0 }} /> <span><strong>No end date required.</strong> Deliveries will remain suspended indefinitely. The Super Admin can resume deliveries at any moment by clicking <strong>"Resume Now"</strong> in the Pause Management table.</span>
               </div>
             </div>
           )}

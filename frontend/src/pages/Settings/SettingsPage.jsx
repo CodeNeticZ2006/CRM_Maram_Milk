@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { MdLock, MdPerson, MdSave } from 'react-icons/md';
+import { Info } from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useAuthStore from '../../store/authStore';
@@ -114,7 +115,7 @@ export default function SettingsPage() {
 
       {/* System Info */}
       <motion.div className="card" style={{ marginTop: 20 }} initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.2 }}>
-        <div className="card-header"><h3 className="card-title">ℹ️ System Information</h3></div>
+        <div className="card-header"><h3 className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 6 }}><Info size={16} /> System Information</h3></div>
         <div className="card-body">
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
             {[
