@@ -211,68 +211,81 @@ export default function PaymentApprovalReportPage() {
       </div>
 
       {/* Filters Card */}
-      <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)' }}>
+      <div
+        className="card"
+        style={{
+          padding: 20,
+          marginBottom: 20,
+          borderRadius: 12,
+          backgroundColor: '#fff',
+          boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+          border: '1px solid var(--border)',
+          overflow: 'visible',
+          position: 'relative',
+          zIndex: 30,
+        }}
+      >
         <form onSubmit={handleSearch}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 16, alignItems: 'start' }}>
             
             {/* From Date */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 From Date
               </label>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               />
             </div>
 
             {/* To Date */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 To Date
               </label>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               />
             </div>
 
             {/* Office User */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Office User
               </label>
               <select
                 value={selectedOfficeUser}
                 onChange={(e) => setSelectedOfficeUser(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select Office User ]</option>
-                {officeUsers.map((u) => (
-                  <option key={u.id || u.name} value={u.name || u.id}>
-                    {u.name} ({u.role || 'Admin'})
-                  </option>
-                ))}
+                {officeUsers.map((u, i) => {
+                  const val = typeof u === 'string' ? u : (u.name || u.username || u.id);
+                  const label = typeof u === 'string' ? u : `${u.name || u.username || 'Admin'} (${u.role || 'Admin'})`;
+                  return (
+                    <option key={val || i} value={val}>
+                      {label}
+                    </option>
+                  );
+                })}
               </select>
             </div>
 
             {/* City */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 City
               </label>
               <select
                 value={selectedCity}
                 onChange={(e) => setSelectedCity(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select City ]</option>
                 {cities.map((c) => (
@@ -352,7 +365,7 @@ export default function PaymentApprovalReportPage() {
                     {row.customer_id}
                   </td>
                   <td style={{ padding: '12px 14px', fontSize: 13, fontWeight: 600, color: 'var(--text-main)' }}>
-                    {row.customer}
+                    {row.customer || row.customer_name || 'Customer'}
                   </td>
                   <td style={{ padding: '12px 14px', fontSize: 13, color: 'var(--text-main)', whiteSpace: 'nowrap' }}>
                     {row.pay_date}
@@ -381,7 +394,7 @@ export default function PaymentApprovalReportPage() {
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 24, flexWrap: 'wrap' }}>
           <button
             onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
             disabled={page === 1}
@@ -391,23 +404,55 @@ export default function PaymentApprovalReportPage() {
             «
           </button>
           
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pNum) => (
-            <button
-              key={pNum}
-              onClick={() => setPage(pNum)}
-              className={page === pNum ? 'btn btn-primary' : 'btn btn-outline'}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                fontSize: 14,
-                fontWeight: page === pNum ? 700 : 500,
-                backgroundColor: page === pNum ? 'var(--primary)' : 'transparent',
-                color: page === pNum ? '#fff' : 'var(--text-main)',
-              }}
-            >
-              {pNum}
-            </button>
-          ))}
+          {(() => {
+            const range = [];
+            const delta = 2;
+            const left = Math.max(1, page - delta);
+            const right = Math.min(totalPages, page + delta);
+
+            if (left > 1) {
+              range.push(1);
+              if (left > 2) range.push('...');
+            }
+
+            for (let i = left; i <= right; i++) {
+              range.push(i);
+            }
+
+            if (right < totalPages) {
+              if (right < totalPages - 1) range.push('...');
+              range.push(totalPages);
+            }
+
+            return range.map((item, idx) => {
+              if (item === '...') {
+                return (
+                  <span key={`dots-${idx}`} style={{ padding: '6px 8px', color: 'var(--text-muted)', fontSize: 14 }}>
+                    ...
+                  </span>
+                );
+              }
+              const pNum = Number(item);
+              return (
+                <button
+                  key={pNum}
+                  onClick={() => setPage(pNum)}
+                  className={page === pNum ? 'btn btn-primary' : 'btn btn-outline'}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    fontSize: 14,
+                    fontWeight: page === pNum ? 700 : 500,
+                    backgroundColor: page === pNum ? 'var(--primary)' : 'transparent',
+                    color: page === pNum ? '#fff' : 'var(--text-main)',
+                    minWidth: 36,
+                  }}
+                >
+                  {pNum}
+                </button>
+              );
+            });
+          })()}
 
           <button
             onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}

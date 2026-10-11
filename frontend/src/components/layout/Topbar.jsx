@@ -38,6 +38,19 @@ const PAGE_TITLES = {
   '/sms': 'SMS / Notifications',
   '/access-control': 'User Access Control',
   '/settings': 'Settings',
+  // Reports
+  '/reports/mark-delivery':           'Mark Delivery Report',
+  '/reports/delivery-area':           'Delivery Area Report',
+  '/reports/pause-resume':            'Pause / Resume Request Report',
+  '/reports/subscription-change':     'Customer - Subscription Change Request Report',
+  '/reports/change-today-tomorrow':   'Change Request For Today & Tomorrow',
+  '/reports/payment-collection':      'Payment Collection Report',
+  '/reports/payment-approval':        'Payment Approval',
+  '/reports/customer-billing':        'Manage Customer Billing',
+  '/reports/sales':                   'Sales Report',
+  '/reports/delivery-planner':        'Delivery Planner',
+  '/reports/customer-info':           'Customer Info Report',
+  '/reports/general':                 'General Reports',
   // Route Intelligence
   '/route-intelligence/live':        'Live Operations',
   '/route-intelligence/territories':  'Territory Monitoring',
@@ -155,7 +168,7 @@ export default function Topbar({ onToggleMobileSidebar }) {
   };
 
   return (
-    <header className="topbar">
+    <header className="topbar" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
         {onToggleMobileSidebar && (
           <button

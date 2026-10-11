@@ -3248,6 +3248,7 @@ const getPaymentApprovalReport = async (req, res, next) => {
       records.push({
         id: p.id,
         customer_id: p.customer_code || 'ART1762',
+        customer: p.customer_name || 'Customer',
         customer_name: p.customer_name || 'Customer',
         pay_date: p.payment_date ? String(p.payment_date).substring(0, 10) : startDate,
         remark: p.transaction_ref ? `Payment Received - Ref: ${p.transaction_ref}` : 'Online Payment Received',
@@ -3282,6 +3283,7 @@ const getPaymentApprovalReport = async (req, res, next) => {
           records.push({
             id: `pa-${dStr}-${c.id}`,
             customer_id: custCode,
+            customer: custName,
             customer_name: custName,
             pay_date: dStr,
             remark: `Payment Received via UPI - Ref: 9817${100 + cIdx}`,
