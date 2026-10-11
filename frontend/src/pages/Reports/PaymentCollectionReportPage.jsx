@@ -331,40 +331,38 @@ export default function PaymentCollectionReportPage() {
       </div>
 
       {/* Filters Card */}
-      <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)' }}>
+      <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)', overflow: 'visible', position: 'relative', zIndex: 30 }}>
         <form onSubmit={handleSearch}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 16, marginBottom: 16, alignItems: 'start' }}>
             
             {/* Date Range Filters */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Start Date
               </label>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 End Date
               </label>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               />
             </div>
 
             {/* Customer Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Customer Name
               </label>
               <CustomerSearchSelector
@@ -379,14 +377,13 @@ export default function PaymentCollectionReportPage() {
 
             {/* Customer Type Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Customer Type
               </label>
               <select
                 value={selectedCustomerType}
                 onChange={(e) => setSelectedCustomerType(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select Customer Type ]</option>
                 {customerTypes.map((ct) => (
@@ -399,14 +396,13 @@ export default function PaymentCollectionReportPage() {
 
             {/* Delivery Boy Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Delivery Boy
               </label>
               <select
                 value={selectedDeliveryBoy}
                 onChange={(e) => setSelectedDeliveryBoy(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select Delivery Boy ]</option>
                 {deliveryBoys.map((d) => (
@@ -419,14 +415,13 @@ export default function PaymentCollectionReportPage() {
 
             {/* Mode Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Mode
               </label>
               <select
                 value={selectedMode}
                 onChange={(e) => setSelectedMode(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select Mode ]</option>
                 {modes.map((m) => (
@@ -439,7 +434,7 @@ export default function PaymentCollectionReportPage() {
 
             {/* City Filter (Read-only) */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 City
               </label>
               <input
@@ -447,21 +442,19 @@ export default function PaymentCollectionReportPage() {
                 value="Chennai"
                 readOnly
                 disabled
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b' }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b', fontWeight: 500 }}
               />
             </div>
 
             {/* Payment Method Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Payment Method
               </label>
               <select
                 value={selectedPaymentMethod}
                 onChange={(e) => setSelectedPaymentMethod(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select Payment Method ]</option>
                 {paymentMethods.map((pm) => (

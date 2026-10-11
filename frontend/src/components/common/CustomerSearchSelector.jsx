@@ -238,7 +238,9 @@ export default function CustomerSearchSelector({
           borderRadius: '8px',
           fontSize: '13px',
           cursor: disabled ? 'not-allowed' : 'pointer',
-          minHeight: '38px',
+          minHeight: '42px',
+          height: '42px',
+          boxSizing: 'border-box',
           gap: '8px',
           transition: 'all 0.15s ease',
         }}

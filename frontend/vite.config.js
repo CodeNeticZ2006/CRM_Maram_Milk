@@ -6,6 +6,9 @@ export default defineConfig({
   build: {
     sourcemap: false,
   },
+  optimizeDeps: {
+    include: ['jspdf', 'jspdf-autotable'],
+  },
   server: {
     port: 5173,
     sourcemapIgnoreList: () => true,

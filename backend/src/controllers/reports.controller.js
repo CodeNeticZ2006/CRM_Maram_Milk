@@ -2137,17 +2137,9 @@ const getMarkDeliveryOptions = async (req, res, next) => {
       label: `${c.customer_code ? c.customer_code + ' - ' : ''}${c.name}`
     }));
 
-    let hubs = branchRes.rows.map(b => ({
-      id: b.id,
-      name: b.branch_name
-    }));
-
-    if (hubs.length === 0) {
-      hubs = [
-        { id: 'royapettah', name: 'Royapettah' },
-        { id: 'mylapore', name: 'Mylapore' },
-      ];
-    }
+    const hubs = [
+      { id: 'royapettah', name: 'Royapettah' },
+    ];
 
     const deliveryBoys = dpRes.rows.map(d => ({
       id: d.id,
@@ -2263,7 +2255,7 @@ const getMarkDeliveryReport = async (req, res, next) => {
               packing_type: item.category || 'Pouch',
               unit: item.unit,
               route_name: del.area || 'Route',
-              branch_name: del.hub || 'Hub',
+              branch_name: 'Royapettah',
               subscription_type: del.frequency || 'Daily',
               scheduled_qty: item.quantity,
               delivery_status: 'Delivered',
@@ -2279,7 +2271,7 @@ const getMarkDeliveryReport = async (req, res, next) => {
       const delDate = r.dispatch_date || (r.created_at ? new Date(r.created_at).toISOString().substring(0, 10) : startDate);
       const custName = r.customer_code ? `${r.customer_code} - ${r.customer_name}` : r.customer_name;
       const addr = r.address || 'N/A';
-      const hubName = r.branch_name || r.route_name || 'Royapettah';
+      const hubName = 'Royapettah';
       const dpId = r.dispatch_dp_id || r.cust_dp_id;
       const dpName = r.dp_name || dpMap.get(dpId) || dpId || 'Unassigned';
       const subType = r.subscription_type || 'Daily';

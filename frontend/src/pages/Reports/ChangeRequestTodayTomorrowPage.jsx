@@ -194,13 +194,13 @@ export default function ChangeRequestTodayTomorrowPage() {
       </div>
 
       {/* Filters Card */}
-      <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)' }}>
+      <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)', overflow: 'visible', position: 'relative', zIndex: 30 }}>
         <form onSubmit={handleSearch}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 16, marginBottom: 16, alignItems: 'start' }}>
             
             {/* Customer Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Customer
               </label>
               <CustomerSearchSelector
@@ -215,14 +215,13 @@ export default function ChangeRequestTodayTomorrowPage() {
 
             {/* City Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 City
               </label>
               <select
                 value={selectedCity}
                 onChange={(e) => setSelectedCity(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select City ]</option>
                 {cities.map((ct) => (

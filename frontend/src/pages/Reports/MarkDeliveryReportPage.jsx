@@ -32,13 +32,12 @@ export default function MarkDeliveryReportPage() {
   const [dateFrom, setDateFrom] = useState(getFirstDayOfMonthStr());
   const [dateTo, setDateTo] = useState(getTodayStr());
   const [selectedCustomer, setSelectedCustomer] = useState('');
-  const [selectedHub, setSelectedHub] = useState('');
+  const hub = 'Royapettah';
   const [selectedDeliveryBoy, setSelectedDeliveryBoy] = useState('');
   const [city] = useState('Chennai');
 
   // Option Dropdowns
   const [customers, setCustomers] = useState([]);
-  const [hubs, setHubs] = useState([]);
   const [deliveryBoys, setDeliveryBoys] = useState([]);
 
   // Data & Pagination
@@ -67,7 +66,6 @@ export default function MarkDeliveryReportPage() {
       if (res.data?.success) {
         const d = res.data.data;
         setCustomers(d.customers || []);
-        setHubs(d.hubs || []);
         setDeliveryBoys(d.deliveryBoys || []);
       }
     } catch (err) {
@@ -82,7 +80,7 @@ export default function MarkDeliveryReportPage() {
         date_from: dateFrom,
         date_to: dateTo,
         customer_id: selectedCustomer,
-        hub_id: selectedHub,
+        hub_id: hub,
         delivery_boy_id: selectedDeliveryBoy,
         city,
         page: targetPage,
@@ -124,7 +122,6 @@ export default function MarkDeliveryReportPage() {
     setDateFrom(startD);
     setDateTo(endD);
     setSelectedCustomer('');
-    setSelectedHub('');
     setSelectedDeliveryBoy('');
     setPage(1);
     
@@ -135,7 +132,7 @@ export default function MarkDeliveryReportPage() {
         date_from: startD,
         date_to: endD,
         customer_id: '',
-        hub_id: '',
+        hub_id: hub,
         delivery_boy_id: '',
         city: 'Chennai',
         page: 1,
@@ -156,7 +153,7 @@ export default function MarkDeliveryReportPage() {
       date_from: dateFrom,
       date_to: dateTo,
       customer_id: selectedCustomer,
-      hub_id: selectedHub,
+      hub_id: hub,
       delivery_boy_id: selectedDeliveryBoy,
       city,
       export_all: 'true',
@@ -175,12 +172,11 @@ export default function MarkDeliveryReportPage() {
 
   const getFilterLabels = () => {
     const custObj = customers.find(c => c.id === selectedCustomer);
-    const hubObj = hubs.find(h => h.id === selectedHub || h.name === selectedHub);
     const dpObj = deliveryBoys.find(d => d.id === selectedDeliveryBoy);
 
     return {
       customer: custObj ? custObj.label : selectedCustomer,
-      hub: hubObj ? hubObj.name : selectedHub,
+      hub,
       deliveryBoy: dpObj ? dpObj.label : selectedDeliveryBoy,
       city,
     };
@@ -291,40 +287,38 @@ export default function MarkDeliveryReportPage() {
       </div>
 
       {/* Filter Card */}
-      <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)' }}>
+      <div className="card" style={{ padding: 20, marginBottom: 20, borderRadius: 12, backgroundColor: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.08)', border: '1px solid var(--border)', overflow: 'visible', position: 'relative', zIndex: 30 }}>
         <form onSubmit={handleSearch}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 16 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 16, marginBottom: 16, alignItems: 'start' }}>
             
             {/* Date Range Filters */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Start Date
               </label>
               <input
                 type="date"
                 value={dateFrom}
                 onChange={(e) => setDateFrom(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               />
             </div>
 
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 End Date
               </label>
               <input
                 type="date"
                 value={dateTo}
                 onChange={(e) => setDateTo(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               />
             </div>
 
             {/* Customer Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Customer
               </label>
               <CustomerSearchSelector
@@ -337,36 +331,29 @@ export default function MarkDeliveryReportPage() {
               />
             </div>
 
-            {/* Hub Filter */}
+            {/* Hub Filter (Fixed) */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Hub
               </label>
-              <select
-                value={selectedHub}
-                onChange={(e) => setSelectedHub(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
-              >
-                <option value="">[ Select Hub ]</option>
-                {hubs.map((h) => (
-                  <option key={h.id} value={h.name}>
-                    {h.name}
-                  </option>
-                ))}
-              </select>
+              <input
+                type="text"
+                value="Royapettah"
+                readOnly
+                disabled
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b', fontWeight: 500 }}
+              />
             </div>
 
             {/* Delivery Boy Filter */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 Delivery Boy
               </label>
               <select
                 value={selectedDeliveryBoy}
                 onChange={(e) => setSelectedDeliveryBoy(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#fff', color: 'var(--text-main)' }}
               >
                 <option value="">[ Select Delivery Boy ]</option>
                 {deliveryBoys.map((d) => (
@@ -379,7 +366,7 @@ export default function MarkDeliveryReportPage() {
 
             {/* City Filter (Read-only) */}
             <div>
-              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
+              <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)', height: 18, lineHeight: '18px', whiteSpace: 'nowrap' }}>
                 City
               </label>
               <input
@@ -387,8 +374,7 @@ export default function MarkDeliveryReportPage() {
                 value="Chennai"
                 readOnly
                 disabled
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8, backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b' }}
+                style={{ width: '100%', height: 42, minHeight: 42, boxSizing: 'border-box', padding: '8px 12px', borderRadius: 8, border: '1px solid var(--border, #cbd5e1)', fontSize: 13, backgroundColor: '#f1f5f9', cursor: 'not-allowed', color: '#64748b', fontWeight: 500 }}
               />
             </div>
           </div>

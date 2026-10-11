@@ -260,10 +260,10 @@ export default function DeliveryPlannerPage() {
       </div>
 
       {/* Customer Selection Card */}
-      <div className="card" style={{ padding: 20, marginBottom: 24, background: 'var(--bg-primary)', borderRadius: 12, border: '1px solid var(--border-color)' }}>
+      <div className="card" style={{ padding: 20, marginBottom: 24, background: 'var(--bg-primary)', borderRadius: 12, border: '1px solid var(--border-color)', overflow: 'visible', position: 'relative', zIndex: 30 }}>
         <form onSubmit={handleSubmit} style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
           <div style={{ flex: 1, minWidth: 260 }}>
-            <label className="form-label" style={{ fontWeight: 600, marginBottom: 6, display: 'block', fontSize: 13 }}>
+            <label className="form-label" style={{ fontWeight: 600, marginBottom: 6, display: 'block', fontSize: 13, height: 18, lineHeight: '18px' }}>
               Customer Name:
             </label>
             <CustomerSearchSelector
@@ -281,13 +281,19 @@ export default function DeliveryPlannerPage() {
             className="btn btn-primary"
             disabled={!selectedCustomerId || loading}
             style={{
-              padding: '9px 24px',
+              height: 42,
+              minHeight: 42,
+              boxSizing: 'border-box',
+              padding: '0 24px',
               borderRadius: 8,
               fontWeight: 700,
               background: 'linear-gradient(135deg, #059669, #047857)',
               color: '#fff',
               border: 'none',
-              cursor: 'pointer'
+              cursor: 'pointer',
+              display: 'inline-flex',
+              alignItems: 'center',
+              justifyContent: 'center',
             }}
           >
             {loading ? 'Loading...' : 'Submit'}
