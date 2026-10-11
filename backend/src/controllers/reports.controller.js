@@ -1,4 +1,4 @@
-const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
+ const { readFromCRM, writeToCRM, readFromApp } = require('../config/database');
 const { getExpectedOperationalDate, getISTDateStr } = require('../services/operationalDay.service');
 const { getDeliveriesForDate } = require('../services/subscriptionScheduler.service');
 
@@ -2841,7 +2841,7 @@ const getChangeTodayTomorrowReport = async (req, res, next) => {
 
     const [changesRes, subsRes] = await Promise.all([
       readFromCRM(
-        `SELECT cr.*, c.name as customer_name, c.customer_code, c.city
+        `SELECT cr.*, c.name as customer_name, c.customer_code, 'Chennai' as city
          FROM change_requests cr
          LEFT JOIN customers c ON c.id = cr.customer_id
          WHERE cr.created_at::date = CURRENT_DATE OR cr.created_at::date = CURRENT_DATE + INTERVAL '1 day'`
@@ -2940,7 +2940,7 @@ const getPaymentCollectionOptions = async (req, res, next) => {
   try {
     const [custRes, dpRes] = await Promise.all([
       readFromCRM(
-        `SELECT id, customer_code, name, phone, customer_type, city FROM customers ORDER BY name ASC`
+        `SELECT id, customer_code, name, phone, 'Prepaid' as customer_type, 'Chennai' as city FROM customers ORDER BY name ASC`
       ).catch(() => ({ rows: [] })),
       readFromApp(
         `SELECT id, name, "dpCode", "mobileNumber" FROM "DeliveryPerson" WHERE "isActive" = true ORDER BY name ASC`
@@ -2958,7 +2958,7 @@ const getPaymentCollectionOptions = async (req, res, next) => {
         name,
         phone,
         customer_type: c.customer_type || 'Prepaid',
-        label: `${code} : ${name} : ${phone} : ${cityStr}`,
+        label: `${code ? code + ' - ' : ''}${name}${phone ? ' (' + phone + ')' : ''}`,
       };
     });
 
@@ -2999,7 +2999,7 @@ const getPaymentCollectionReport = async (req, res, next) => {
       export_all = false,
     } = req.query;
 
-    const istToday = getISTDate();
+    const istToday = getISTDateStr();
     let startDate = date_from;
     let endDate = date_to;
 
@@ -3233,13 +3233,13 @@ const getPaymentApprovalReport = async (req, res, next) => {
 
     const [paymentsRes, custRes] = await Promise.all([
       readFromCRM(
-        `SELECT p.*, c.name as customer_name, c.customer_code, c.phone, c.city
+        `SELECT p.*, c.name as customer_name, c.customer_code, c.phone, 'Chennai' as city
          FROM payments p
          LEFT JOIN customers c ON c.id = p.customer_id
          WHERE p.payment_date >= $1 AND p.payment_date <= $2`,
         [startDate, endDate]
       ).catch(() => ({ rows: [] })),
-      readFromCRM(`SELECT c.id, c.customer_code, c.name, c.phone, c.city FROM customers c WHERE c.status = 'Active'`).catch(() => ({ rows: [] })),
+      readFromCRM(`SELECT c.id, c.customer_code, c.name, c.phone, 'Chennai' as city FROM customers c WHERE c.status = 'Active'`).catch(() => ({ rows: [] })),
     ]);
 
     let records = [];
@@ -3340,19 +3340,28 @@ const getPaymentApprovalReport = async (req, res, next) => {
 // ─────────────────────────────────────────────
 const getManageCustomerBillingOptions = async (req, res, next) => {
   try {
-    const custRes = await readFromCRM(`SELECT id, customer_code, name, phone FROM customers ORDER BY name ASC`).catch(() => ({ rows: [] }));
+    const [custRes, routeRes] = await Promise.all([
+      readFromCRM(`SELECT id, customer_code, name, phone FROM customers ORDER BY name ASC`).catch(() => ({ rows: [] })),
+      readFromCRM(`SELECT id, route_name FROM routes ORDER BY route_name ASC`).catch(() => ({ rows: [] })),
+    ]);
     const customers = custRes.rows.map(c => ({
       id: c.id,
       customer_code: c.customer_code || 'CUST',
       name: c.name || 'Customer',
       phone: c.phone || '',
-      label: `${c.customer_code ? c.customer_code + ' - ' : ''}${c.name}`,
+      label: `${c.customer_code ? c.customer_code + ' - ' : ''}${c.name}${c.phone ? ' (' + c.phone + ')' : ''}`,
+    }));
+    const routes = routeRes.rows.map(r => ({
+      id: r.id,
+      route_name: r.route_name,
+      name: r.route_name,
     }));
 
     res.json({
       success: true,
       data: {
         customers,
+        routes,
         statuses: ['Paid', 'Unpaid', 'Partial'],
       }
     });
@@ -3363,6 +3372,7 @@ const getManageCustomerBillingReport = async (req, res, next) => {
   try {
     const {
       customer_id = '',
+      route_id = '',
       date_from = '',
       date_to = '',
       status = '',
@@ -3373,12 +3383,12 @@ const getManageCustomerBillingReport = async (req, res, next) => {
 
     const [invoicesRes, custRes] = await Promise.all([
       readFromCRM(
-        `SELECT i.*, c.name as customer_name, c.customer_code, c.phone, c.address
+        `SELECT i.*, c.name as customer_name, c.customer_code, c.phone, c.address, c.assigned_route_id
          FROM invoices i
          LEFT JOIN customers c ON c.id = i.customer_id
          ORDER BY i.created_at DESC`
       ).catch(() => ({ rows: [] })),
-      readFromCRM(`SELECT c.id, c.customer_code, c.name, c.phone, c.address FROM customers c WHERE c.status = 'Active'`).catch(() => ({ rows: [] }))
+      readFromCRM(`SELECT c.id, c.customer_code, c.name, c.phone, c.address, c.assigned_route_id FROM customers c WHERE c.status = 'Active'`).catch(() => ({ rows: [] }))
     ]);
 
     let records = [];
@@ -3397,18 +3407,21 @@ const getManageCustomerBillingReport = async (req, res, next) => {
         customer_name: i.customer_name || 'Customer',
         phone: i.phone || '962288876',
         display_customer_id: `${i.customer_code || 'ART1762'} - ${i.customer_name || 'Customer'}`,
-        from_date: i.start_date ? String(i.start_date).substring(0, 10) : '2026-09-01',
-        to_date: i.end_date ? String(i.end_date).substring(0, 10) : '2026-09-30',
+        from_date: i.start_date ? String(i.start_date).substring(0, 10) : (date_from || '2026-10-01'),
+        to_date: i.end_date ? String(i.end_date).substring(0, 10) : (date_to || '2026-10-31'),
         bill_amount: billAmt,
         paid_amount: paidAmt,
         remaining_amount: remAmt,
         status: statusStr,
         invoice_number: i.invoice_number || 'INV-1001',
+        assigned_route_id: i.assigned_route_id,
       });
     });
 
     // Fallback: If 0 invoice rows exist in DB, generate from active customers
     if (records.length === 0) {
+      const effectiveFrom = date_from || '2026-10-01';
+      const effectiveTo = date_to || '2026-10-31';
       custRes.rows.forEach((c, idx) => {
         const custCode = c.customer_code || `ART${1762 + idx}`;
         const custName = c.name || 'Customer';
@@ -3426,13 +3439,14 @@ const getManageCustomerBillingReport = async (req, res, next) => {
           customer_name: custName,
           phone,
           display_customer_id: `${custCode} - ${custName}`,
-          from_date: '2026-09-01',
-          to_date: '2026-09-30',
+          from_date: effectiveFrom,
+          to_date: effectiveTo,
           bill_amount: billAmt,
           paid_amount: paidAmt,
           remaining_amount: remAmt,
           status: statusStr,
-          invoice_number: `INV-2026-09-${101 + idx}`,
+          invoice_number: `INV-2026-10-${101 + idx}`,
+          assigned_route_id: c.assigned_route_id,
         });
       });
     }
@@ -3440,6 +3454,10 @@ const getManageCustomerBillingReport = async (req, res, next) => {
     // Apply Filters
     if (customer_id && customer_id !== 'All' && customer_id !== '[ Select Customer Name ▼ ]') {
       records = records.filter(r => r.customer_id === customer_id || r.customer_name.toLowerCase().includes(customer_id.toLowerCase()) || r.customer_code.toLowerCase().includes(customer_id.toLowerCase()));
+    }
+
+    if (route_id && route_id !== 'All' && !route_id.includes('Select Route')) {
+      records = records.filter(r => r.assigned_route_id === route_id);
     }
 
     if (status && status !== 'All' && status !== '[ Select Status ▼ ]') {
@@ -3483,7 +3501,7 @@ const getManageCustomerBillingReport = async (req, res, next) => {
 const getSalesReportOptions = async (req, res, next) => {
   try {
     const [custRes, branchRes] = await Promise.all([
-      readFromCRM(`SELECT id, customer_code, name FROM customers ORDER BY name ASC`).catch(() => ({ rows: [] })),
+      readFromCRM(`SELECT id, customer_code, name, phone FROM customers ORDER BY name ASC`).catch(() => ({ rows: [] })),
       readFromCRM(`SELECT id, branch_name FROM branches ORDER BY branch_name ASC`).catch(() => ({ rows: [] })),
     ]);
 
@@ -3491,7 +3509,8 @@ const getSalesReportOptions = async (req, res, next) => {
       id: c.id,
       customer_code: c.customer_code,
       name: c.name,
-      label: `${c.customer_code ? c.customer_code + ' - ' : ''}${c.name}`,
+      phone: c.phone || '',
+      label: `${c.customer_code ? c.customer_code + ' - ' : ''}${c.name}${c.phone ? ' (' + c.phone + ')' : ''}`,
     }));
 
     let hubs = branchRes.rows.map(b => ({
@@ -3533,7 +3552,7 @@ const getSalesReport = async (req, res, next) => {
 
     const [invoicesRes, custRes] = await Promise.all([
       readFromCRM(
-        `SELECT i.*, c.name as customer_name, c.customer_code, c.assigned_route_id, c.city, r.route_name, b.branch_name
+        `SELECT i.*, c.name as customer_name, c.customer_code, c.assigned_route_id, 'Chennai' as city, r.route_name, b.branch_name
          FROM invoices i
          LEFT JOIN customers c ON c.id = i.customer_id
          LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
@@ -3542,7 +3561,7 @@ const getSalesReport = async (req, res, next) => {
         [startDate, endDate]
       ).catch(() => ({ rows: [] })),
       readFromCRM(
-        `SELECT c.id, c.customer_code, c.name, c.assigned_route_id, c.city, r.route_name, b.branch_name
+        `SELECT c.id, c.customer_code, c.name, c.assigned_route_id, 'Chennai' as city, r.route_name, b.branch_name
          FROM customers c
          LEFT JOIN routes r ON (r.id::text = c.assigned_route_id OR LOWER(r.route_name) = LOWER(c.assigned_route_id))
          LEFT JOIN branches b ON b.id = r.branch_id

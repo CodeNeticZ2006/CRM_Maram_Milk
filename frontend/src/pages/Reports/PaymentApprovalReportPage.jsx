@@ -47,8 +47,9 @@ export default function PaymentApprovalReportPage() {
     try {
       const res = await api.get('/reports/payment-approval-options');
       if (res.data?.success) {
-        setOfficeUsers(res.data.officeUsers || []);
-        setCities(res.data.cities || ['Chennai']);
+        const d = res.data.data || res.data;
+        setOfficeUsers(d.officeUsers || []);
+        setCities(d.cities || ['Chennai']);
       }
     } catch (err) {
       console.error('Error fetching payment approval options:', err);

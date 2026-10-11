@@ -49,7 +49,7 @@ export default function CustomerSearchSelector({
 
   // Load customer list
   useEffect(() => {
-    if (Array.isArray(preloadedCustomers)) {
+    if (Array.isArray(preloadedCustomers) && preloadedCustomers.length > 0) {
       setCustomers(preloadedCustomers);
       setLoading(false);
       return;

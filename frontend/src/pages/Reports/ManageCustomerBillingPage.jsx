@@ -53,8 +53,9 @@ export default function ManageCustomerBillingPage() {
     try {
       const res = await api.get('/reports/customer-billing-options');
       if (res.data?.success) {
-        setCustomers(res.data.customers || []);
-        setRoutes(res.data.routes || []);
+        const d = res.data.data || res.data;
+        setCustomers(d.customers || []);
+        setRoutes(d.routes || []);
       }
     } catch (err) {
       console.error('Error fetching customer billing options:', err);

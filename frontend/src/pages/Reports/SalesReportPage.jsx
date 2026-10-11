@@ -54,9 +54,10 @@ export default function SalesReportPage() {
     try {
       const res = await api.get('/reports/sales-report-options');
       if (res.data?.success) {
-        setCustomers(res.data.customers || []);
-        setHubs(res.data.hubs || []);
-        setCities(res.data.cities || ['Chennai']);
+        const d = res.data.data || res.data;
+        setCustomers(d.customers || []);
+        setHubs(d.hubs || []);
+        setCities(d.cities || ['Chennai']);
       }
     } catch (err) {
       console.error('Error fetching sales report options:', err);
