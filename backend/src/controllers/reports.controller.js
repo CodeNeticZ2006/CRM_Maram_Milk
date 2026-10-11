@@ -3404,7 +3404,8 @@ const getManageCustomerBillingReport = async (req, res, next) => {
 
       records.push({
         id: i.id,
-        customer_id: i.customer_id,
+        customer_id: i.customer_code || 'ART1762',
+        customer_ref_id: i.customer_id,
         customer_code: i.customer_code || 'ART1762',
         customer_name: i.customer_name || 'Customer',
         phone: i.phone || '962288876',
@@ -3436,7 +3437,8 @@ const getManageCustomerBillingReport = async (req, res, next) => {
 
         records.push({
           id: `bill-${c.id}`,
-          customer_id: c.id,
+          customer_id: custCode,
+          customer_ref_id: c.id,
           customer_code: custCode,
           customer_name: custName,
           phone,
@@ -3455,7 +3457,7 @@ const getManageCustomerBillingReport = async (req, res, next) => {
 
     // Apply Filters
     if (customer_id && customer_id !== 'All' && customer_id !== '[ Select Customer Name ▼ ]') {
-      records = records.filter(r => r.customer_id === customer_id || r.customer_name.toLowerCase().includes(customer_id.toLowerCase()) || r.customer_code.toLowerCase().includes(customer_id.toLowerCase()));
+      records = records.filter(r => r.customer_ref_id === customer_id || r.customer_id === customer_id || r.customer_name.toLowerCase().includes(customer_id.toLowerCase()) || r.customer_code.toLowerCase().includes(customer_id.toLowerCase()));
     }
 
     if (route_id && route_id !== 'All' && !route_id.includes('Select Route')) {

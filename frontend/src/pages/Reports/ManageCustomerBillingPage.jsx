@@ -365,7 +365,7 @@ export default function ManageCustomerBillingPage() {
         <table className="table" style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left', minWidth: 1000 }}>
           <thead>
             <tr style={{ backgroundColor: '#f8fafc', borderBottom: '2px solid var(--border)' }}>
-              <th style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Customer ID</th>
+              <th style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>Customer</th>
               <th style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>From Date</th>
               <th style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#1e293b' }}>To Date</th>
               <th style={{ padding: '12px 14px', fontSize: 13, fontWeight: 700, color: '#1e293b', textAlign: 'right' }}>Bill Amount</th>
@@ -392,7 +392,6 @@ export default function ManageCustomerBillingPage() {
               rows.map((row, idx) => (
                 <tr key={row.id || idx} style={{ borderBottom: '1px solid var(--border)' }}>
                   <td style={{ padding: '12px 14px', fontSize: 13 }}>
-                    <div style={{ fontWeight: 700, color: '#2563eb' }}>{row.customer_id}</div>
                     <div style={{ fontWeight: 600, color: '#1e293b' }}>{row.customer_name}</div>
                     <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.phone}</div>
                   </td>
@@ -442,7 +441,7 @@ export default function ManageCustomerBillingPage() {
 
       {/* Pagination Controls */}
       {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24 }}>
+        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 6, marginTop: 24, flexWrap: 'wrap' }}>
           <button
             onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
             disabled={page === 1}
@@ -452,23 +451,55 @@ export default function ManageCustomerBillingPage() {
             «
           </button>
           
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pNum) => (
-            <button
-              key={pNum}
-              onClick={() => setPage(pNum)}
-              className={page === pNum ? 'btn btn-primary' : 'btn btn-outline'}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                fontSize: 14,
-                fontWeight: page === pNum ? 700 : 500,
-                backgroundColor: page === pNum ? 'var(--primary)' : 'transparent',
-                color: page === pNum ? '#fff' : 'var(--text-main)',
-              }}
-            >
-              {pNum}
-            </button>
-          ))}
+          {(() => {
+            const range = [];
+            const delta = 2;
+            const left = Math.max(1, page - delta);
+            const right = Math.min(totalPages, page + delta);
+
+            if (left > 1) {
+              range.push(1);
+              if (left > 2) range.push('...');
+            }
+
+            for (let i = left; i <= right; i++) {
+              range.push(i);
+            }
+
+            if (right < totalPages) {
+              if (right < totalPages - 1) range.push('...');
+              range.push(totalPages);
+            }
+
+            return range.map((item, idx) => {
+              if (item === '...') {
+                return (
+                  <span key={`dots-${idx}`} style={{ padding: '6px 8px', color: 'var(--text-muted)', fontSize: 14 }}>
+                    ...
+                  </span>
+                );
+              }
+              const pNum = Number(item);
+              return (
+                <button
+                  key={pNum}
+                  onClick={() => setPage(pNum)}
+                  className={page === pNum ? 'btn btn-primary' : 'btn btn-outline'}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    fontSize: 14,
+                    fontWeight: page === pNum ? 700 : 500,
+                    backgroundColor: page === pNum ? 'var(--primary)' : 'transparent',
+                    color: page === pNum ? '#fff' : 'var(--text-main)',
+                    minWidth: 36,
+                  }}
+                >
+                  {pNum}
+                </button>
+              );
+            });
+          })()}
 
           <button
             onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
@@ -488,7 +519,7 @@ export default function ManageCustomerBillingPage() {
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', pb: 16, borderBottom: '1px solid #e2e8f0', paddingBottom: 12 }}>
               <div>
                 <h3 style={{ fontSize: 18, fontWeight: 800, margin: 0, color: '#0f172a' }}>Customer Bill Details</h3>
-                <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>{selectedBill.customer_id} - {selectedBill.customer_name}</p>
+                <p style={{ fontSize: 12, color: '#64748b', margin: '4px 0 0 0' }}>{selectedBill.customer_name}</p>
               </div>
               <button onClick={() => setSelectedBill(null)} style={{ background: 'none', border: 'none', fontSize: 20, cursor: 'pointer', color: '#94a3b8' }}>&times;</button>
             </div>
