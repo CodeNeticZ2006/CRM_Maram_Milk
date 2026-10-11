@@ -5,6 +5,7 @@ import { FiArrowLeft, FiDownload, FiSearch, FiRotateCcw } from 'react-icons/fi';
 import api from '../../services/api';
 import { exportSubscriptionChangeRequestExcel, exportSubscriptionChangeRequestPDF } from '../../utils/exportUtils';
 import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
+import ReportPagination from '../../components/common/ReportPagination';
 
 export default function SubscriptionChangeRequestReportPage() {
   const navigate = useNavigate();
@@ -181,7 +182,7 @@ export default function SubscriptionChangeRequestReportPage() {
   const endRecord = Math.min(page * pageSize, totalRecords);
 
   return (
-    <div style={{ padding: '24px 32px', maxWidth: 1400, margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
+    <div style={{ padding: '24px 32px', maxWidth: 1400, width: '100%', boxSizing: 'border-box', margin: '0 auto', fontFamily: 'Inter, system-ui, sans-serif' }}>
       
       {/* Top Header & Actions Bar */}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 24, flexWrap: 'wrap', gap: 16 }}>
@@ -452,45 +453,12 @@ export default function SubscriptionChangeRequestReportPage() {
       </div>
 
       {/* Pagination Controls */}
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 24 }}>
-          <button
-            onClick={() => setPage((prev) => Math.max(prev - 1, 1))}
-            disabled={page === 1}
-            className="btn btn-outline"
-            style={{ padding: '6px 12px', borderRadius: 6, fontSize: 14, cursor: page === 1 ? 'not-allowed' : 'pointer' }}
-          >
-            «
-          </button>
-          
-          {Array.from({ length: totalPages }, (_, i) => i + 1).map((pNum) => (
-            <button
-              key={pNum}
-              onClick={() => setPage(pNum)}
-              className={page === pNum ? 'btn btn-primary' : 'btn btn-outline'}
-              style={{
-                padding: '6px 12px',
-                borderRadius: 6,
-                fontSize: 14,
-                fontWeight: page === pNum ? 700 : 500,
-                backgroundColor: page === pNum ? 'var(--primary)' : 'transparent',
-                color: page === pNum ? '#fff' : 'var(--text-main)',
-              }}
-            >
-              {pNum}
-            </button>
-          ))}
-
-          <button
-            onClick={() => setPage((prev) => Math.min(prev + 1, totalPages))}
-            disabled={page === totalPages}
-            className="btn btn-outline"
-            style={{ padding: '6px 12px', borderRadius: 6, fontSize: 14, cursor: page === totalPages ? 'not-allowed' : 'pointer' }}
-          >
-            »
-          </button>
-        </div>
-      )}
+      <ReportPagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        loading={loading}
+      />
 
     </div>
   );

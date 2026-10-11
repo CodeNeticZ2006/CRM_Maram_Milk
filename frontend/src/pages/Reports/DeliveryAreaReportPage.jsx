@@ -8,6 +8,7 @@ import {
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import { exportDeliveryAreaExcel, exportDeliveryAreaPDF } from '../../utils/exportUtils';
+import ReportPagination from '../../components/common/ReportPagination';
 
 export default function DeliveryAreaReportPage() {
   const navigate = useNavigate();
@@ -491,54 +492,12 @@ export default function DeliveryAreaReportPage() {
       </div>
 
       {/* Pagination Footer */}
-      {totalPages > 1 && (
-        <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: 8, marginTop: 16 }}>
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setPage(prev => Math.max(prev - 1, 1))}
-            disabled={page === 1 || loading}
-            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', cursor: 'pointer' }}
-          >
-            <MdChevronLeft style={{ fontSize: 18 }} /> «
-          </button>
-
-          {Array.from({ length: totalPages }).map((_, idx) => {
-            const pNum = idx + 1;
-            const isActive = pNum === page;
-            return (
-              <button
-                key={pNum}
-                type="button"
-                className={`btn btn-sm ${isActive ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setPage(pNum)}
-                disabled={loading}
-                style={{
-                  padding: '6px 12px',
-                  borderRadius: 6,
-                  fontWeight: isActive ? 700 : 500,
-                  background: isActive ? '#2563eb' : 'var(--bg-secondary)',
-                  color: isActive ? '#fff' : 'var(--text-main)',
-                  border: '1px solid var(--border-color)',
-                  cursor: 'pointer'
-                }}
-              >
-                {pNum}
-              </button>
-            );
-          })}
-
-          <button
-            type="button"
-            className="btn btn-secondary btn-sm"
-            onClick={() => setPage(prev => Math.min(prev + 1, totalPages))}
-            disabled={page === totalPages || loading}
-            style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid var(--border-color)', background: 'var(--bg-secondary)', cursor: 'pointer' }}
-          >
-            » <MdChevronRight style={{ fontSize: 18 }} />
-          </button>
-        </div>
-      )}
+      <ReportPagination
+        page={page}
+        totalPages={totalPages}
+        onPageChange={setPage}
+        loading={loading}
+      />
     </motion.div>
   );
 }
