@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { FiArrowLeft, FiDownload, FiSearch, FiRotateCcw } from 'react-icons/fi';
 import api from '../../services/api';
 import { exportChangeTodayTomorrowExcel } from '../../utils/exportUtils';
+import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
 
 export default function ChangeRequestTodayTomorrowPage() {
   const navigate = useNavigate();
@@ -202,19 +203,14 @@ export default function ChangeRequestTodayTomorrowPage() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
                 Customer
               </label>
-              <select
+              <CustomerSearchSelector
                 value={selectedCustomer}
-                onChange={(e) => setSelectedCustomer(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
-              >
-                <option value="">[ Select Customer ▼ ]</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+                onChange={id => setSelectedCustomer(id)}
+                preloadedCustomers={customers}
+                allowAll={true}
+                allLabel="[ All Customers ]"
+                placeholder="Search customer by name, code, or phone..."
+              />
             </div>
 
             {/* City Filter */}
@@ -228,7 +224,7 @@ export default function ChangeRequestTodayTomorrowPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select City ▼ ]</option>
+                <option value="">[ Select City ]</option>
                 {cities.map((ct) => (
                   <option key={ct} value={ct}>
                     {ct}

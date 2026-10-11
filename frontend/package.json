@@ -13,6 +13,8 @@
     "@hookform/resolvers": "^5.7.1",
     "axios": "^1.19.0",
     "framer-motion": "^13.0.0",
+    "jspdf": "^4.2.1",
+    "jspdf-autotable": "^5.0.8",
     "leaflet": "^1.9.4",
     "lucide-react": "^1.51.0",
     "react": "^19.2.8",

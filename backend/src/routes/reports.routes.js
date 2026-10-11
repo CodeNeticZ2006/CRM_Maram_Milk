@@ -16,6 +16,7 @@ const {
   getPaymentApprovalOptions, getPaymentApprovalReport,
   getManageCustomerBillingOptions, getManageCustomerBillingReport,
   getSalesReportOptions, getSalesReport,
+  getMilkRequirementReport, getSubscriptionStatusReport, getPauseImpactReport,
 } = require('../controllers/reports.controller');
 
 router.use(authenticate);
@@ -61,6 +62,11 @@ router.get('/customer-billing-options',   getManageCustomerBillingOptions);
 router.get('/customer-billing',            getManageCustomerBillingReport);
 router.get('/sales-report-options',       getSalesReportOptions);
 router.get('/sales-report',                getSalesReport);
+
+// Subscription & Scheduler Reports
+router.get('/milk-requirement-report',    getMilkRequirementReport);
+router.get('/subscription-status-report', getSubscriptionStatusReport);
+router.get('/pause-impact-report',        getPauseImpactReport);
 
 module.exports = router;
 

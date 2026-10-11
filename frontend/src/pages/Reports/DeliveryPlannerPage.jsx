@@ -9,6 +9,7 @@ import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useOperationalDay from '../../hooks/useOperationalDay';
 import { exportDeliveryPlannerExcel, exportDeliveryPlannerPDF } from '../../utils/exportUtils';
+import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
 
 export default function DeliveryPlannerPage() {
   const { operationalDate } = useOperationalDay();
@@ -265,20 +266,14 @@ export default function DeliveryPlannerPage() {
             <label className="form-label" style={{ fontWeight: 600, marginBottom: 6, display: 'block', fontSize: 13 }}>
               Customer Name:
             </label>
-            <select
-              className="form-select"
+            <CustomerSearchSelector
               value={selectedCustomerId}
-              onChange={e => setSelectedCustomerId(e.target.value)}
+              onChange={id => setSelectedCustomerId(id)}
+              preloadedCustomers={customers}
+              allowAll={false}
               disabled={optionsLoading}
-              style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}
-            >
-              <option value="">[ Select Customer ]</option>
-              {customers.map(c => (
-                <option key={c.id} value={c.id}>
-                  {c.label || `${c.name} (${c.code || c.id})`}
-                </option>
-              ))}
-            </select>
+              placeholder="Search customer by name, code, or phone..."
+            />
           </div>
 
           <button

@@ -2,12 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import {
-  MdArrowBack, MdViewList, MdPictureAsPdf, MdFileDownload,
-  MdSearch, MdRefresh, MdBuild, MdContactPage, MdChevronLeft, MdChevronRight
-} from 'react-icons/md';
+  ArrowLeft, List, FileText, Download,
+  Search, RotateCcw, SlidersHorizontal, UserCheck, ChevronLeft, ChevronRight
+} from 'lucide-react';
 import toast from 'react-hot-toast';
 import api from '../../services/api';
 import { exportToExcel, exportToPDF } from '../../utils/exportUtils';
+import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
 
 export default function CustomerInfoReportPage() {
   const navigate = useNavigate();
@@ -252,7 +253,7 @@ export default function CustomerInfoReportPage() {
   const endIdx = Math.min(currentPage * pageSize, totalRecords);
 
   return (
-    <div style={{ padding: '24px', maxWidth: '1400px', margin: '0 auto' }}>
+    <div style={{ padding: '24px', maxWidth: '1400px', width: '100%', minWidth: 0, margin: '0 auto', boxSizing: 'border-box' }}>
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
@@ -268,7 +269,7 @@ export default function CustomerInfoReportPage() {
               onClick={() => navigate('/reports/general')}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, padding: '7px 14px', borderRadius: '8px' }}
             >
-              <MdArrowBack style={{ fontSize: 16 }} /> Back
+              <ArrowLeft size={16} /> Back
             </button>
 
             <button
@@ -276,7 +277,7 @@ export default function CustomerInfoReportPage() {
               onClick={() => { setSelectedCustomerId(''); setCurrentPage(1); fetchReportData(1, pageSize, ''); }}
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontWeight: 600, padding: '7px 14px', borderRadius: '8px' }}
             >
-              <MdViewList style={{ fontSize: 16 }} /> List
+              <List size={16} /> List
             </button>
           </div>
 
@@ -299,7 +300,7 @@ export default function CustomerInfoReportPage() {
                 cursor: (totalRecords === 0 || exportingPdf || exportingExcel) ? 'not-allowed' : 'pointer'
               }}
             >
-              <MdPictureAsPdf style={{ fontSize: 16 }} />
+              <FileText size={16} />
               {exportingPdf ? 'Generating PDF...' : 'Export to PDF'}
             </button>
 
@@ -321,7 +322,7 @@ export default function CustomerInfoReportPage() {
                 cursor: (totalRecords === 0 || exportingPdf || exportingExcel) ? 'not-allowed' : 'pointer'
               }}
             >
-              <MdFileDownload style={{ fontSize: 16 }} />
+              <Download size={16} />
               {exportingExcel ? 'Generating Excel...' : '↓ Export to Excel'}
             </button>
           </div>
@@ -336,7 +337,7 @@ export default function CustomerInfoReportPage() {
               Reports &rsaquo; General
             </div>
             <h1 style={{ fontSize: 22, fontWeight: 700, color: 'var(--text-primary, #0f172a)', display: 'flex', alignItems: 'center', gap: 10, margin: 0 }}>
-              <MdContactPage style={{ color: 'var(--primary, #3b82f6)', fontSize: 26 }} />
+              <UserCheck size={24} style={{ color: 'var(--primary, #3b82f6)' }} />
               Customer Information Report
             </h1>
           </div>
@@ -361,7 +362,7 @@ export default function CustomerInfoReportPage() {
               className="btn btn-secondary btn-sm"
               style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '6px 12px', borderRadius: '6px', fontSize: 13, fontWeight: 600 }}
             >
-              <MdBuild style={{ fontSize: 14 }} /> Layout
+              <SlidersHorizontal size={14} /> Layout
             </button>
           </div>
         </div>
@@ -384,17 +385,14 @@ export default function CustomerInfoReportPage() {
               <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #475569)', marginBottom: 6 }}>
                 Customer Name
               </label>
-              <select
-                className="form-select"
+              <CustomerSearchSelector
                 value={selectedCustomerId}
-                onChange={e => setSelectedCustomerId(e.target.value)}
-                style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border, #cbd5e1)', fontSize: 13 }}
-              >
-                <option value="">[ Select Customer Name ▼ ]</option>
-                {customerOptions.map(c => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
+                onChange={id => setSelectedCustomerId(id)}
+                preloadedCustomers={customerOptions}
+                allowAll={true}
+                allLabel="[ All Customers ]"
+                placeholder="Search customer by name, code, or phone..."
+              />
             </div>
 
             <div style={{ display: 'flex', gap: 10 }}>
@@ -404,7 +402,7 @@ export default function CustomerInfoReportPage() {
                 disabled={loading}
                 style={{ padding: '9px 20px', borderRadius: '8px', fontWeight: 600, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
-                <MdSearch style={{ fontSize: 16 }} /> Search
+                <Search size={16} /> Search
               </button>
 
               <button
@@ -413,7 +411,7 @@ export default function CustomerInfoReportPage() {
                 disabled={loading}
                 style={{ padding: '9px 16px', borderRadius: '8px', fontWeight: 600, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 6 }}
               >
-                <MdRefresh style={{ fontSize: 16 }} /> Reset
+                <RotateCcw size={16} /> Reset
               </button>
             </div>
           </div>
@@ -422,7 +420,7 @@ export default function CustomerInfoReportPage() {
         {/* ════════════════════════════════════════════════════════
            PAGINATION INFO & REPORT TABLE
            ════════════════════════════════════════════════════════ */}
-        <div style={{ background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border, #e2e8f0)', borderRadius: '12px', overflow: 'hidden', boxShadow: 'var(--shadow-sm)' }}>
+        <div style={{ background: 'var(--bg-card, #ffffff)', border: '1px solid var(--border, #e2e8f0)', borderRadius: '12px', overflow: 'hidden', boxShadow: 'var(--shadow-sm)', width: '100%', minWidth: 0 }}>
           {/* Table Toolbar & Pagination Counter */}
           <div style={{ padding: '14px 20px', borderBottom: '1px solid var(--border, #e2e8f0)', background: '#f8fafc', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 10 }}>
             <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary, #475569)' }}>
@@ -436,9 +434,10 @@ export default function CustomerInfoReportPage() {
                   className="btn btn-secondary btn-sm"
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1 || loading}
-                  style={{ padding: '4px 8px', borderRadius: '6px' }}
+                  style={{ padding: '6px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center' }}
+                  title="Previous Page"
                 >
-                  &laquo;
+                  <ChevronLeft size={15} />
                 </button>
 
                 {renderPaginationButtons().map(p => (
@@ -462,9 +461,10 @@ export default function CustomerInfoReportPage() {
                   className="btn btn-secondary btn-sm"
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages || loading}
-                  style={{ padding: '4px 8px', borderRadius: '6px' }}
+                  style={{ padding: '6px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center' }}
+                  title="Next Page"
                 >
-                  &raquo;
+                  <ChevronRight size={15} />
                 </button>
               </div>
             )}
@@ -488,7 +488,7 @@ export default function CustomerInfoReportPage() {
             </div>
           ) : (
             /* Report Table */
-            <div style={{ overflowX: 'auto' }}>
+            <div className="table-wrapper" style={{ overflowX: 'auto', width: '100%', minWidth: 0, WebkitOverflowScrolling: 'touch' }}>
               <table className="table" style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
                 <thead>
                   <tr style={{ background: '#f1f5f9', borderBottom: '2px solid var(--border, #cbd5e1)', textAlign: 'left' }}>
@@ -552,9 +552,10 @@ export default function CustomerInfoReportPage() {
                   className="btn btn-secondary btn-sm"
                   onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
                   disabled={currentPage === 1}
-                  style={{ padding: '4px 8px', borderRadius: '6px' }}
+                  style={{ padding: '6px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center' }}
+                  title="Previous Page"
                 >
-                  &laquo;
+                  <ChevronLeft size={15} />
                 </button>
 
                 {renderPaginationButtons().map(p => (
@@ -577,9 +578,10 @@ export default function CustomerInfoReportPage() {
                   className="btn btn-secondary btn-sm"
                   onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
                   disabled={currentPage === totalPages}
-                  style={{ padding: '4px 8px', borderRadius: '6px' }}
+                  style={{ padding: '6px 8px', borderRadius: '6px', display: 'inline-flex', alignItems: 'center' }}
+                  title="Next Page"
                 >
-                  &raquo;
+                  <ChevronRight size={15} />
                 </button>
               </div>
             </div>

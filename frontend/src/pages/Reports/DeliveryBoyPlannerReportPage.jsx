@@ -221,7 +221,7 @@ export default function DeliveryBoyPlannerReportPage() {
                 disabled={optionsLoading}
                 style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}
               >
-                <option value="">[ Select Delivery Boy ▼ ]</option>
+                <option value="">[ Select Delivery Boy ]</option>
                 {deliveryBoys.map(dp => (
                   <option key={dp.id} value={dp.id}>
                     {dp.label || dp.name}

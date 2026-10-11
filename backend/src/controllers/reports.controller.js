@@ -419,28 +419,34 @@ const getAuditTrailReport = async (req, res, next) => {
   try {
     const { customer_id = '', date_from = '', date_to = '' } = req.query;
 
-    let whereClauses = ['1=1'];
-    let params = [];
+    const hasCustomer = customer_id && customer_id !== 'All' && customer_id !== '[ All Customers ]';
+    const isUuid = hasCustomer && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(customer_id.trim());
+
+    // 1. Wallet Transactions
+    let wtWhere = ['1=1'];
+    let wtParams = [];
     let pi = 1;
 
-    if (customer_id) {
-      whereClauses.push(`wt.customer_id = $${pi++}`);
-      params.push(customer_id);
+    if (hasCustomer) {
+      if (isUuid) {
+        wtWhere.push(`wt.customer_id = $${pi++}`);
+        wtParams.push(customer_id.trim());
+      } else {
+        wtWhere.push(`(c.customer_code ILIKE $${pi} OR c.name ILIKE $${pi})`);
+        wtParams.push(`%${customer_id.trim()}%`);
+        pi++;
+      }
     }
-
     if (date_from) {
-      whereClauses.push(`DATE(wt.created_at AT TIME ZONE 'Asia/Kolkata') >= $${pi++}`);
-      params.push(date_from);
+      wtWhere.push(`DATE(wt.created_at AT TIME ZONE 'Asia/Kolkata') >= $${pi++}`);
+      wtParams.push(date_from);
     }
-
     if (date_to) {
-      whereClauses.push(`DATE(wt.created_at AT TIME ZONE 'Asia/Kolkata') <= $${pi++}`);
-      params.push(date_to);
+      wtWhere.push(`DATE(wt.created_at AT TIME ZONE 'Asia/Kolkata') <= $${pi++}`);
+      wtParams.push(date_to);
     }
 
-    const whereStr = whereClauses.join(' AND ');
-
-    const result = await readFromCRM(
+    const wtRes = await readFromCRM(
       `SELECT 
         wt.id,
         wt.created_at,
@@ -456,26 +462,33 @@ const getAuditTrailReport = async (req, res, next) => {
         c.phone as customer_phone
        FROM wallet_transactions wt
        LEFT JOIN customers c ON c.id = wt.customer_id
-       WHERE ${whereStr}
+       WHERE ${wtWhere.join(' AND ')}
        ORDER BY wt.created_at DESC`,
-      params
+      wtParams
     ).catch(() => ({ rows: [] }));
 
-    let paymentParams = [];
-    let paymentWhere = ['1=1'];
+    // 2. Payments
+    let pWhere = ['1=1'];
+    let pParams = [];
     let ppi = 1;
 
-    if (customer_id) {
-      paymentWhere.push(`p.customer_id = $${ppi++}`);
-      paymentParams.push(customer_id);
+    if (hasCustomer) {
+      if (isUuid) {
+        pWhere.push(`p.customer_id = $${ppi++}`);
+        pParams.push(customer_id.trim());
+      } else {
+        pWhere.push(`(c.customer_code ILIKE $${ppi} OR c.name ILIKE $${ppi})`);
+        pParams.push(`%${customer_id.trim()}%`);
+        ppi++;
+      }
     }
     if (date_from) {
-      paymentWhere.push(`p.payment_date >= $${ppi++}`);
-      paymentParams.push(date_from);
+      pWhere.push(`p.payment_date >= $${ppi++}`);
+      pParams.push(date_from);
     }
     if (date_to) {
-      paymentWhere.push(`p.payment_date <= $${ppi++}`);
-      paymentParams.push(date_to);
+      pWhere.push(`p.payment_date <= $${ppi++}`);
+      pParams.push(date_to);
     }
 
     const paymentsRes = await readFromCRM(
@@ -493,12 +506,113 @@ const getAuditTrailReport = async (req, res, next) => {
         c.name as customer_name
        FROM payments p
        LEFT JOIN customers c ON c.id = p.customer_id
-       WHERE ${paymentWhere.join(' AND ')}
+       WHERE ${pWhere.join(' AND ')}
        ORDER BY p.created_at DESC`,
-      paymentParams
+      pParams
     ).catch(() => ({ rows: [] }));
 
-    const mappedWallet = result.rows.map((row) => {
+    // 3. Subscriptions (Created / Configured)
+    let subWhere = ['1=1'];
+    let subParams = [];
+    let spi = 1;
+
+    if (hasCustomer) {
+      if (isUuid) {
+        subWhere.push(`s.customer_id = $${spi++}`);
+        subParams.push(customer_id.trim());
+      } else {
+        subWhere.push(`(c.customer_code ILIKE $${spi} OR c.name ILIKE $${spi})`);
+        subParams.push(`%${customer_id.trim()}%`);
+        spi++;
+      }
+    }
+    if (date_from) {
+      subWhere.push(`DATE(s.created_at AT TIME ZONE 'Asia/Kolkata') >= $${spi++}`);
+      subParams.push(date_from);
+    }
+    if (date_to) {
+      subWhere.push(`DATE(s.created_at AT TIME ZONE 'Asia/Kolkata') <= $${spi++}`);
+      subParams.push(date_to);
+    }
+
+    const subRes = await readFromCRM(
+      `SELECT 
+        s.id,
+        s.customer_id,
+        s.created_at,
+        s.start_date,
+        s.frequency_type,
+        s.status,
+        s.hub,
+        s.delivery_person_name,
+        c.customer_code,
+        c.name as customer_name,
+        c.phone as customer_phone,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'product_name', p.name,
+              'quantity', si.quantity,
+              'unit', p.unit
+            ))
+            FROM subscription_items si
+            JOIN products p ON p.id = si.product_id
+            WHERE si.subscription_id = s.id AND si.is_active = TRUE
+          ), '[]'::json
+        ) AS items
+       FROM subscriptions s
+       LEFT JOIN customers c ON c.id = s.customer_id
+       WHERE ${subWhere.join(' AND ')}
+       ORDER BY s.created_at DESC`,
+      subParams
+    ).catch(() => ({ rows: [] }));
+
+    // 4. Subscription Pauses Scheduled
+    let pauseWhere = ['1=1'];
+    let pauseParams = [];
+    let pzi = 1;
+
+    if (hasCustomer) {
+      if (isUuid) {
+        pauseWhere.push(`s.customer_id = $${pzi++}`);
+        pauseParams.push(customer_id.trim());
+      } else {
+        pauseWhere.push(`(c.customer_code ILIKE $${pzi} OR c.name ILIKE $${pzi})`);
+        pauseParams.push(`%${customer_id.trim()}%`);
+        pzi++;
+      }
+    }
+    if (date_from) {
+      pauseWhere.push(`sp.pause_start_date >= $${pzi++}`);
+      pauseParams.push(date_from);
+    }
+    if (date_to) {
+      pauseWhere.push(`sp.pause_end_date <= $${pzi++}`);
+      pauseParams.push(date_to);
+    }
+
+    const pauseRes = await readFromCRM(
+      `SELECT 
+        sp.id,
+        sp.subscription_id,
+        sp.created_at,
+        sp.pause_start_date,
+        sp.pause_end_date,
+        sp.reason,
+        sp.created_by,
+        s.customer_id,
+        c.customer_code,
+        c.name as customer_name
+       FROM subscription_pauses sp
+       JOIN subscriptions s ON s.id = sp.subscription_id
+       LEFT JOIN customers c ON c.id = s.customer_id
+       WHERE ${pauseWhere.join(' AND ')}
+       ORDER BY sp.created_at DESC`,
+      pauseParams
+    ).catch(() => ({ rows: [] }));
+
+    // Format Wallet rows
+    const mappedWallet = wtRes.rows.map((row) => {
       const custLabel = row.customer_code ? `${row.customer_code} - ${row.customer_name}` : row.customer_name || 'Customer';
       const istDate = row.created_at ? new Date(row.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '';
       const actionType = row.type || 'Wallet Transaction';
@@ -524,6 +638,7 @@ ${row.reference ? 'Reference: ' + row.reference + '\n' : ''}${row.description ? 
       };
     });
 
+    // Format Payment rows
     const mappedPayments = paymentsRes.rows.map((p) => {
       const custLabel = p.customer_code ? `${p.customer_code} - ${p.customer_name}` : p.customer_name || 'Customer';
       const istDate = p.created_at ? new Date(p.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : (p.payment_date || '');
@@ -548,12 +663,57 @@ ${p.reference ? 'Transaction Ref: ' + p.reference : ''}`.trim();
       };
     });
 
-    const combined = [...mappedWallet];
-    for (const pm of mappedPayments) {
-      if (!combined.some(c => c.id === pm.id)) {
-        combined.push(pm);
-      }
-    }
+    // Format Subscription rows
+    const mappedSubs = subRes.rows.map((s) => {
+      const custLabel = s.customer_code ? `${s.customer_code} - ${s.customer_name}` : s.customer_name || 'Customer';
+      const istDate = s.created_at ? new Date(s.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : (s.start_date || '');
+      const itemsList = (s.items || []).map(i => `${i.product_name} (${i.quantity} ${i.unit || ''})`).join(', ') || 'No Items';
+      const narrationText = `Subscription Added / Configured
+Customer: ${custLabel}
+Start Date: ${s.start_date || 'N/A'}
+Frequency: ${s.frequency_type || 'DAILY'}
+Status: ${s.status || 'Active'}
+Items: ${itemsList}
+Hub: ${s.hub || 'Default'} | Delivery Boy: ${s.delivery_person_name || 'Unassigned'}`.trim();
+
+      return {
+        id: s.id,
+        date: istDate,
+        raw_date: s.created_at,
+        user: 'Super Admin',
+        action_taken_on: custLabel,
+        narration: narrationText,
+        amount: 0,
+        type: 'Subscription Added',
+        customer_id: s.customer_id,
+      };
+    });
+
+    // Format Pause rows
+    const mappedPauses = pauseRes.rows.map((sp) => {
+      const custLabel = sp.customer_code ? `${sp.customer_code} - ${sp.customer_name}` : sp.customer_name || 'Customer';
+      const istDate = sp.created_at ? new Date(sp.created_at).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata' }) : '';
+      const narrationText = `Subscription Pause Scheduled
+Customer: ${custLabel}
+Pause Duration: ${sp.pause_start_date} to ${sp.pause_end_date}
+Reason: ${sp.reason || 'Customer Vacation / Pause Request'}
+Configured by: ${sp.created_by || 'Super Admin'}`.trim();
+
+      return {
+        id: sp.id,
+        date: istDate || sp.pause_start_date,
+        raw_date: sp.created_at,
+        user: sp.created_by || 'Super Admin',
+        action_taken_on: custLabel,
+        narration: narrationText,
+        amount: 0,
+        type: 'Subscription Pause',
+        customer_id: sp.customer_id,
+      };
+    });
+
+    // Combine all audit events and sort chronologically descending
+    const combined = [...mappedWallet, ...mappedPayments, ...mappedSubs, ...mappedPauses];
     combined.sort((a, b) => new Date(b.raw_date || 0) - new Date(a.raw_date || 0));
 
     const finalRows = combined.map((item, idx) => ({
@@ -571,11 +731,9 @@ ${p.reference ? 'Transaction Ref: ' + p.reference : ''}`.trim();
 };
 
 // ─────────────────────────────────────────────
-// GET /api/reports/daily-planner — General Reports: Daily Planner / Delivery Report
-// ─────────────────────────────────────────────
 const getDailyPlannerReport = async (req, res, next) => {
   try {
-    const { date, dp_ref_id = '', area_id = '', area = '' } = req.query;
+    const { date, dp_ref_id = '', area_id = '', area = '', customer_id = '' } = req.query;
     const targetDate = date || getExpectedOperationalDate();
     const targetArea = area || area_id;
 
@@ -741,6 +899,15 @@ const getDailyPlannerReport = async (req, res, next) => {
     });
 
     let combined = [...mappedSubscriptions, ...mappedAdhoc];
+
+    if (customer_id && customer_id.trim() !== '' && customer_id !== 'All') {
+      const cFilter = customer_id.trim().toLowerCase();
+      combined = combined.filter(item =>
+        item.customer_id === customer_id ||
+        (item.customer_code || '').toLowerCase() === cFilter ||
+        (item.customer_name || '').toLowerCase().includes(cFilter)
+      );
+    }
 
     if (dp_ref_id) {
       combined = combined.filter(item => 
@@ -1021,9 +1188,17 @@ const getCustomerInfoReport = async (req, res, next) => {
     let params = [];
     let pi = 1;
 
-    if (customer_id) {
-      whereClauses.push(`c.id = $${pi++}`);
-      params.push(customer_id);
+    if (customer_id && customer_id.trim() !== '') {
+      const trimmed = customer_id.trim();
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmed);
+      if (isUuid) {
+        whereClauses.push(`c.id = $${pi++}`);
+        params.push(trimmed);
+      } else {
+        whereClauses.push(`(c.customer_code ILIKE $${pi} OR c.name ILIKE $${pi})`);
+        params.push(`%${trimmed}%`);
+        pi++;
+      }
     }
 
     const whereStr = whereClauses.join(' AND ');
@@ -1143,17 +1318,19 @@ const getDeliveryPlannerCalendar = async (req, res, next) => {
     const startDateStr = `${monthStr}-01`;
     const endDateStr = `${monthStr}-${String(daysInMonth).padStart(2, '0')}`;
 
-    // 1. Fetch Customer info
+    // 1. Fetch Customer info (support UUID and customer_code, query valid 'phone' column)
+    const trimmedCustId = String(customer_id).trim();
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(trimmedCustId);
     let custRes;
-    if (!isNaN(customer_id)) {
+    if (isUuid) {
       custRes = await readFromCRM(
-        `SELECT id, customer_code, name, mobile, address, city, hub FROM customers WHERE id = $1 OR customer_code = $2 LIMIT 1`,
-        [parseInt(customer_id, 10), String(customer_id)]
+        `SELECT id, customer_code, name, phone, address, status FROM customers WHERE id = $1 LIMIT 1`,
+        [trimmedCustId]
       );
     } else {
       custRes = await readFromCRM(
-        `SELECT id, customer_code, name, mobile, address, city, hub FROM customers WHERE customer_code = $1 LIMIT 1`,
-        [String(customer_id)]
+        `SELECT id, customer_code, name, phone, address, status FROM customers WHERE customer_code = $1 OR id::text = $1 LIMIT 1`,
+        [trimmedCustId]
       );
     }
 
@@ -1293,10 +1470,11 @@ const getDeliveryPlannerCalendar = async (req, res, next) => {
         id: customer.id,
         customer_code: customer.customer_code || `CUST-${customer.id}`,
         name: customer.name,
-        mobile: customer.mobile || 'N/A',
+        mobile: customer.phone || 'N/A',
+        phone: customer.phone || 'N/A',
         address: customer.address || 'N/A',
-        city: customer.city || 'Chennai',
-        hub: customer.hub || 'Royapettah'
+        city: 'Chennai',
+        hub: 'Royapettah'
       },
       month: monthStr,
       monthName,
@@ -2829,31 +3007,55 @@ const getPaymentCollectionReport = async (req, res, next) => {
       export_all = false,
     } = req.query;
 
-    const todayStr = new Date().toISOString().substring(0, 10);
-    const startDate = date_from || todayStr;
-    const endDate = date_to || startDate;
+    const istToday = getISTDate();
+    let startDate = date_from;
+    let endDate = date_to;
 
-    const [paymentsRes, walletTxRes, custRes, dpRes] = await Promise.all([
+    // If no dates provided, default to current month to today
+    if (!startDate && !endDate) {
+      const d = new Date(istToday);
+      d.setDate(1);
+      startDate = d.toISOString().substring(0, 10);
+      endDate = istToday;
+    } else {
+      if (!startDate) startDate = endDate;
+      if (!endDate) endDate = startDate;
+    }
+
+    const [paymentsRes, walletTxRes, dpRes] = await Promise.all([
+      // 1. Authoritative completed/verified payments from payments table
       readFromCRM(
-        `SELECT p.*, c.name as customer_name, c.customer_code, c.phone, c.customer_type, c.city, c.dp_ref_id
+        `SELECT p.id, p.amount, p.method, p.transaction_ref, p.status,
+                COALESCE(p.payment_date, DATE(p.created_at AT TIME ZONE 'Asia/Kolkata'))::text as date,
+                p.customer_id, c.name as customer_name, c.customer_code, c.phone, c.dp_ref_id
          FROM payments p
          LEFT JOIN customers c ON c.id = p.customer_id
-         WHERE p.payment_date >= $1 AND p.payment_date <= $2`,
+         WHERE COALESCE(p.payment_date, DATE(p.created_at AT TIME ZONE 'Asia/Kolkata')) >= $1
+           AND COALESCE(p.payment_date, DATE(p.created_at AT TIME ZONE 'Asia/Kolkata')) <= $2
+           AND p.status IN ('Completed', 'Verified', 'Success', 'Approved')`,
         [startDate, endDate]
       ).catch(() => ({ rows: [] })),
+
+      // 2. Authoritative completed wallet recharges from wallet_transactions table
       readFromCRM(
-        `SELECT wt.*, c.name as customer_name, c.customer_code, c.phone, c.customer_type, c.city, c.dp_ref_id
+        `SELECT wt.id, wt.amount, wt.method, wt.reference as transaction_ref, wt.status,
+                DATE(wt.created_at AT TIME ZONE 'Asia/Kolkata')::text as date,
+                wt.description,
+                wt.customer_id, c.name as customer_name, c.customer_code, c.phone, c.dp_ref_id
          FROM wallet_transactions wt
          LEFT JOIN customers c ON c.id = wt.customer_id
-         WHERE wt.created_at::date >= $1 AND wt.created_at::date <= $2`,
+         WHERE DATE(wt.created_at AT TIME ZONE 'Asia/Kolkata') >= $1
+           AND DATE(wt.created_at AT TIME ZONE 'Asia/Kolkata') <= $2
+           AND wt.type = 'Recharge'
+           AND wt.status = 'Completed'
+           AND NOT EXISTS (
+             SELECT 1 FROM payments p
+             WHERE p.transaction_ref = wt.reference AND wt.reference IS NOT NULL AND wt.reference != ''
+           )`,
         [startDate, endDate]
       ).catch(() => ({ rows: [] })),
-      readFromCRM(
-        `SELECT c.id, c.name, c.customer_code, c.phone, c.customer_type, c.city, c.dp_ref_id, w.balance, w.total_recharged
-         FROM customers c
-         LEFT JOIN wallet w ON w.customer_id = c.id
-         WHERE c.status = 'Active'`
-      ).catch(() => ({ rows: [] })),
+
+      // Read-only lookup for delivery boy names from DB2
       readFromApp(`SELECT id, name, "dpCode" FROM "DeliveryPerson"`).catch(() => ({ rows: [] })),
     ]);
 
@@ -2870,26 +3072,27 @@ const getPaymentCollectionReport = async (req, res, next) => {
       const pMethod = p.method || 'Upi';
       const isOnline = pMethod !== 'Cash';
       const modeStr = isOnline ? 'Online' : 'Cash';
-      const dpName = dpMap.get(p.dp_ref_id) || 'Delivery Boy';
+      const dpName = dpMap.get(p.dp_ref_id) || 'Unassigned';
       const custCode = p.customer_code || 'CUST';
       const custName = p.customer_name || 'Customer';
       const phone = p.phone || '';
-      const cityStr = p.city || 'Chennai';
+      const cityStr = city || 'Chennai';
       const custLabel = `${custCode} : ${custName} : ${phone} : ${cityStr}`;
 
       records.push({
         id: p.id,
-        date: p.payment_date ? String(p.payment_date).substring(0, 10) : startDate,
+        date: p.date,
         customer_id: p.customer_id,
+        customer_code: custCode,
         customer: custLabel,
-        customer_type: p.customer_type || 'Prepaid',
+        customer_type: 'Prepaid',
         delivery_boy: dpName,
         dp_ref_id: p.dp_ref_id,
         amount: parseFloat(p.amount || 0),
-        promocode: p.promocode || '-',
-        cashback_amount: parseFloat(p.cashback_amount || 0),
+        promocode: '-',
+        cashback_amount: 0,
         payment_method: pMethod,
-        remark: p.status ? `Payment ${p.status}` : 'Payment Received',
+        remark: `Payment (${p.status})`,
         mode: modeStr,
         narration: p.transaction_ref ? `Ref: ${p.transaction_ref}` : 'Online Payment Collection',
       });
@@ -2897,104 +3100,66 @@ const getPaymentCollectionReport = async (req, res, next) => {
 
     // Map wallet_transactions table rows
     walletTxRes.rows.forEach(wt => {
-      const pMethod = wt.method || 'Wallet';
+      const pMethod = wt.method || 'Cash';
       const isOnline = pMethod !== 'Cash';
       const modeStr = isOnline ? 'Online' : 'Cash';
-      const dpName = dpMap.get(wt.dp_ref_id) || 'Delivery Boy';
+      const dpName = dpMap.get(wt.dp_ref_id) || 'Unassigned';
       const custCode = wt.customer_code || 'CUST';
       const custName = wt.customer_name || 'Customer';
       const phone = wt.phone || '';
-      const cityStr = wt.city || 'Chennai';
+      const cityStr = city || 'Chennai';
       const custLabel = `${custCode} : ${custName} : ${phone} : ${cityStr}`;
 
       records.push({
         id: wt.id,
-        date: wt.created_at ? String(wt.created_at).substring(0, 10) : startDate,
+        date: wt.date,
         customer_id: wt.customer_id,
+        customer_code: custCode,
         customer: custLabel,
-        customer_type: wt.customer_type || 'Prepaid',
+        customer_type: 'Prepaid',
         delivery_boy: dpName,
         dp_ref_id: wt.dp_ref_id,
         amount: parseFloat(wt.amount || 0),
         promocode: '-',
         cashback_amount: 0,
         payment_method: pMethod,
-        remark: wt.description || `Wallet ${wt.type || 'Recharge'}`,
+        remark: wt.description || 'Wallet Recharge',
         mode: modeStr,
-        narration: wt.reference ? `Ref: ${wt.reference}` : 'Wallet Recharge Collection',
+        narration: wt.transaction_ref ? `Ref: ${wt.transaction_ref}` : 'Wallet Recharge Collection',
       });
     });
 
-    // Fallback: If 0 payment rows in DB, generate from active customers / wallet balances
-    if (records.length === 0) {
-      const datesList = [];
-      let curr = new Date(startDate);
-      const endD = new Date(endDate);
-      while (curr <= endD) {
-        datesList.push(curr.toISOString().substring(0, 10));
-        curr.setDate(curr.getDate() + 1);
-      }
-
-      const sampleMethods = ['Upi', 'Card', 'Netbanking', 'Wallet', 'Cash'];
-
-      datesList.forEach((dStr, dIdx) => {
-        custRes.rows.forEach((c, cIdx) => {
-          const custCode = c.customer_code || `ART${cIdx + 1}`;
-          const custName = c.name || 'Customer';
-          const phone = c.phone || '9710933991';
-          const cityStr = c.city || 'Chennai';
-          const custLabel = `${custCode} : ${custName} : ${phone} : ${cityStr}`;
-          const dpName = dpMap.get(c.dp_ref_id) || 'W.Mblm 1';
-          
-          const pMethod = sampleMethods[(cIdx + dIdx) % sampleMethods.length];
-          const modeStr = pMethod === 'Cash' ? 'Cash' : 'Online';
-          const rechargeAmt = 500 + ((cIdx % 5) * 200);
-          const cashback = (cIdx % 3 === 0) ? 50 : 0;
-          const promo = cashback > 0 ? 'SUMMER50' : '-';
-
-          records.push({
-            id: `pm-${dStr}-${c.id}`,
-            date: dStr,
-            customer_id: c.id,
-            customer: custLabel,
-            customer_type: c.customer_type || 'Prepaid',
-            delivery_boy: dpName,
-            dp_ref_id: c.dp_ref_id,
-            amount: rechargeAmt,
-            promocode: promo,
-            cashback_amount: cashback,
-            payment_method: pMethod,
-            remark: 'Wallet Recharge - Completed',
-            mode: modeStr,
-            narration: `Payment collection on ${dStr} via ${pMethod}`,
-          });
-        });
-      });
+    // Apply Filters (Real records only — NO fake mock fallback)
+    if (customer_id && customer_id !== 'All' && !customer_id.includes('Select Customer')) {
+      const cFilter = customer_id.trim().toLowerCase();
+      records = records.filter(r =>
+        r.customer_id === customer_id ||
+        (r.customer_code || '').toLowerCase() === cFilter ||
+        r.customer.toLowerCase().includes(cFilter)
+      );
     }
 
-    // Apply Filters
-    if (customer_id && customer_id !== 'All' && customer_id !== '[ Select Customer ▼ ]') {
-      records = records.filter(r => r.customer_id === customer_id || r.customer.toLowerCase().includes(customer_id.toLowerCase()));
-    }
-
-    if (customer_type && customer_type !== 'All' && customer_type !== '[ Select Customer Type ▼ ]') {
+    if (customer_type && customer_type !== 'All' && !customer_type.includes('Select Customer Type')) {
       records = records.filter(r => r.customer_type.toLowerCase() === customer_type.toLowerCase());
     }
 
-    if (delivery_boy_id && delivery_boy_id !== 'All' && delivery_boy_id !== '[ Select Delivery Boy ▼ ]') {
-      records = records.filter(r => r.dp_ref_id === delivery_boy_id || r.delivery_boy.toLowerCase().includes(delivery_boy_id.toLowerCase()));
+    if (delivery_boy_id && delivery_boy_id !== 'All' && !delivery_boy_id.includes('Select Delivery Boy')) {
+      records = records.filter(r =>
+        r.dp_ref_id === delivery_boy_id ||
+        r.delivery_boy.toLowerCase().includes(delivery_boy_id.toLowerCase())
+      );
     }
 
-    if (mode && mode !== 'All' && mode !== '[ Select Mode ▼ ]') {
+    if (mode && mode !== 'All' && !mode.includes('Select Mode')) {
       records = records.filter(r => r.mode.toLowerCase() === mode.toLowerCase());
     }
 
-    if (payment_method && payment_method !== 'All' && payment_method !== '[ Select Payment Method ▼ ]') {
+    if (payment_method && payment_method !== 'All' && !payment_method.includes('Select Payment Method')) {
       records = records.filter(r => r.payment_method.toLowerCase() === payment_method.toLowerCase());
     }
 
-    // Sort by date desc, then customer name asc
-    records.sort((a, b) => b.date.localeCompare(a.date) || a.customer.localeCompare(b.customer));
+    // Sort by date desc, then customer asc
+    records.sort((a, b) => (b.date || '').localeCompare(a.date || '') || a.customer.localeCompare(b.customer));
 
     // Summary Totals
     const totalAmountRecharged = parseFloat(records.reduce((sum, r) => sum + r.amount, 0).toFixed(2));
@@ -3494,6 +3659,291 @@ const getSalesReport = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ─────────────────────────────────────────────
+// GET /api/reports/milk-requirement-report
+// ─────────────────────────────────────────────
+const getMilkRequirementReport = async (req, res, next) => {
+  try {
+    const { date } = req.query;
+    const targetDate = date || getExpectedOperationalDate();
+
+    // Authoritative deliveries from scheduler service
+    const deliveries = await getDeliveriesForDate(targetDate);
+
+    // Aggregate by product
+    const productMap = {};
+    let totalMilkLiters = 0;
+    let totalOtherUnits = 0;
+
+    deliveries.forEach(deliv => {
+      (deliv.items || []).forEach(item => {
+        const prodId = item.product_id || item.productId;
+        const prodName = item.product_name || item.name || 'Product';
+        const qty = parseFloat(item.quantity || 0);
+        const unit = item.unit || 'L';
+        const isMilk = (item.category && item.category.toLowerCase().includes('milk')) ||
+                       prodName.toLowerCase().includes('milk') ||
+                       unit.toLowerCase() === 'l' || unit.toLowerCase() === 'liter';
+
+        if (!productMap[prodId]) {
+          productMap[prodId] = {
+            productId: prodId,
+            productName: prodName,
+            category: item.category || 'Milk',
+            unit,
+            totalQuantity: 0,
+            customerCount: 0,
+            deliveryPersons: {},
+            hubs: {},
+          };
+        }
+
+        productMap[prodId].totalQuantity += qty;
+        productMap[prodId].customerCount += 1;
+
+        const dp = deliv.deliveryPersonName || 'Unassigned';
+        productMap[prodId].deliveryPersons[dp] = (productMap[prodId].deliveryPersons[dp] || 0) + qty;
+
+        const hub = deliv.hub || 'Default Hub';
+        productMap[prodId].hubs[hub] = (productMap[prodId].hubs[hub] || 0) + qty;
+
+        if (isMilk) {
+          totalMilkLiters += qty;
+        } else {
+          totalOtherUnits += qty;
+        }
+      });
+    });
+
+    const products = Object.values(productMap).map(p => ({
+      ...p,
+      totalQuantity: parseFloat(p.totalQuantity.toFixed(2)),
+    })).sort((a, b) => b.totalQuantity - a.totalQuantity);
+
+    res.json({
+      success: true,
+      date: targetDate,
+      totalScheduledCustomers: deliveries.length,
+      totalMilkLiters: parseFloat(totalMilkLiters.toFixed(2)),
+      totalOtherUnits: parseFloat(totalOtherUnits.toFixed(2)),
+      products,
+    });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// GET /api/reports/subscription-status-report
+// ─────────────────────────────────────────────
+const getSubscriptionStatusReport = async (req, res, next) => {
+  try {
+    const { status, frequency_type, customer_id, hub, page = 1, limit = 10, export_all } = req.query;
+
+    let whereClauses = [];
+    let params = [];
+    let idx = 1;
+
+    if (status && status !== 'All') {
+      whereClauses.push(`s.status = $${idx++}`);
+      params.push(status);
+    }
+    if (frequency_type && frequency_type !== 'All') {
+      whereClauses.push(`s.frequency_type = $${idx++}`);
+      params.push(frequency_type);
+    }
+    if (customer_id && customer_id !== 'All') {
+      whereClauses.push(`(s.customer_id::text = $${idx} OR c.customer_code ILIKE $${idx + 1} OR c.name ILIKE $${idx + 1})`);
+      params.push(customer_id, `%${customer_id}%`);
+      idx += 2;
+    }
+    if (hub && hub !== 'All') {
+      whereClauses.push(`s.hub ILIKE $${idx++}`);
+      params.push(`%${hub}%`);
+    }
+
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const countRes = await readFromCRM(`
+      SELECT COUNT(*) as total
+      FROM subscriptions s
+      JOIN customers c ON c.id = s.customer_id
+      ${whereStr}
+    `, params);
+    const totalRecords = parseInt(countRes.rows[0]?.total || 0, 10);
+
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    const offset = (pageNum - 1) * limitNum;
+
+    let queryStr = `
+      SELECT
+        s.id AS subscription_id,
+        s.customer_id,
+        c.customer_code,
+        c.name AS customer_name,
+        c.phone AS customer_phone,
+        s.frequency_type,
+        s.start_date,
+        s.end_date,
+        s.first_delivery_date,
+        s.status,
+        s.hub,
+        s.delivery_person_name,
+        sch.alternate_anchor_date,
+        sch.custom_weekdays,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'product_id', si.product_id,
+              'product_name', p.name,
+              'quantity', si.quantity,
+              'unit', p.unit,
+              'price', si.rate_snapshot
+            ))
+            FROM subscription_items si
+            JOIN products p ON p.id = si.product_id
+            WHERE si.subscription_id = s.id AND si.is_active = TRUE
+          ), '[]'::json
+        ) AS items,
+        (
+          SELECT json_build_object(
+            'pause_start_date', sp.pause_start_date,
+            'pause_end_date', sp.pause_end_date,
+            'reason', sp.reason
+          )
+          FROM subscription_pauses sp
+          WHERE sp.subscription_id = s.id AND sp.is_active = TRUE
+            AND CURRENT_DATE BETWEEN sp.pause_start_date AND sp.pause_end_date
+          LIMIT 1
+        ) AS active_pause
+      FROM subscriptions s
+      JOIN customers c ON c.id = s.customer_id
+      LEFT JOIN subscription_schedules sch ON sch.subscription_id = s.id
+      ${whereStr}
+      ORDER BY s.created_at DESC
+    `;
+
+    if (!export_all && export_all !== 'true') {
+      queryStr += ` LIMIT $${idx++} OFFSET $${idx++}`;
+      params.push(limitNum, offset);
+    }
+
+    const dataRes = await readFromCRM(queryStr, params);
+
+    res.json({
+      success: true,
+      totalRecords,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(totalRecords / limitNum),
+      rows: dataRes.rows,
+    });
+  } catch (err) { next(err); }
+};
+
+// ─────────────────────────────────────────────
+// GET /api/reports/pause-impact-report
+// ─────────────────────────────────────────────
+const getPauseImpactReport = async (req, res, next) => {
+  try {
+    const { status = 'All', date_from, date_to, customer_id, page = 1, limit = 10, export_all } = req.query;
+
+    let whereClauses = [];
+    let params = [];
+    let idx = 1;
+
+    if (status === 'Active') {
+      whereClauses.push(`sp.is_active = TRUE AND CURRENT_DATE BETWEEN sp.pause_start_date AND sp.pause_end_date`);
+    } else if (status === 'Upcoming') {
+      whereClauses.push(`sp.is_active = TRUE AND sp.pause_start_date > CURRENT_DATE`);
+    } else if (status === 'Completed') {
+      whereClauses.push(`(sp.pause_end_date < CURRENT_DATE OR sp.is_active = FALSE)`);
+    }
+
+    if (date_from) {
+      whereClauses.push(`sp.pause_start_date >= $${idx++}`);
+      params.push(date_from);
+    }
+    if (date_to) {
+      whereClauses.push(`sp.pause_end_date <= $${idx++}`);
+      params.push(date_to);
+    }
+    if (customer_id && customer_id !== 'All') {
+      whereClauses.push(`(s.customer_id::text = $${idx} OR c.customer_code ILIKE $${idx + 1} OR c.name ILIKE $${idx + 1})`);
+      params.push(customer_id, `%${customer_id}%`);
+      idx += 2;
+    }
+
+    const whereStr = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+
+    const countRes = await readFromCRM(`
+      SELECT COUNT(*) as total
+      FROM subscription_pauses sp
+      JOIN subscriptions s ON s.id = sp.subscription_id
+      JOIN customers c ON c.id = s.customer_id
+      ${whereStr}
+    `, params);
+    const totalRecords = parseInt(countRes.rows[0]?.total || 0, 10);
+
+    const pageNum = parseInt(page, 10) || 1;
+    const limitNum = parseInt(limit, 10) || 10;
+    const offset = (pageNum - 1) * limitNum;
+
+    let queryStr = `
+      SELECT
+        sp.id AS pause_id,
+        sp.subscription_id,
+        s.customer_id,
+        c.customer_code,
+        c.name AS customer_name,
+        c.phone AS customer_phone,
+        s.hub,
+        s.delivery_person_name,
+        sp.pause_start_date,
+        sp.pause_end_date,
+        sp.reason,
+        sp.is_active,
+        CASE
+          WHEN sp.is_active = TRUE AND CURRENT_DATE BETWEEN sp.pause_start_date AND sp.pause_end_date THEN 'Currently Paused'
+          WHEN sp.is_active = TRUE AND sp.pause_start_date > CURRENT_DATE THEN 'Upcoming Pause'
+          ELSE 'Completed / Resumed'
+        END AS pause_status,
+        COALESCE(
+          (
+            SELECT json_agg(json_build_object(
+              'product_name', p.name,
+              'quantity', si.quantity,
+              'unit', p.unit
+            ))
+            FROM subscription_items si
+            JOIN products p ON p.id = si.product_id
+            WHERE si.subscription_id = s.id AND si.is_active = TRUE
+          ), '[]'::json
+        ) AS paused_items
+      FROM subscription_pauses sp
+      JOIN subscriptions s ON s.id = sp.subscription_id
+      JOIN customers c ON c.id = s.customer_id
+      ${whereStr}
+      ORDER BY sp.pause_start_date DESC
+    `;
+
+    if (!export_all && export_all !== 'true') {
+      queryStr += ` LIMIT $${idx++} OFFSET $${idx++}`;
+      params.push(limitNum, offset);
+    }
+
+    const dataRes = await readFromCRM(queryStr, params);
+
+    res.json({
+      success: true,
+      totalRecords,
+      page: pageNum,
+      limit: limitNum,
+      totalPages: Math.ceil(totalRecords / limitNum),
+      rows: dataRes.rows,
+    });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getDailySummary, getMonthlyReport, getRevenueTrend,
   getCustomerAnalysis, getFeedback, getSmsLog, getLogisticsOverview,
@@ -3509,6 +3959,7 @@ module.exports = {
   getPaymentApprovalOptions, getPaymentApprovalReport,
   getManageCustomerBillingOptions, getManageCustomerBillingReport,
   getSalesReportOptions, getSalesReport,
+  getMilkRequirementReport, getSubscriptionStatusReport, getPauseImpactReport,
 };
 
 

@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { FiArrowLeft, FiPlus, FiList, FiDownload, FiSearch, FiRotateCcw, FiFileText } from 'react-icons/fi';
 import api from '../../services/api';
 import { exportCustomerBillingExcel } from '../../utils/exportUtils';
+import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
 
 export default function ManageCustomerBillingPage() {
   const navigate = useNavigate();
@@ -249,19 +250,14 @@ export default function ManageCustomerBillingPage() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
                 Customer
               </label>
-              <select
+              <CustomerSearchSelector
                 value={selectedCustomer}
-                onChange={(e) => setSelectedCustomer(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
-              >
-                <option value="">[ Select Customer ▼ ]</option>
-                {customers.map((c) => (
-                  <option key={c.id || c.customer_ref_id} value={c.customer_ref_id || c.id}>
-                    {c.customer_ref_id} - {c.name} ({c.phone || ''})
-                  </option>
-                ))}
-              </select>
+                onChange={id => setSelectedCustomer(id)}
+                preloadedCustomers={customers}
+                allowAll={true}
+                allLabel="[ All Customers ]"
+                placeholder="Search customer by name, code, or phone..."
+              />
             </div>
 
             {/* Route */}
@@ -275,7 +271,7 @@ export default function ManageCustomerBillingPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Route ▼ ]</option>
+                <option value="">[ Select Route ]</option>
                 {routes.map((r) => (
                   <option key={r.id || r.route_name} value={r.id || r.route_name}>
                     {r.route_name}
@@ -323,7 +319,7 @@ export default function ManageCustomerBillingPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Status ▼ ]</option>
+                <option value="">[ Select Status ]</option>
                 {statuses.map((st) => (
                   <option key={st} value={st}>
                     {st}

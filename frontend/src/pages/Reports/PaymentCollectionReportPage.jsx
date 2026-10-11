@@ -4,6 +4,7 @@ import { toast } from 'react-hot-toast';
 import { FiArrowLeft, FiDownload, FiSearch, FiRotateCcw, FiDollarSign, FiGift } from 'react-icons/fi';
 import api from '../../services/api';
 import { exportPaymentCollectionExcel, exportPaymentCollectionPDF } from '../../utils/exportUtils';
+import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
 
 export default function PaymentCollectionReportPage() {
   const navigate = useNavigate();
@@ -366,19 +367,14 @@ export default function PaymentCollectionReportPage() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
                 Customer Name
               </label>
-              <select
+              <CustomerSearchSelector
                 value={selectedCustomer}
-                onChange={(e) => setSelectedCustomer(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
-              >
-                <option value="">[ Select Customer ▼ ]</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>
-                    {c.label}
-                  </option>
-                ))}
-              </select>
+                onChange={id => setSelectedCustomer(id)}
+                preloadedCustomers={customers}
+                allowAll={true}
+                allLabel="[ All Customers ]"
+                placeholder="Search customer by name, code, or phone..."
+              />
             </div>
 
             {/* Customer Type Filter */}
@@ -392,7 +388,7 @@ export default function PaymentCollectionReportPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Customer Type ▼ ]</option>
+                <option value="">[ Select Customer Type ]</option>
                 {customerTypes.map((ct) => (
                   <option key={ct} value={ct}>
                     {ct}
@@ -412,7 +408,7 @@ export default function PaymentCollectionReportPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Delivery Boy ▼ ]</option>
+                <option value="">[ Select Delivery Boy ]</option>
                 {deliveryBoys.map((d) => (
                   <option key={d.id} value={d.id}>
                     {d.label}
@@ -432,7 +428,7 @@ export default function PaymentCollectionReportPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Mode ▼ ]</option>
+                <option value="">[ Select Mode ]</option>
                 {modes.map((m) => (
                   <option key={m} value={m}>
                     {m}
@@ -467,7 +463,7 @@ export default function PaymentCollectionReportPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Payment Method ▼ ]</option>
+                <option value="">[ Select Payment Method ]</option>
                 {paymentMethods.map((pm) => (
                   <option key={pm} value={pm}>
                     {pm}

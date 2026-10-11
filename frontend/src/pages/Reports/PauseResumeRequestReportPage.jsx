@@ -5,6 +5,7 @@ import { FiArrowLeft, FiDownload, FiSearch, FiRotateCcw } from 'react-icons/fi';
 import { PauseCircle, CalendarDays, ArrowRight } from 'lucide-react';
 import api from '../../services/api';
 import { exportPauseResumeRequestExcel, exportPauseResumeRequestPDF } from '../../utils/exportUtils';
+import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
 
 export default function PauseResumeRequestReportPage() {
   const navigate = useNavigate();
@@ -259,17 +260,14 @@ export default function PauseResumeRequestReportPage() {
               <label style={{ display: 'block', fontSize: 13, fontWeight: 600, marginBottom: 6, color: 'var(--text-main)' }}>
                 Customer
               </label>
-              <select
+              <CustomerSearchSelector
                 value={selectedCustomer}
-                onChange={(e) => setSelectedCustomer(e.target.value)}
-                className="form-control"
-                style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
-              >
-                <option value="">[ All Customers ]</option>
-                {customers.map((c) => (
-                  <option key={c.id} value={c.id}>{c.label}</option>
-                ))}
-              </select>
+                onChange={(id) => setSelectedCustomer(id)}
+                preloadedCustomers={customers}
+                placeholder="Search code, name, phone..."
+                allowAll={true}
+                allLabel="[ All Customers ]"
+              />
             </div>
 
             {/* Status Filter */}

@@ -287,10 +287,10 @@ export default function DeliveryAreaReportPage() {
               }}
               style={{ padding: '6px 10px', borderRadius: 6, border: '1px solid var(--border-color)', fontSize: 13, fontWeight: 600 }}
             >
-              <option value={10}>10 ▼</option>
-              <option value={20}>20 ▼</option>
-              <option value={50}>50 ▼</option>
-              <option value={100}>100 ▼</option>
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
             </select>
           </div>
         </div>
@@ -313,7 +313,7 @@ export default function DeliveryAreaReportPage() {
                 style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}
               >
                 {filterOptions.states.map(st => (
-                  <option key={st} value={st}>{st} ▼</option>
+                  <option key={st} value={st}>{st} </option>
                 ))}
               </select>
             </div>
@@ -330,7 +330,7 @@ export default function DeliveryAreaReportPage() {
                 disabled={optionsLoading}
                 style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}
               >
-                <option value="">[ Select City ▼ ]</option>
+                <option value="">[ Select City ]</option>
                 {filterOptions.cities.map(ct => (
                   <option key={ct} value={ct}>{ct}</option>
                 ))}
@@ -349,7 +349,7 @@ export default function DeliveryAreaReportPage() {
                 disabled={optionsLoading}
                 style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}
               >
-                <option value="">[ Select Area ▼ ]</option>
+                <option value="">[ Select Area ]</option>
                 {filterOptions.areaNames.map(area => (
                   <option key={area} value={area}>{area}</option>
                 ))}
@@ -368,7 +368,7 @@ export default function DeliveryAreaReportPage() {
                 disabled={optionsLoading}
                 style={{ width: '100%', padding: '9px 12px', borderRadius: 8, border: '1px solid var(--border-color)' }}
               >
-                <option value="">[ Select Service ▼ ]</option>
+                <option value="">[ Select Service ]</option>
                 {filterOptions.serviceAvailabilities.map(sa => (
                   <option key={sa} value={sa}>{sa}</option>
                 ))}

@@ -94,12 +94,18 @@ img { max-width: 100%; display: block; }
   display: flex;
   flex-direction: column;
   min-height: 100vh;
+  min-width: 0;
+  max-width: calc(100vw - var(--sidebar-width));
+  overflow-x: hidden;
 }
 
 .page-body {
   flex: 1;
   padding: 24px;
+  width: 100%;
   max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
 }
 
 /* ══════════════════════════════════════════════════════
@@ -323,6 +329,8 @@ img { max-width: 100%; display: block; }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-card);
   overflow: hidden;
+  min-width: 0;
+  max-width: 100%;
 }
 
 .card-header {
@@ -491,6 +499,10 @@ img { max-width: 100%; display: block; }
    ══════════════════════════════════════════════════════ */
 .table-wrapper {
   overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
 }
 .table {
   width: 100%; border-collapse: collapse;

@@ -10,6 +10,7 @@ import toast from 'react-hot-toast';
 import api from '../../services/api';
 import useOperationalDay from '../../hooks/useOperationalDay';
 import { exportToExcel, exportToExcelDeliveryBoyWise, exportToPDF } from '../../utils/exportUtils';
+import CustomerSearchSelector from '../../components/common/CustomerSearchSelector';
 
 export default function GeneralReportsPage() {
   const location = useLocation();
@@ -134,6 +135,7 @@ export default function GeneralReportsPage() {
           date: singleDate || operationalDate,
           dp_ref_id: deliveryBoy,
           area: area,
+          customer_id: customerId,
         };
         const res = await api.get('/reports/daily-planner', { params });
         if (res.data?.success) {
@@ -433,17 +435,14 @@ export default function GeneralReportsPage() {
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #475569)', marginBottom: 6 }}>
                   Customer
                 </label>
-                <select
-                  className="form-select"
+                <CustomerSearchSelector
                   value={customerId}
-                  onChange={e => setCustomerId(e.target.value)}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border, #cbd5e1)', fontSize: 13 }}
-                >
-                  <option value="">[ All Customers ]</option>
-                  {filterOptions.customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.label}</option>
-                  ))}
-                </select>
+                  onChange={id => setCustomerId(id)}
+                  preloadedCustomers={filterOptions.customers}
+                  allowAll={true}
+                  allLabel="[ All Customers ]"
+                  placeholder="Search customer by name, code, or phone..."
+                />
               </div>
 
               <div>
@@ -500,7 +499,7 @@ export default function GeneralReportsPage() {
                   onChange={e => setDeliveryBoy(e.target.value)}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border, #cbd5e1)', fontSize: 13 }}
                 >
-                  <option value="">[ Select Delivery Boy ▼ ]</option>
+                  <option value="">[ Select Delivery Boy ]</option>
                   {filterOptions.deliveryBoys.map(d => (
                     <option key={d.id} value={d.id}>{d.label}</option>
                   ))}
@@ -517,11 +516,25 @@ export default function GeneralReportsPage() {
                   onChange={e => setArea(e.target.value)}
                   style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border, #cbd5e1)', fontSize: 13 }}
                 >
-                  <option value="">[ Select Area ▼ ]</option>
+                  <option value="">[ Select Area ]</option>
                   {filterOptions.routes.map(r => (
                     <option key={r.id} value={r.route_name}>{r.route_name}</option>
                   ))}
                 </select>
+              </div>
+
+              <div>
+                <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #475569)', marginBottom: 6 }}>
+                  Customer
+                </label>
+                <CustomerSearchSelector
+                  value={customerId}
+                  onChange={id => setCustomerId(id)}
+                  preloadedCustomers={filterOptions.customers}
+                  allowAll={true}
+                  allLabel="[ All Customers ]"
+                  placeholder="Filter by customer..."
+                />
               </div>
 
               <div>
@@ -561,17 +574,13 @@ export default function GeneralReportsPage() {
                 <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-secondary, #475569)', marginBottom: 6 }}>
                   Customer <span style={{ color: 'red' }}>*</span>
                 </label>
-                <select
-                  className="form-select"
+                <CustomerSearchSelector
                   value={customerId}
-                  onChange={e => setCustomerId(e.target.value)}
-                  style={{ width: '100%', padding: '9px 12px', borderRadius: '8px', border: '1px solid var(--border, #cbd5e1)', fontSize: 13 }}
-                >
-                  <option value="">[ Select Customer ▼ ]</option>
-                  {filterOptions.customers.map(c => (
-                    <option key={c.id} value={c.id}>{c.label}</option>
-                  ))}
-                </select>
+                  onChange={id => setCustomerId(id)}
+                  preloadedCustomers={filterOptions.customers}
+                  allowAll={false}
+                  placeholder="Search customer by name, code, or phone..."
+                />
               </div>
 
               <div>

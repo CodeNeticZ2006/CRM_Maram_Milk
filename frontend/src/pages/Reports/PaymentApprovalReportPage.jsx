@@ -253,7 +253,7 @@ export default function PaymentApprovalReportPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select Office User ▼ ]</option>
+                <option value="">[ Select Office User ]</option>
                 {officeUsers.map((u) => (
                   <option key={u.id || u.name} value={u.name || u.id}>
                     {u.name} ({u.role || 'Admin'})
@@ -273,7 +273,7 @@ export default function PaymentApprovalReportPage() {
                 className="form-control"
                 style={{ width: '100%', padding: '8px 12px', borderRadius: 8 }}
               >
-                <option value="">[ Select City ▼ ]</option>
+                <option value="">[ Select City ]</option>
                 {cities.map((c) => (
                   <option key={c} value={c}>
                     {c}
