@@ -29,8 +29,18 @@ const getEmptyBottleLogs = async (req, res, next) => {
     let dpRows = [], routeRows = [], allocRows = [], logRows = [];
     try {
       const [dpRes, rRes, aRes, lRes] = await Promise.all([
-        readFromApp('SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'),
-        readFromApp('SELECT id, name, zone, "assignedDpId" FROM "Route" ORDER BY name ASC'),
+        readFromApp(
+          'SELECT id, name, "dpCode", "mobileNumber", "vehicleNumber", zone, "isActive" FROM "DeliveryPerson" WHERE "isActive" = true AND LOWER(name) NOT IN (\'adam\', \'pradeep\', \'praddep\', \'test\', \'test dp\') AND "dpCode" NOT IN (\'DP018\', \'DP019\', \'DP020\') ORDER BY name ASC'
+        ).catch(err => {
+          console.warn('⚠️ DB2 DeliveryPerson query warning:', err.message);
+          return { rows: [] };
+        }),
+        readFromApp(
+          'SELECT id, name, "assignedDpId" FROM "Route" ORDER BY name ASC'
+        ).catch(err => {
+          console.warn('⚠️ DB2 Route query warning:', err.message);
+          return { rows: [] };
+        }),
         readFromApp(`
           SELECT 
             ra.id AS "allocId",
@@ -48,7 +58,10 @@ const getEmptyBottleLogs = async (req, res, next) => {
           LEFT JOIN "RouteAllocationItem" rai ON rai."routeAllocationId" = ra.id
           LEFT JOIN "InventoryItem" inv ON inv.id = rai."inventoryItemId"
           ORDER BY ra."createdAt" DESC
-        `),
+        `).catch(err => {
+          console.warn('⚠️ DB2 RouteAllocation query warning:', err.message);
+          return { rows: [] };
+        }),
         readFromApp(`
           SELECT 
             eb.id AS "logId",
@@ -74,7 +87,10 @@ const getEmptyBottleLogs = async (req, res, next) => {
           LEFT JOIN "EmptyBottleLogItem" ebi ON ebi."emptyBottleLogId" = eb.id
           LEFT JOIN "InventoryItem" inv ON inv.id = ebi."inventoryItemId"
           ORDER BY eb."createdAt" DESC
-        `),
+        `).catch(err => {
+          console.warn('⚠️ DB2 EmptyBottleLog query warning:', err.message);
+          return { rows: [] };
+        }),
       ]);
       dpRows    = dpRes.rows || [];
       routeRows = rRes.rows || [];
@@ -288,6 +304,7 @@ const getEmptyBottleLogs = async (req, res, next) => {
         totalIssued:      totalIssuedOverall,
         totalReturned:    totalReturnedOverall,
         returnRate:       overallReturnRate,
+        activeDps:        dpRows.length,
         pendingIncidents: crmIncidents.filter(i => i.status === 'Pending Review').length +
                           filteredData.filter(d => d.hasFlag).length,
       },

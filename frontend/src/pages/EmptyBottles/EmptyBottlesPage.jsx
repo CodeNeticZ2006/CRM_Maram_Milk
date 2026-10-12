@@ -5,6 +5,7 @@ import {
   MdReportProblem, MdPerson, MdSearch, MdClose, MdLocalShipping,
   MdFactCheck, MdAssignmentTurnedIn, MdFilterList,
   MdCalendarToday, MdExpandMore, MdExpandLess, MdHistory, MdDirectionsBike,
+  MdInfoOutline, MdDateRange,
 } from 'react-icons/md';
 import { Package } from 'lucide-react';
 import toast from 'react-hot-toast';
@@ -173,7 +174,7 @@ export default function EmptyBottlesPage() {
         {[
           { label: 'Total Bottles Dispatched', value: stats.totalIssued,      suffix: 'Bottles',  icon: <MdLocalShipping />, color: 'rgba(59,130,246,0.1)',  iconColor: 'var(--primary)' },
           { label: 'Empty Bottles Collected',  value: stats.totalReturned,    suffix: 'Bottles',  icon: <MdCheckCircle />,   color: 'rgba(16,185,129,0.1)', iconColor: '#10b981'        },
-          { label: 'Active Delivery Persons',  value: allDps.length || logs.length, suffix: 'DPs', icon: <MdPerson />,       color: 'rgba(139,92,246,0.1)', iconColor: 'var(--primary)' },
+          { label: 'Active Delivery Persons',  value: stats.activeDps || allDps.length || logs.length, suffix: 'DPs', icon: <MdPerson />,       color: 'rgba(139,92,246,0.1)', iconColor: 'var(--primary)' },
           { label: 'Manager Incident Flags',   value: stats.pendingIncidents, suffix: 'Pending',  icon: <MdWarning />,       color: 'rgba(239,68,68,0.1)',  iconColor: '#ef4444',
             borderColor: stats.pendingIncidents > 0 ? 'rgba(239,68,68,0.4)' : 'var(--border)' },
         ].map(({ label, value, suffix, icon, color, iconColor, borderColor }) => (
@@ -455,6 +456,10 @@ export default function EmptyBottlesPage() {
                             {dp.hasFlag ? (
                               <span className="badge badge-danger" style={{ fontWeight: 800, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                                 <MdWarning /> {dp.flagCount || 1} Incidents
+                              </span>
+                            ) : dp.totalIssued === 0 && dp.totalReturned === 0 ? (
+                              <span className="badge badge-gray" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, color: 'var(--text-muted)' }}>
+                                No Records
                               </span>
                             ) : (
                               <span className="badge badge-success" style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
