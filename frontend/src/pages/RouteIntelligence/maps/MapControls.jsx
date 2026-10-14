@@ -1,6 +1,7 @@
 import React from 'react';
 import {
-  MdPeople, MdDirectionsBike, MdMap, MdTimeline,
+  MdPeople, MdDirectionsBike, MdMap, MdTimeline, MdFilterList, MdCenterFocusWeak,
+  MdFullscreen, MdFullscreenExit, MdViewSidebar,
 } from 'react-icons/md';
 import { MapPin, AlertTriangle } from 'lucide-react';
 
@@ -17,7 +18,11 @@ export default function MapControls({
   setShowGeofences,
   showDeviations,
   setShowDeviations,
-  onResetView
+  onResetView,
+  isExpanded,
+  onToggleExpand,
+  isPanelOpen,
+  onTogglePanel,
 }) {
   return (
     <div className="leaflet-floating-controls">
@@ -104,6 +109,34 @@ export default function MapControls({
           >
             <MdCenterFocusWeak /> Reset View
           </button>
+        )}
+
+        {(onToggleExpand || onTogglePanel) && (
+          <div style={{ margin: '6px 0 2px', borderTop: '1px solid var(--border, #e2e8f0)', paddingTop: '6px', display: 'flex', flexDirection: 'column', gap: 4 }}>
+            {onToggleExpand && (
+              <button
+                className={`map-ctrl-btn ${isExpanded ? 'active' : ''}`}
+                onClick={onToggleExpand}
+                title={isExpanded ? 'Collapse Map' : 'Expand Map'}
+                id="map-ctrl-expand"
+              >
+                {isExpanded ? <MdFullscreenExit /> : <MdFullscreen />}
+                {isExpanded ? 'Collapse Map' : 'Expand Map'}
+              </button>
+            )}
+
+            {onTogglePanel && (
+              <button
+                className={`map-ctrl-btn ${isPanelOpen ? 'active' : ''}`}
+                onClick={onTogglePanel}
+                title={isPanelOpen ? 'Hide Customers Panel' : 'Show Customers Panel'}
+                id="map-ctrl-toggle-panel"
+              >
+                <MdViewSidebar />
+                {isPanelOpen ? 'Hide Panel' : 'Customers Panel'}
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>

@@ -18,7 +18,7 @@ export default function LayerControl({ center, zoom, bounds }) {
         if (center) map.setView(center, zoom || 12);
       }
     } else if (center) {
-      map.setView(center, zoom || 12);
+      map.flyTo(center, zoom || 14, { duration: 0.6 });
     }
   }, [center, zoom, bounds, map]);
 

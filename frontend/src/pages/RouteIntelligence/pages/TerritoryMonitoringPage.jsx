@@ -1,5 +1,8 @@
 import { motion } from 'framer-motion';
-import { MdMap, MdPeople, MdAddLocation, MdRefresh, MdLocationOn, MdPlace, MdWarning, MdFilterList } from 'react-icons/md';
+import {
+  MdMap, MdPeople, MdAddLocation, MdRefresh, MdLocationOn, MdPlace, MdWarning, MdFilterList,
+  MdFullscreen, MdFullscreenExit, MdClose, MdSearch, MdViewSidebar
+} from 'react-icons/md';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { SectionHeader, TerritoryCard, StatusBadge, ComplianceProgressBar } from '../components/index.jsx';
 import api from '../../../services/api';
@@ -22,14 +25,15 @@ const FALLBACK_ROUTE_BOUNDARIES = [
   { id: 'rb-5', name: 'MRC Ngr',       color: '#f59e0b', coordinates: [[13.0170, 80.2690], [13.0250, 80.2690], [13.0250, 80.2790], [13.0170, 80.2790]], dp: 'Prakash Nair',customers: 0, compliance: 55, status: 'stopped' },
   { id: 'rb-6', name: 'Mylapore 1',    color: '#06b6d4', coordinates: [[13.0280, 80.2630], [13.0370, 80.2630], [13.0370, 80.2720], [13.0280, 80.2720]], dp: 'Vikram Selvan',customers: 0, compliance: 91, status: 'active' },
   { id: 'rb-7', name: 'Mylapore 2',    color: '#ec4899', coordinates: [[13.0310, 80.2660], [13.0400, 80.2660], [13.0400, 80.2750], [13.0310, 80.2750]], dp: 'Karthik Raja',customers: 0, compliance: 89, status: 'active' },
-  { id: 'rb-8', name: 'Nungambakkam 1',color: '#14b8a6', coordinates: [[13.0550, 80.2340], [13.0650, 80.2340], [13.0650, 80.2450], [13.0550, 80.2450]], dp: 'Vijay Sethu', customers: 0, compliance: 95, status: 'active' },
+  { id: 'rb-8', name: 'Nungambakkam 1',color: '#2563eb', coordinates: null, isRouteCorridor: true, corridorTolerance: 120, dp: 'Vijay Sethu', customers: 25, compliance: 96, status: 'active' },
   { id: 'rb-9', name: 'Royapettah 2',   color: '#f97316', coordinates: [[13.0450, 80.2540], [13.0550, 80.2540], [13.0550, 80.2650], [13.0450, 80.2540]], dp: 'Saravanan',   customers: 0, compliance: 82, status: 'active' },
   { id: 'rb-10', name: 'T-Nagar 1',     color: '#84cc16', coordinates: [[13.0360, 80.2280], [13.0460, 80.2280], [13.0460, 80.2390], [13.0360, 80.2390]], dp: 'Manikandan',  customers: 0, compliance: 98, status: 'active' },
   { id: 'rb-11', name: 'Teynampet 1',   color: '#6366f1', coordinates: [[13.0400, 80.2430], [13.0490, 80.2430], [13.0490, 80.2530], [13.0400, 80.2530]], dp: 'Karthik Raja',customers: 0, compliance: 92, status: 'active' },
-  { id: 'rb-12', name: 'Triplicane 1',  color: '#a855f7', coordinates: [[13.0530, 80.2700], [13.0630, 80.2700], [13.0630, 80.2810], [13.0530, 80.2700]], dp: 'Saravanan',   customers: 0, compliance: 90, status: 'active' },
+  { id: 'rb-12', name: 'Triplicane 1',  color: '#10b981', coordinates: null, isRouteCorridor: true, corridorTolerance: 120, dp: 'Saravanan',   customers: 20, compliance: 94, status: 'active' },
   { id: 'rb-13', name: 'West Mambalam 1', color: '#0284c7', coordinates: [[13.0330, 80.2170], [13.0420, 80.2170], [13.0420, 80.2260], [13.0330, 80.2260]], dp: 'Ramesh Babu',  customers: 0, compliance: 96, status: 'active' },
   { id: 'rb-14', name: 'West Mambalam 2', color: '#0d9488', coordinates: [[13.0350, 80.2200], [13.0440, 80.2200], [13.0440, 80.2290], [13.0350, 80.2200]], dp: 'Saravana Kumar', customers: 0, compliance: 93, status: 'active' },
 ];
+
 
 export default function TerritoryMonitoringPage() {
   const [territories, setTerritories] = useState(MOCK_TERRITORIES);
@@ -47,6 +51,11 @@ export default function TerritoryMonitoringPage() {
   const [customerError, setCustomerError]       = useState(null);
   const [selectedRouteFilter, setSelectedRouteFilter] = useState('All');
   const [showUnmappedDrawer, setShowUnmappedDrawer] = useState(false);
+
+  // Enlarged Map & Collapsible Customer Panel State
+  const [isCustomerPanelOpen, setIsCustomerPanelOpen] = useState(true);
+  const [isMapExpanded, setIsMapExpanded]             = useState(false);
+  const [customerSearchQuery, setCustomerSearchQuery] = useState('');
 
   const fetchTerritories = useCallback(async () => {
     setLoading(true);
@@ -86,10 +95,38 @@ export default function TerritoryMonitoringPage() {
     }
   }, []);
 
+  // Route Corridor Data (Road-following polylines for Nungambakkam 1 and Triplicane 1)
+  const [routeCorridors, setRouteCorridors] = useState([]);
+  const [deliveryPartners, setDeliveryPartners] = useState([]);
+
+  const fetchRouteCorridors = useCallback(async () => {
+    try {
+      const res = await api.get('/route-intelligence/route-corridors');
+      if (res.data?.success && res.data?.data?.routes) {
+        setRouteCorridors(res.data.data.routes);
+      }
+    } catch (err) {
+      console.warn('Failed to load route corridors from API:', err.message);
+    }
+  }, []);
+
+  const fetchLivePartners = useCallback(async () => {
+    try {
+      const res = await api.get('/route-intelligence/live-operations');
+      if (res.data?.success && res.data?.data?.deliveryPartners) {
+        setDeliveryPartners(res.data.data.deliveryPartners);
+      }
+    } catch (err) {
+      console.warn('Failed to load live delivery partners:', err.message);
+    }
+  }, []);
+
   useEffect(() => {
     fetchTerritories();
     fetchCustomers();
-  }, [fetchTerritories, fetchCustomers]);
+    fetchRouteCorridors();
+    fetchLivePartners();
+  }, [fetchTerritories, fetchCustomers, fetchRouteCorridors, fetchLivePartners]);
 
   // Extract valid mapped customers (numeric lat & lng) vs unmapped ("Location unavailable")
   const mappedCustomers = useMemo(() => {
@@ -115,6 +152,61 @@ export default function TerritoryMonitoringPage() {
     return buildActiveCustomerRoutes(customers, HEAD_OFFICE);
   }, [customers]);
 
+  // Combined active routes with road-following geometry for Nungambakkam 1 (Blue) and Triplicane 1 (Green)
+  const combinedRoutes = useMemo(() => {
+    if (routeCorridors && routeCorridors.length > 0) {
+      return routeCorridors.map(rc => {
+        const dpName = typeof rc.assignedDp === 'object' ? rc.assignedDp?.name || 'Unassigned' : (rc.assignedDp || rc.dp || 'Unassigned');
+        const coords = rc.polyline || rc.roadCoordinates || [];
+        return {
+          id: rc.id,
+          name: rc.name,
+          color: rc.color,
+          isRouteCorridor: true,
+          corridorToleranceMeters: rc.corridorToleranceMeters || 120,
+          customerCount: rc.customerCount || (rc.customers ? rc.customers.length : 0),
+          customers: rc.customers || [],
+          polyline: coords,
+          roadCoordinates: coords,
+          dp: dpName,
+          compliance: 95,
+          status: 'active',
+        };
+      });
+    }
+    return activeCustomerRoutes;
+  }, [routeCorridors, activeCustomerRoutes]);
+
+
+  // Routes filtered by the selected route filter
+  const routesToRender = useMemo(() => {
+    if (selectedRouteFilter === 'All' || selectedRouteFilter === 'All two routes' || selectedRouteFilter === 'All Routes') {
+      return combinedRoutes;
+    }
+    return combinedRoutes.filter(r => r.name.toLowerCase().trim() === selectedRouteFilter.toLowerCase().trim());
+  }, [combinedRoutes, selectedRouteFilter]);
+
+  // Delivery partners filtered by selected route filter
+  const partnersToRender = useMemo(() => {
+    const list = deliveryPartners.length > 0 ? deliveryPartners : [
+      { id: 'dp-1', name: 'Vijay Sethu', route: 'Nungambakkam 1', dpCode: 'DP-001', status: 'GREEN', corridorStatus: 'GREEN', corridorDistanceMeters: 0, lat: 13.0595, lng: 80.2422, speed: 24, lastUpdate: 'Just now' },
+      { id: 'dp-2', name: 'Saravanan',   route: 'Triplicane 1',   dpCode: 'DP-002', status: 'GREEN', corridorStatus: 'GREEN', corridorDistanceMeters: 0, lat: 13.0578, lng: 80.2745, speed: 20, lastUpdate: '1 min ago' },
+    ];
+    if (selectedRouteFilter === 'All' || selectedRouteFilter === 'All two routes' || selectedRouteFilter === 'All Routes') {
+      return list;
+    }
+    return list.filter(dp => (dp.route || '').toLowerCase().trim() === selectedRouteFilter.toLowerCase().trim());
+  }, [deliveryPartners, selectedRouteFilter]);
+
+  // Map Legend items identifying both route corridors and DP statuses
+  const mapLegendItems = [
+    { label: 'Nungambakkam 1 (Blue Corridor ±120m)', color: '#2563eb' },
+    { label: 'Triplicane 1 (Green Corridor ±120m)', color: '#10b981' },
+    { label: 'Vijay Sethu (DP - Nungambakkam 1)', color: '#2563eb', shape: 'circle' },
+    { label: 'Saravanan (DP - Triplicane 1)', color: '#10b981', shape: 'circle' },
+    { label: 'Customer Stops', color: '#f59e0b' },
+  ];
+
   // Routes filtered to ONLY routes with customers
   const activeRoutesList = useMemo(() => {
     return routes.filter(r => r.customers > 0);
@@ -122,12 +214,39 @@ export default function TerritoryMonitoringPage() {
 
   // Filter mapped customers by route
   const filteredMappedCustomers = useMemo(() => {
-    if (selectedRouteFilter === 'All') return mappedCustomers;
+    if (selectedRouteFilter === 'All' || selectedRouteFilter === 'All two routes' || selectedRouteFilter === 'All Routes') return mappedCustomers;
     return mappedCustomers.filter(c => {
       const rName = c.route_name || c.assigned_route_id || '';
       return rName.toLowerCase().trim() === selectedRouteFilter.toLowerCase().trim();
     });
   }, [mappedCustomers, selectedRouteFilter]);
+
+  // Filter mapped customers by search query inside customer panel
+  const searchedCustomers = useMemo(() => {
+    if (!customerSearchQuery.trim()) return filteredMappedCustomers;
+    const q = customerSearchQuery.toLowerCase().trim();
+    return filteredMappedCustomers.filter(c => {
+      const name = (c.name || '').toLowerCase();
+      const code = (c.customer_code || c.code || '').toLowerCase();
+      const addr = (c.address || '').toLowerCase();
+      const rName = (c.route_name || c.assigned_route_id || '').toLowerCase();
+      const phone = (c.phone || '').toLowerCase();
+      return name.includes(q) || code.includes(q) || addr.includes(q) || rName.includes(q) || phone.includes(q);
+    });
+  }, [filteredMappedCustomers, customerSearchQuery]);
+
+  // Pan and zoom to customer location on map when clicked from panel
+  const handleCustomerClick = useCallback((customer) => {
+    if (!customer?.lat || !customer?.lng) return;
+    const lat = parseFloat(customer.lat);
+    const lng = parseFloat(customer.lng);
+    if (!isNaN(lat) && !isNaN(lng) && lat !== 0 && lng !== 0) {
+      setMapBounds(null);
+      setMapCenter([lat, lng]);
+      setMapZoom(16);
+    }
+  }, []);
+
 
   // Calculate dynamic Leaflet map bounds to fit mapped customer locations automatically
   useEffect(() => {
@@ -154,6 +273,7 @@ export default function TerritoryMonitoringPage() {
   const handleSelectRoute = (route) => {
     setSelectedRouteId(route.id);
     setSelectedRouteFilter(route.name);
+    setMapBounds(null);
     if (route.center) {
       setMapCenter(route.center);
       setMapZoom(13);
@@ -206,28 +326,59 @@ export default function TerritoryMonitoringPage() {
               className={`btn btn-xs ${selectedRouteFilter === 'All' ? 'btn-primary' : 'btn-outline'}`}
               onClick={() => setSelectedRouteFilter('All')}
             >
-              All Routes ({mappedCustomers.length})
+              All two routes ({mappedCustomers.length})
             </button>
-            {activeCustomerRoutes.map(r => (
-              <button
-                key={r.id}
-                className={`btn btn-xs ${selectedRouteFilter === r.name ? 'btn-primary' : 'btn-outline'}`}
-                onClick={() => setSelectedRouteFilter(r.name)}
-              >
-                {r.name} ({r.customerCount})
-              </button>
-            ))}
+            <button
+              className={`btn btn-xs ${selectedRouteFilter === 'Nungambakkam 1' ? 'btn-primary' : 'btn-outline'}`}
+              style={selectedRouteFilter === 'Nungambakkam 1' ? { background: '#2563eb', borderColor: '#2563eb', color: '#fff' } : { borderColor: '#2563eb', color: '#2563eb' }}
+              onClick={() => setSelectedRouteFilter('Nungambakkam 1')}
+            >
+              Nungambakkam 1 ({mappedCustomers.filter(c => (c.route_name || '').toLowerCase().includes('nungambakkam')).length || 25})
+            </button>
+            <button
+              className={`btn btn-xs ${selectedRouteFilter === 'Triplicane 1' ? 'btn-primary' : 'btn-outline'}`}
+              style={selectedRouteFilter === 'Triplicane 1' ? { background: '#10b981', borderColor: '#10b981', color: '#fff' } : { borderColor: '#10b981', color: '#10b981' }}
+              onClick={() => setSelectedRouteFilter('Triplicane 1')}
+            >
+              Triplicane 1 ({mappedCustomers.filter(c => (c.route_name || '').toLowerCase().includes('triplicane')).length || 20})
+            </button>
           </div>
 
-          {unmappedCustomers.length > 0 && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            {/* Expand / Collapse Map control */}
             <button
-              className="btn btn-warning btn-xs"
-              onClick={() => setShowUnmappedDrawer(!showUnmappedDrawer)}
-              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              className={`btn btn-xs ${isMapExpanded ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setIsMapExpanded(prev => !prev)}
+              id="ri-expand-map-btn"
+              title={isMapExpanded ? 'Collapse Map' : 'Expand Map to primary view'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
             >
-              <MdWarning /> Location unavailable ({unmappedCustomers.length})
+              {isMapExpanded ? <MdFullscreenExit size={16} /> : <MdFullscreen size={16} />}
+              {isMapExpanded ? 'Collapse Map' : 'Expand Map'}
             </button>
-          )}
+
+            {/* Customers Panel Toggle button */}
+            <button
+              className={`btn btn-xs ${isCustomerPanelOpen ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={() => setIsCustomerPanelOpen(prev => !prev)}
+              id="ri-toggle-customer-panel-btn"
+              title={isCustomerPanelOpen ? 'Hide Customers Panel to maximize map' : 'Show Mapped Customers Panel'}
+              style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 600 }}
+            >
+              <MdPeople size={16} />
+              {isCustomerPanelOpen ? 'Hide Panel' : `Customers (${filteredMappedCustomers.length})`}
+            </button>
+
+            {unmappedCustomers.length > 0 && (
+              <button
+                className="btn btn-warning btn-xs"
+                onClick={() => setShowUnmappedDrawer(!showUnmappedDrawer)}
+                style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+              >
+                <MdWarning /> Location unavailable ({unmappedCustomers.length})
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Location Unavailable Customer List */}
@@ -247,44 +398,62 @@ export default function TerritoryMonitoringPage() {
         )}
       </div>
 
-      {/* Map + Territory Cards */}
-      <div className="ri-two-col">
-        <div style={{ position: 'relative' }}>
+      {/* Map + Collapsible Customer Panel */}
+      <div className={`ri-map-layout ${isCustomerPanelOpen ? 'panel-open' : 'panel-closed'} ${isMapExpanded ? 'map-expanded' : ''}`}>
+        <div className="ri-map-container-col">
           {loadingCustomers && (
-            <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: 'rgba(255,255,255,0.92)', padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700, boxShadow: '0 2px 8px rgba(0,0,0,0.15)' }}>
+            <div className="ri-map-loading-badge">
               Loading customer locations...
             </div>
           )}
 
           {customerError && (
-            <div style={{ position: 'absolute', top: 12, left: '50%', transform: 'translateX(-50%)', zIndex: 1000, background: '#fef2f2', color: '#dc2626', border: '1px solid #fca5a5', padding: '6px 16px', borderRadius: 20, fontSize: 12, fontWeight: 700 }}>
+            <div className="ri-map-error-badge">
               {customerError}
             </div>
           )}
 
-          <LeafletMapContainer height={480} center={mapCenter} zoom={mapZoom} bounds={mapBounds}>
+          <LeafletMapContainer
+            height={isMapExpanded ? 780 : 680}
+            center={mapCenter}
+            zoom={mapZoom}
+            bounds={mapBounds}
+            legendItems={mapLegendItems}
+            isExpanded={isMapExpanded}
+            onToggleExpand={() => setIsMapExpanded(prev => !prev)}
+            isPanelOpen={isCustomerPanelOpen}
+            onTogglePanel={() => setIsCustomerPanelOpen(prev => !prev)}
+          >
             {({ showCustomers, showTerritories, showPartners, showRoutes }) => (
               <>
                 <HeadOfficeMarker office={HEAD_OFFICE} />
 
-                {/* Active Route Polylines generated from real DB customer locations (Exactly 3 active customer routes) */}
-                {showRoutes && activeCustomerRoutes.map(r => (
+                {/* Road-following Route Polylines + Corridor Buffers (Nungambakkam 1 Blue, Triplicane 1 Green) */}
+                {showRoutes && routesToRender.map(r => (
                   <RoutePolyline
                     key={r.id}
-                    coordinates={r.polyline}
+                    coordinates={r.roadCoordinates || r.polyline}
                     color={r.color}
                     routeName={`${r.name} (${r.customerCount} Customers)`}
+                    isRouteCorridor={r.isRouteCorridor}
+                    corridorTolerance={r.corridorToleranceMeters || 120}
+                    customerCount={r.customerCount}
+                    assignedDp={r.dp}
                   />
                 ))}
 
-                {/* Territory Boundaries (Overlay only) */}
+                {/* Territory Boundaries (Overlay only for other routes; Nungambakkam 1 and Triplicane 1 use corridor geofencing) */}
                 {showTerritories && routes.map(r => {
                   const isSelected = selectedRouteId === r.id;
+                  // REPLACED POLYGON-BASED MONITORING: Never draw polygon for corridor routes
+                  if (r.isRouteCorridor || r.name === 'Nungambakkam 1' || r.name === 'Triplicane 1' || !r.coordinates || r.coordinates.length < 3) {
+                    return null;
+                  }
                   return (
                     <RoutePolygon
                       key={r.id}
                       type="polygon"
-                      coordinates={r.coordinates || [[13.04, 80.24], [13.05, 80.24], [13.05, 80.25], [13.04, 80.25]]}
+                      coordinates={r.coordinates}
                       color={r.color || '#3b82f6'}
                       fillColor={r.color || '#3b82f6'}
                       fillOpacity={isSelected ? 0.35 : 0.15}
@@ -296,13 +465,13 @@ export default function TerritoryMonitoringPage() {
                   );
                 })}
 
-                {/* Plot Dynamic Real Customer Markers from Customer Management Module (Always positioned at database coordinates) */}
-                {showCustomers && mappedCustomers.map(cust => (
+                {/* Real Customer Markers (Filtered to selected route or both routes) */}
+                {showCustomers && filteredMappedCustomers.map(cust => (
                   <CustomerMarker key={cust.id} customer={cust} selectedRouteFilter={selectedRouteFilter} />
                 ))}
 
-                {/* Delivery Partners */}
-                {showPartners && MOCK_GIS_PARTNERS.map(partner => (
+                {/* Delivery Partners (Filtered by selected route with actual corridor compliance) */}
+                {showPartners && partnersToRender.map(partner => (
                   <DeliveryPartnerMarker key={partner.id} partner={partner} />
                 ))}
               </>
@@ -310,49 +479,109 @@ export default function TerritoryMonitoringPage() {
           </LeafletMapContainer>
         </div>
 
-        <div className="card">
-          <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="card-title">Mapped Customers ({filteredMappedCustomers.length})</span>
-            <span className="badge badge-blue">{selectedRouteFilter}</span>
-          </div>
-          <div className="card-body" style={{ padding: '12px 16px', maxHeight: 420, overflowY: 'auto' }}>
-            {filteredMappedCustomers.length === 0 ? (
-              <div style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)', fontSize: 13 }}>
-                No customer locations available for this filter.
+        {/* Collapsible Customer Panel / Drawer */}
+        {isCustomerPanelOpen && (
+          <div className="card ri-customer-panel">
+            <div className="card-header ri-customer-panel-header">
+              <div>
+                <span className="card-title" style={{ fontSize: 13.5, fontWeight: 700 }}>Mapped Customers</span>
+                <div style={{ display: 'flex', gap: 6, marginTop: 4, alignItems: 'center' }}>
+                  <span className="badge badge-blue" style={{ fontSize: 10.5 }}>{selectedRouteFilter}</span>
+                  <span className="badge badge-outline" style={{ fontSize: 10.5 }}>
+                    {searchedCustomers.length} of {filteredMappedCustomers.length} stops
+                  </span>
+                </div>
               </div>
-            ) : (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {filteredMappedCustomers.map(c => (
-                  <div key={c.id} style={{ background: '#f8fafc', border: '1px solid var(--border)', borderRadius: 8, padding: 10 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
-                      <span style={{ fontWeight: 700, fontSize: 13 }}>{c.name}</span>
-                      <span style={{ fontFamily: 'monospace', fontSize: 11, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '2px 6px', borderRadius: 4 }}>{c.customer_code || 'CUST'}</span>
-                    </div>
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 4 }}>
-                      <MdPlace style={{ color: 'var(--primary)', marginRight: 4 }} /> {c.address}
-                    </div>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: 'var(--text-muted)' }}>
-                      <span>Route: <strong>{c.route_name || c.assigned_route_id || 'Unassigned'}</strong></span>
-                      <span>Lat: {parseFloat(c.lat).toFixed(4)}, Lng: {parseFloat(c.lng).toFixed(4)}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
+              <button
+                className="btn btn-ghost btn-sm btn-icon"
+                onClick={() => setIsCustomerPanelOpen(false)}
+                title="Collapse Customer Panel (Expand Map)"
+                id="ri-close-customer-panel-btn"
+                style={{ padding: '4px 6px', borderRadius: 6 }}
+              >
+                <MdClose size={18} />
+              </button>
+            </div>
+
+            {/* Customer Search Field */}
+            <div className="ri-customer-search-box">
+              <MdSearch className="ri-search-icon" />
+              <input
+                type="text"
+                placeholder="Search name, code, address..."
+                value={customerSearchQuery}
+                onChange={e => setCustomerSearchQuery(e.target.value)}
+                className="ri-customer-search-input"
+              />
+              {customerSearchQuery && (
+                <button
+                  className="ri-search-clear-btn"
+                  onClick={() => setCustomerSearchQuery('')}
+                  title="Clear search"
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+
+            <div className="card-body ri-customer-panel-body">
+              {searchedCustomers.length === 0 ? (
+                <div style={{ textAlign: 'center', padding: '36px 12px', color: 'var(--text-muted)', fontSize: 13 }}>
+                  {customerSearchQuery ? 'No customers matching search query.' : 'No customer locations available for this filter.'}
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  {searchedCustomers.map(c => {
+                    const isNungambakkam = (c.route_name || '').toLowerCase().includes('nungambakkam');
+                    const isTriplicane = (c.route_name || '').toLowerCase().includes('triplicane');
+                    const routeColor = isNungambakkam ? '#2563eb' : (isTriplicane ? '#10b981' : '#64748b');
+
+                    return (
+                      <div
+                        key={c.id}
+                        className="ri-customer-card"
+                        onClick={() => handleCustomerClick(c)}
+                        title="Click to focus on map"
+                      >
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                          <span style={{ fontWeight: 700, fontSize: 12.5, color: 'var(--text-primary)' }}>{c.name}</span>
+                          <span style={{ fontFamily: 'monospace', fontSize: 10.5, background: 'rgba(59,130,246,0.1)', color: 'var(--primary)', padding: '2px 5px', borderRadius: 4 }}>
+                            {c.customer_code || 'CUST'}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginBottom: 6, display: 'flex', alignItems: 'flex-start', gap: 4 }}>
+                          <MdPlace style={{ color: routeColor, flexShrink: 0, marginTop: 2 }} />
+                          <span style={{ lineHeight: 1.3 }}>{c.address}</span>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11, color: 'var(--text-muted)' }}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <span style={{ width: 7, height: 7, borderRadius: '50%', background: routeColor, display: 'inline-block' }} />
+                            <strong style={{ color: routeColor }}>{c.route_name || c.assigned_route_id || 'Unassigned'}</strong>
+                          </span>
+                          <span style={{ fontSize: 10, fontFamily: 'monospace' }}>
+                            {parseFloat(c.lat).toFixed(4)}, {parseFloat(c.lng).toFixed(4)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        )}
       </div>
 
       {/* Routes with Customers Summary Table */}
       <div className="card" style={{ marginBottom: 20 }}>
         <div className="card-header" style={{ paddingBottom: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div>
-            <span className="card-title">Routes with Customers ({activeRoutesList.length > 0 ? activeRoutesList.length : activeCustomerRoutes.length})</span>
+            <span className="card-title">Routes with Customers ({combinedRoutes.length})</span>
             <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
-              Displaying active delivery routes generated from assigned customer locations
+              Displaying route corridor geofencing for Nungambakkam 1 and Triplicane 1
             </div>
           </div>
-          <span className="badge badge-success">{activeRoutesList.length > 0 ? activeRoutesList.length : activeCustomerRoutes.length} Active Routes</span>
+          <span className="badge badge-success">{combinedRoutes.length} Active Routes</span>
         </div>
         <div className="table-wrapper">
           <table className="table">
@@ -361,14 +590,15 @@ export default function TerritoryMonitoringPage() {
                 <th>Route Name</th>
                 <th>Assigned DP</th>
                 <th>Customers</th>
+                <th>Corridor Tolerance</th>
                 <th>Compliance</th>
                 <th>Status</th>
                 <th>Map Action</th>
               </tr>
             </thead>
             <tbody>
-              {(activeRoutesList.length > 0 ? activeRoutesList : activeCustomerRoutes).map(r => {
-                const isSelected = selectedRouteId === r.id;
+              {combinedRoutes.map(r => {
+                const isSelected = selectedRouteFilter === r.name;
                 return (
                   <tr
                     key={r.id}
@@ -390,14 +620,19 @@ export default function TerritoryMonitoringPage() {
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                         <MdPeople style={{ color: 'var(--text-muted)' }} />
-                        {r.dp}
+                        {typeof r.dp === 'object' ? r.dp?.name || 'Unassigned' : (r.dp || 'Unassigned')}
                       </div>
                     </td>
-                    <td>{r.customers} stops</td>
-                    <td style={{ minWidth: 140 }}>
-                      <ComplianceProgressBar value={r.compliance} />
+                    <td>{r.customerCount || r.customers?.length || 0} stops</td>
+                    <td>
+                      <span className="badge badge-outline" style={{ fontSize: 11 }}>
+                        ±{r.corridorToleranceMeters || 120}m corridor
+                      </span>
                     </td>
-                    <td><StatusBadge status={r.status} /></td>
+                    <td style={{ minWidth: 140 }}>
+                      <ComplianceProgressBar value={r.compliance || 95} />
+                    </td>
+                    <td><StatusBadge status={r.status || 'active'} /></td>
                     <td>
                       <button
                         className={`btn btn-xs ${isSelected ? 'btn-primary' : 'btn-ghost'}`}
@@ -420,3 +655,4 @@ export default function TerritoryMonitoringPage() {
     </motion.div>
   );
 }
+

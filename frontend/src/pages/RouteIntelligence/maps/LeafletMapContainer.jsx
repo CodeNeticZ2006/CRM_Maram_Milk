@@ -4,16 +4,22 @@ import 'leaflet/dist/leaflet.css';
 import LayerControl from './LayerControl.jsx';
 import MapControls from './MapControls.jsx';
 import MapLegend from './MapLegend.jsx';
+import MapResizeHandler from './MapResizeHandler.jsx';
 
 export default function LeafletMapContainer({
   center = [13.0604, 80.2496],
   zoom = 12,
   bounds = null,
-  height = 440,
+  height = 680,
   children,
   legendItems,
   showControls = true,
   showLegend = true,
+  // Expand / Panel toggle props
+  isExpanded = false,
+  onToggleExpand,
+  isPanelOpen = false,
+  onTogglePanel,
   // Initial layer state props
   initialShowCustomers = true,
   initialShowPartners = true,
@@ -46,8 +52,10 @@ export default function LeafletMapContainer({
     showDeviations,
   };
 
+  const containerHeight = typeof height === 'number' ? `${height}px` : height;
+
   return (
-    <div className="leaflet-map-wrapper" style={{ height: `${height}px`, width: '100%', position: 'relative' }}>
+    <div className={`leaflet-map-wrapper ${isExpanded ? 'map-expanded' : ''}`} style={{ height: containerHeight, width: '100%', position: 'relative' }}>
       <MapContainer
         center={center}
         zoom={zoom}
@@ -62,6 +70,9 @@ export default function LeafletMapContainer({
         />
 
         <ScaleControl position="bottomleft" imperial={false} />
+
+        {/* Automatic map invalidation / resizing handler */}
+        <MapResizeHandler isExpanded={isExpanded} isPanelOpen={isPanelOpen} height={height} />
 
         {/* View controller for dynamic center/zoom reset */}
         <LayerControl key={resetKey} center={center} zoom={zoom} bounds={bounds} />
@@ -86,6 +97,10 @@ export default function LeafletMapContainer({
           showDeviations={showDeviations}
           setShowDeviations={setShowDeviations}
           onResetView={handleResetView}
+          isExpanded={isExpanded}
+          onToggleExpand={onToggleExpand}
+          isPanelOpen={isPanelOpen}
+          onTogglePanel={onTogglePanel}
         />
       )}
 

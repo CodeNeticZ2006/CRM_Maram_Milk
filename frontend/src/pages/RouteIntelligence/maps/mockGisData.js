@@ -17,6 +17,8 @@ export const HEAD_OFFICE = {
 export const MOCK_GIS_CUSTOMERS = [];
 
 export const MOCK_GIS_PARTNERS = [
+  { id: 'dp-nungambakkam1', name: 'Vijay Sethu', type: 'Delivery Partner', route: 'Nungambakkam 1', lat: 13.0595, lng: 80.2422, speed: '24 km/h', status: 'active', corridorStatus: 'GREEN', deliveries: '18 / 25' },
+  { id: 'dp-triplicane1',   name: 'Saravanan',   type: 'Delivery Partner', route: 'Triplicane 1',   lat: 13.0578, lng: 80.2745, speed: '20 km/h', status: 'active', corridorStatus: 'GREEN', deliveries: '15 / 20' },
   { id: 'dp-001', name: 'Rajan Kumar',    type: 'Delivery Partner', route: 'Route A — North Zone', lat: 13.0920, lng: 80.2700, speed: '38 km/h', status: 'active',   deliveries: '12 / 18' },
   { id: 'dp-002', name: 'Suresh Babu',   type: 'Delivery Partner', route: 'Route B — South Zone', lat: 13.0035, lng: 80.2620, speed: '0 km/h',  status: 'active',   deliveries: '7 / 14'  },
   { id: 'dp-003', name: 'Muthu Raj',     type: 'Delivery Partner', route: 'Route C — East Zone',  lat: 12.9050, lng: 80.2300, speed: '22 km/h', status: 'deviated', deliveries: '9 / 16'  },

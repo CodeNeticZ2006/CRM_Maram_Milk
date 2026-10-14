@@ -163,4 +163,4 @@ if (require.main === module) {
   runMigration007().then(() => process.exit(0)).catch(() => process.exit(1));
 }
 
-module.exports = { runMigration007 };
+module.exports = { runMigration007, nungambakkamCustomers, triplicaneCustomers, OFFICIAL_ROUTES };

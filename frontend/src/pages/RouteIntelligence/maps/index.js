@@ -8,4 +8,5 @@ export { default as MapControls } from './MapControls.jsx';
 export { default as MapLegend } from './MapLegend.jsx';
 export { default as MarkerPopup } from './MarkerPopup.jsx';
 export { default as LayerControl } from './LayerControl.jsx';
+export { default as MapResizeHandler } from './MapResizeHandler.jsx';
 export * from './mockGisData.js';

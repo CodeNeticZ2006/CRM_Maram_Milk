@@ -26,13 +26,15 @@ export default function LiveOperationsPage() {
 
   const [allCustomers, setAllCustomers] = useState([]);
   const [customers, setCustomers] = useState([]);
+  const [routeCorridors, setRouteCorridors] = useState([]);
 
   const fetchLiveOps = useCallback(async () => {
     setLoading(true);
     try {
-      const [opsRes, custRes] = await Promise.all([
+      const [opsRes, custRes, corrRes] = await Promise.all([
         api.get('/route-intelligence/live-operations').catch(() => null),
         api.get('/customers', { params: { limit: 500 } }).catch(() => null),
+        api.get('/route-intelligence/route-corridors').catch(() => null),
       ]);
 
       if (opsRes?.data?.success && opsRes?.data?.data) {
@@ -48,6 +50,10 @@ export default function LiveOperationsPage() {
         setAllCustomers(custRes.data.data);
         setCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
       }
+
+      if (corrRes?.data?.success && corrRes.data?.data?.routes) {
+        setRouteCorridors(corrRes.data.data.routes);
+      }
     } catch (err) {
       console.warn('Failed to load DB2 Live Operations data:', err.message);
     } finally {
@@ -59,10 +65,24 @@ export default function LiveOperationsPage() {
     fetchLiveOps();
   }, [fetchLiveOps]);
 
-  // Generate ONLY active route polylines connecting real customer locations
+  // Generate road-following corridor polylines for Nungambakkam 1 & Triplicane 1
   const activeCustomerRoutes = useMemo(() => {
+    if (routeCorridors && routeCorridors.length > 0) {
+      return routeCorridors.map(rc => ({
+        id: rc.id,
+        name: rc.name,
+        color: rc.color,
+        isRouteCorridor: true,
+        corridorToleranceMeters: rc.corridorToleranceMeters || 120,
+        customerCount: rc.customerCount,
+        polyline: rc.roadCoordinates,
+        roadCoordinates: rc.roadCoordinates,
+        assignedDp: rc.assignedDp,
+      }));
+    }
     return buildActiveCustomerRoutes(allCustomers, HEAD_OFFICE);
-  }, [allCustomers]);
+  }, [routeCorridors, allCustomers]);
+
 
   // Calculate dynamic map bounds focused on actual customer coordinates
   const mapBounds = useMemo(() => {
@@ -141,28 +161,45 @@ export default function LiveOperationsPage() {
 
       {/* Map + DP List */}
       <div className="ri-two-col">
-        <LeafletMapContainer height={445} center={[HEAD_OFFICE.lat, HEAD_OFFICE.lng]} zoom={12} bounds={mapBounds}>
+        <LeafletMapContainer
+          height={445}
+          center={[HEAD_OFFICE.lat, HEAD_OFFICE.lng]}
+          zoom={12}
+          bounds={mapBounds}
+          legendItems={[
+            { label: 'Nungambakkam 1 (Blue Corridor ±120m)', color: '#2563eb' },
+            { label: 'Triplicane 1 (Green Corridor ±120m)', color: '#10b981' },
+            { label: 'DP: GREEN (Within corridor)', color: '#10b981', shape: 'circle' },
+            { label: 'DP: YELLOW (Temp outside)', color: '#f59e0b', shape: 'circle' },
+            { label: 'DP: RED (Persistent deviation)', color: '#ef4444', shape: 'circle' },
+            { label: 'Customer Stops', color: '#f59e0b' },
+          ]}
+        >
           {({ showCustomers, showPartners, showRoutes }) => (
             <>
               {/* Head Office */}
               <HeadOfficeMarker office={HEAD_OFFICE} />
 
-              {/* Dynamic Route Polylines generated from real DB customer locations (Exactly 3 active customer routes) */}
+              {/* Road-following corridor polylines for Nungambakkam 1 and Triplicane 1 */}
               {showRoutes && activeCustomerRoutes.map(route => (
                 <RoutePolyline
                   key={route.id}
-                  coordinates={route.polyline}
+                  coordinates={route.roadCoordinates || route.polyline}
                   color={route.color}
-                  routeName={`${route.name} (${route.customerCount} Customers)`}
+                  routeName={`${route.name} (${route.customerCount || 0} Customers)`}
+                  isRouteCorridor={route.isRouteCorridor}
+                  corridorTolerance={route.corridorToleranceMeters || 120}
+                  customerCount={route.customerCount}
+                  assignedDp={route.assignedDp}
                 />
               ))}
 
-              {/* Customers (Dynamic from CRM DB) */}
+              {/* Customers (Dynamic from CRM DB with route pin colors) */}
               {showCustomers && customers.map(cust => (
                 <CustomerMarker key={cust.id} customer={cust} />
               ))}
 
-              {/* Delivery Partners (from DB2) */}
+              {/* Delivery Partners (Actual GPS coordinates with corridor status) */}
               {showPartners && deliveryPartners.map(partner => (
                 <DeliveryPartnerMarker key={partner.id} partner={partner} />
               ))}
@@ -178,21 +215,46 @@ export default function LiveOperationsPage() {
           <div className="ri-dp-list" style={{ padding: '12px 16px', maxHeight: 380, overflowY: 'auto' }}>
             {deliveryPartners.map(dp => {
               const initials = dp.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
-              const statusColor = dp.status === 'active' ? 'var(--success)' : dp.status === 'deviated' ? 'var(--danger)' : 'var(--warning)';
+              const cStatus = (dp.corridorStatus || dp.status || '').toUpperCase();
+              const isGpsUnavailable = dp.gpsStatus === 'unavailable' || dp.status === 'GPS unavailable' || !dp.lat || !dp.lng;
+              
+              let statusColor = 'var(--success)';
+              if (isGpsUnavailable) {
+                statusColor = 'var(--text-muted)';
+              } else if (cStatus === 'RED' || dp.status === 'deviated') {
+                statusColor = 'var(--danger)';
+              } else if (cStatus === 'YELLOW' || dp.status === 'stopped' || dp.status === 'Location stale') {
+                statusColor = 'var(--warning)';
+              }
+
               return (
                 <div key={dp.id} className="ri-dp-item">
                   <div className="ri-dp-avatar" style={{ background: `linear-gradient(135deg, ${statusColor}, var(--info))` }}>
                     {initials}
                   </div>
                   <div className="ri-dp-info">
-                    <div className="ri-dp-name">{dp.name} <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({dp.dpCode || 'DB2'})</span></div>
-                    <div className="ri-dp-route">{dp.route}</div>
+                    <div className="ri-dp-name">
+                      {dp.name} <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({dp.dpCode || 'DP'})</span>
+                    </div>
+                    <div className="ri-dp-route" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                      <span>{dp.route}</span>
+                      {dp.corridorStatus && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: cStatus === 'GREEN' ? '#dcfce7' : cStatus === 'YELLOW' ? '#fef3c7' : '#fee2e2', color: cStatus === 'GREEN' ? '#166534' : cStatus === 'YELLOW' ? '#92400e' : '#991b1b' }}>
+                          Corridor: {dp.corridorStatus}
+                        </span>
+                      )}
+                      {isGpsUnavailable && (
+                        <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#f1f5f9', color: '#64748b' }}>
+                          GPS unavailable
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="ri-dp-speed">
                     <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {dp.speed > 0 ? `${dp.speed} kph` : 'Stopped'}
+                      {isGpsUnavailable ? 'No GPS' : dp.speed > 0 ? `${dp.speed} kph` : 'Stopped'}
                     </div>
-                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.lastUpdate}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{dp.lastUpdate || 'Live'}</div>
                   </div>
                 </div>
               );
@@ -200,6 +262,7 @@ export default function LiveOperationsPage() {
           </div>
         </div>
       </div>
+
 
       {/* Recent Activity */}
       <div className="card">

@@ -729,3 +729,179 @@
   min-width: 160px;
 }
 
+/* ══════════════════════════════════════════════════════════════
+   ENLARGED MAP & COLLAPSIBLE CUSTOMER PANEL SYSTEM
+   ══════════════════════════════════════════════════════════════ */
+
+.ri-map-layout {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 20px;
+  align-items: start;
+  transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  width: 100%;
+}
+
+/* When panel is open: Map takes ~78% of available desktop width, Customer panel takes ~310px */
+.ri-map-layout.panel-open {
+  grid-template-columns: minmax(0, 1fr) 310px;
+}
+
+/* When panel is closed: Map occupies 100% of available width */
+.ri-map-layout.panel-closed {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.ri-map-container-col {
+  position: relative;
+  width: 100%;
+  min-width: 0; /* Prevents grid blowout with Leaflet canvas */
+}
+
+.ri-map-loading-badge {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--primary, #3b82f6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+  border: 1px solid var(--border, #e2e8f0);
+}
+
+.ri-map-error-badge {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1000;
+  background: #fef2f2;
+  color: #dc2626;
+  border: 1px solid #fca5a5;
+  padding: 6px 16px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 700;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.12);
+}
+
+/* Collapsible Customer Panel */
+.ri-customer-panel {
+  display: flex;
+  flex-direction: column;
+  height: 680px;
+  background: #ffffff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-lg, 16px);
+  box-shadow: var(--shadow-card, 0 1px 3px rgba(0,0,0,0.06));
+  overflow: hidden;
+  transition: height 0.25s ease;
+}
+
+.ri-map-layout.map-expanded .ri-customer-panel {
+  height: 780px;
+}
+
+.ri-customer-panel-header {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  background: #ffffff;
+}
+
+.ri-customer-search-box {
+  position: relative;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border, #f1f5f9);
+  background: #f8fafc;
+  display: flex;
+  align-items: center;
+}
+
+.ri-search-icon {
+  position: absolute;
+  left: 20px;
+  color: var(--text-muted, #94a3b8);
+  font-size: 16px;
+  pointer-events: none;
+}
+
+.ri-customer-search-input {
+  width: 100%;
+  padding: 7px 28px 7px 30px;
+  font-size: 12px;
+  border: 1px solid var(--border, #cbd5e1);
+  border-radius: var(--radius-md, 8px);
+  outline: none;
+  background: #ffffff;
+  color: var(--text-primary, #0f172a);
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.ri-customer-search-input:focus {
+  border-color: var(--primary, #3b82f6);
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.ri-search-clear-btn {
+  position: absolute;
+  right: 20px;
+  background: none;
+  border: none;
+  font-size: 12px;
+  color: var(--text-muted, #94a3b8);
+  cursor: pointer;
+  padding: 2px;
+}
+
+.ri-customer-panel-body {
+  padding: 10px 12px;
+  overflow-y: auto;
+  flex: 1;
+}
+
+.ri-customer-card {
+  background: #ffffff;
+  border: 1px solid var(--border, #e2e8f0);
+  border-radius: var(--radius-md, 8px);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.ri-customer-card:hover {
+  border-color: var(--primary, #3b82f6);
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.08);
+  transform: translateY(-1px);
+  background: #f8fafc;
+}
+
+/* Tablet Breakpoint (769px to 1024px) */
+@media (max-width: 1024px) {
+  .ri-map-layout.panel-open {
+    grid-template-columns: 1fr;
+  }
+  .ri-customer-panel {
+    height: 480px;
+  }
+}
+
+/* Mobile Breakpoint (<768px) */
+@media (max-width: 768px) {
+  .ri-map-layout {
+    grid-template-columns: 1fr !important;
+  }
+  .ri-customer-panel {
+    height: 420px;
+  }
+}
+
+

@@ -220,6 +220,35 @@ export default function RouteIntelligenceSettingsPage() {
           <ToggleRow label="Notify on every stop"   defaultOn={false} />
         </SettingsCard>
 
+        {/* Route Corridor Geofencing (Nungambakkam 1 & Triplicane 1) */}
+        <SettingsCard
+          icon={<MdRule />}
+          title="Route Corridor Geofencing"
+          desc="Configurable parameters for Nungambakkam 1 & Triplicane 1 road corridors"
+        >
+          <NumberField
+            id="ri-setting-corridor-tolerance"
+            label="Corridor Tolerance Buffer"
+            value={settings.corridorToleranceMeters !== undefined ? settings.corridorToleranceMeters : 120}
+            onChange={v => setSettings(s => ({ ...s, corridorToleranceMeters: v }))}
+            unit="meters (± corridor width)"
+          />
+          <NumberField
+            id="ri-setting-corridor-grace"
+            label="Deviation Grace Period"
+            value={settings.corridorGracePeriodSeconds !== undefined ? settings.corridorGracePeriodSeconds : 180}
+            onChange={v => setSettings(s => ({ ...s, corridorGracePeriodSeconds: v }))}
+            unit="seconds (before RED incident)"
+          />
+          <NumberField
+            id="ri-setting-gps-accuracy-buffer"
+            label="GPS Accuracy Buffer"
+            value={settings.corridorGpsAccuracyBuffer !== undefined ? settings.corridorGpsAccuracyBuffer : 15}
+            onChange={v => setSettings(s => ({ ...s, corridorGpsAccuracyBuffer: v }))}
+            unit="meters"
+          />
+        </SettingsCard>
+
         {/* Compliance Rules */}
         <SettingsCard
           icon={<MdRule />}
@@ -244,6 +273,7 @@ export default function RouteIntelligenceSettingsPage() {
           <ToggleRow label="Auto-review deviations"   defaultOn={true} />
           <ToggleRow label="Send WhatsApp alerts"     defaultOn={false} />
         </SettingsCard>
+
 
         {/* Notification Settings */}
         <SettingsCard
