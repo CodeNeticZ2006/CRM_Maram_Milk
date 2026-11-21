@@ -4,6 +4,7 @@ import {
   MdFullscreen, MdFullscreenExit, MdClose, MdSearch, MdViewSidebar
 } from 'react-icons/md';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useMapEvents } from 'react-leaflet';
 import { SectionHeader, TerritoryCard, StatusBadge, ComplianceProgressBar } from '../components/index.jsx';
 import api from '../../../services/api';
 import { MOCK_TERRITORIES } from '../utils/mockData.js';
@@ -13,7 +14,17 @@ import {
   HeadOfficeMarker, HEAD_OFFICE, MOCK_GIS_PARTNERS
 } from '../maps/index.js';
 import { AREA_PALETTE, getAreaColor, getAreaByRouteName } from '../utils/areaPalette.js';
+import { computeRouteLaneOffsets } from '../utils/routeLaneOffset.js';
 import '../components/RouteIntelligence.css';
+
+function MapZoomListener({ onZoom }) {
+  useMapEvents({
+    zoomend: (e) => {
+      onZoom(e.target.getZoom());
+    },
+  });
+  return null;
+}
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
@@ -56,6 +67,7 @@ export default function TerritoryMonitoringPage() {
   // Enlarged Map & Collapsible Customer Panel State
   const [isCustomerPanelOpen, setIsCustomerPanelOpen] = useState(true);
   const [isMapExpanded, setIsMapExpanded]             = useState(false);
+  const [currentZoom, setCurrentZoom]                 = useState(11);
   const [customerSearchQuery, setCustomerSearchQuery] = useState('');
 
   const fetchTerritories = useCallback(async () => {
@@ -63,10 +75,15 @@ export default function TerritoryMonitoringPage() {
     try {
       const res = await api.get('/route-intelligence/territories');
       if (res.data?.success && res.data?.data) {
-        const { territories: terrs, routes: rts } = res.data.data;
+        const { territories: terrs, routes: rts, customers: custs, unmappedCustomers: unmapped, allCustomers: allCusts } = res.data.data;
         if (terrs && terrs.length > 0) setTerritories(terrs);
         if (rts && rts.length > 0) {
           setRoutes(rts);
+        }
+        if (allCusts && allCusts.length > 0) {
+          setCustomers(allCusts);
+        } else if (custs && custs.length > 0) {
+          setCustomers([...custs, ...(unmapped || [])]);
         }
         setIsDb2Loaded(true);
       }
@@ -81,22 +98,19 @@ export default function TerritoryMonitoringPage() {
     setLoadingCustomers(true);
     setCustomerError(null);
     try {
-      // Reuse existing Customer Management API endpoint
+      // Reuse existing Customer Management API endpoint only if it has full dataset
       const res = await api.get('/customers', { params: { limit: 500 } });
-      if (res.data?.success && Array.isArray(res.data?.data)) {
+      if (res.data?.success && Array.isArray(res.data?.data) && res.data.data.length >= 100) {
         setCustomers(res.data.data);
-      } else {
-        setCustomers([]);
       }
     } catch (err) {
-      console.error('Error loading customer locations:', err.message);
-      setCustomerError('Failed to load customer locations from CRM.');
+      // Retain canonical customers from territory monitoring
     } finally {
       setLoadingCustomers(false);
     }
   }, []);
 
-  // Route Corridor Data (Road-following polylines for Nungambakkam 1 and Triplicane 1)
+  // Route Corridor Data (Road-following polylines for all 5 areas)
   const [routeCorridors, setRouteCorridors] = useState([]);
   const [deliveryPartners, setDeliveryPartners] = useState([]);
 
@@ -229,14 +243,65 @@ export default function TerritoryMonitoringPage() {
     return routes.filter(r => r.customers > 0);
   }, [routes]);
 
+  // Spiderfy duplicate coordinates so all 108 mapped pins are visible & accessible
+  const spiderfiedCustomers = useMemo(() => {
+    const coordGroups = {};
+    mappedCustomers.forEach(c => {
+      const lat = parseFloat(c.lat);
+      const lng = parseFloat(c.lng);
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      if (!coordGroups[key]) coordGroups[key] = [];
+      coordGroups[key].push(c);
+    });
+
+    return mappedCustomers.map(c => {
+      const lat = parseFloat(c.lat);
+      const lng = parseFloat(c.lng);
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      const group = coordGroups[key];
+
+      if (group && group.length > 1) {
+        const idx = group.indexOf(c);
+        const total = group.length;
+        const angle = (idx / total) * 2 * Math.PI;
+        const dLat = 0.00010 * Math.cos(angle);
+        const dLng = (0.00010 * Math.sin(angle)) / Math.cos(lat * Math.PI / 180);
+        return {
+          ...c,
+          spiderfyLat: lat + dLat,
+          spiderfyLng: lng + dLng,
+        };
+      }
+      return {
+        ...c,
+        spiderfyLat: lat,
+        spiderfyLng: lng,
+      };
+    });
+  }, [mappedCustomers]);
+
+  const filterMatchesArea = (c, filter) => {
+    if (!filter || filter === 'All' || filter === 'All Routes' || filter === 'All 5 Areas' || filter === 'All two routes') return true;
+    const rName = (c.route_name || c.assigned_route_id || c.area || '').toLowerCase().trim();
+    const fLower = filter.toLowerCase().trim();
+    return rName === fLower || rName.includes(fLower.split(' ')[0]);
+  };
+
   // Filter mapped customers by route
   const filteredMappedCustomers = useMemo(() => {
-    if (selectedRouteFilter === 'All' || selectedRouteFilter === 'All two routes' || selectedRouteFilter === 'All Routes') return mappedCustomers;
-    return mappedCustomers.filter(c => {
-      const rName = c.route_name || c.assigned_route_id || '';
-      return rName.toLowerCase().trim() === selectedRouteFilter.toLowerCase().trim();
+    if (selectedRouteFilter === 'All' || selectedRouteFilter === 'All 5 Areas' || selectedRouteFilter === 'All two routes' || selectedRouteFilter === 'All Routes') return spiderfiedCustomers;
+    return spiderfiedCustomers.filter(c => filterMatchesArea(c, selectedRouteFilter));
+  }, [spiderfiedCustomers, selectedRouteFilter]);
+
+  // Parallel Lane Offset calculation for active routes (rendered on map)
+  const offsetRoutesToRender = useMemo(() => {
+    if (!routesToRender || routesToRender.length === 0) return [];
+    return computeRouteLaneOffsets(routesToRender, currentZoom, {
+      laneSpacingPx: 5.5,
+      matchDistanceMeters: 15,
+      stepMeters: 25,
     });
-  }, [mappedCustomers, selectedRouteFilter]);
+  }, [routesToRender, currentZoom]);
 
   // Filter mapped customers by search query inside customer panel
   const searchedCustomers = useMemo(() => {
@@ -449,13 +514,15 @@ export default function TerritoryMonitoringPage() {
           >
             {({ showCustomers, showTerritories, showPartners, showRoutes }) => (
               <>
+                <MapZoomListener onZoom={setCurrentZoom} />
                 <HeadOfficeMarker office={HEAD_OFFICE} />
 
-                {/* Road-following Route Polylines + Corridor Buffers (Nungambakkam 1 Blue, Triplicane 1 Green) */}
-                {showRoutes && routesToRender.map(r => (
+                {/* Road-following Route Polylines + Corridor Buffers (Rendered in parallel lanes along shared roads) */}
+                {showRoutes && offsetRoutesToRender.map(r => (
                   <RoutePolyline
                     key={r.id}
-                    coordinates={r.roadCoordinates || r.polyline}
+                    coordinates={r.lanePolyline || r.roadCoordinates || r.polyline}
+                    originalCoordinates={r.originalPolyline || r.roadCoordinates || r.polyline}
                     color={r.color}
                     routeName={`${r.name} (${r.customerCount} Customers)`}
                     isRouteCorridor={r.isRouteCorridor}
@@ -555,9 +622,7 @@ export default function TerritoryMonitoringPage() {
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
                   {searchedCustomers.map(c => {
-                    const isNungambakkam = (c.route_name || '').toLowerCase().includes('nungambakkam');
-                    const isTriplicane = (c.route_name || '').toLowerCase().includes('triplicane');
-                    const routeColor = isNungambakkam ? '#2563eb' : (isTriplicane ? '#10b981' : '#64748b');
+                    const routeColor = c.areaColor || c.color || getAreaColor(c.route_name || c.area || c.assigned_route_id, '#2563eb');
 
                     return (
                       <div

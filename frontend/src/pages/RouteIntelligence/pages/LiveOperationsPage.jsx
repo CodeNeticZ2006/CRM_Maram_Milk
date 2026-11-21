@@ -1,9 +1,10 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSearchParams, useNavigate } from 'react-router-dom';
+import { useMapEvents } from 'react-leaflet';
 import {
   MdDirectionsBike, MdRoute, MdWarningAmber, MdNotifications,
-  MdRefresh, MdFilterList, MdClose,
+  MdRefresh, MdFilterList, MdClose, MdWarning,
 } from 'react-icons/md';
 import { SectionHeader, AnalyticsCard, EventSeverityIcon } from '../components/index.jsx';
 import api from '../../../services/api';
@@ -13,8 +14,18 @@ import {
   LeafletMapContainer, HeadOfficeMarker, CustomerMarker,
   DeliveryPartnerMarker, RoutePolyline, HEAD_OFFICE
 } from '../maps/index.js';
-import { AREA_PALETTE } from '../utils/areaPalette.js';
+import { AREA_PALETTE, getAreaColor } from '../utils/areaPalette.js';
+import { computeRouteLaneOffsets } from '../utils/routeLaneOffset.js';
 import '../components/RouteIntelligence.css';
+
+function MapZoomListener({ onZoom }) {
+  useMapEvents({
+    zoomend: (e) => {
+      onZoom(e.target.getZoom());
+    },
+  });
+  return null;
+}
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
@@ -34,6 +45,11 @@ export default function LiveOperationsPage() {
   const [routeCorridors, setRouteCorridors] = useState([]);
   const [selectedAlert, setSelectedAlert] = useState(null);
 
+  // Per-area toggle and zoom state
+  const [selectedAreaFilter, setSelectedAreaFilter] = useState('All');
+  const [liveZoom, setLiveZoom] = useState(12);
+  const [showUnmappedDrawer, setShowUnmappedDrawer] = useState(false);
+
   const alertIdParam = searchParams.get('alertId');
   const latParam = parseFloat(searchParams.get('lat'));
   const lngParam = parseFloat(searchParams.get('lng'));
@@ -41,49 +57,54 @@ export default function LiveOperationsPage() {
   const fetchLiveOps = useCallback(async () => {
     setLoading(true);
     try {
-      const [opsRes, custRes, corrRes, alertRes] = await Promise.all([
+      const [opsRes, corrRes, alertRes] = await Promise.all([
         api.get('/route-intelligence/live-operations').catch(() => null),
-        api.get('/customers', { params: { limit: 500 } }).catch(() => null),
         api.get('/route-intelligence/route-corridors').catch(() => null),
         alertIdParam ? api.get('/route-intelligence/alerts').catch(() => null) : null,
       ]);
 
+      let loadedMapped = [];
+      let loadedAll = [];
+
       if (opsRes?.data?.success && opsRes?.data?.data) {
-        const { deliveryPartners: dps, routes: rts, stats: st, liveEvents: evs } = opsRes.data.data;
+        const { deliveryPartners: dps, routes: rts, stats: st, liveEvents: evs, customers: cList, unmappedCustomers: uList, allCustomers: aList } = opsRes.data.data;
         if (dps && dps.length > 0) setPartners(dps);
         if (rts && rts.length > 0) setRoutes(rts);
         if (st) setStats(st);
         if (evs && evs.length > 0) setEvents(evs);
+        if (cList && cList.length > 0) {
+          loadedMapped = cList;
+          loadedAll = aList || [...cList, ...(uList || [])];
+        }
         setIsDb2Loaded(true);
-      }
-
-      if (custRes?.data?.success && Array.isArray(custRes.data?.data)) {
-        setAllCustomers(custRes.data.data);
-        setCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
       }
 
       if (corrRes?.data?.success && corrRes.data?.data?.routes) {
         setRouteCorridors(corrRes.data.data.routes);
-        // Consolidate customers if needed
-        const corrCust = [];
-        corrRes.data.data.routes.forEach(r => {
-          if (r.customers) corrCust.push(...r.customers);
-        });
-        if (corrCust.length > 0 && customers.length === 0) {
-          setCustomers(corrCust);
+        if (loadedMapped.length === 0) {
+          const corrCust = [];
+          const missingCust = [];
+          corrRes.data.data.routes.forEach(r => {
+            if (r.customers) corrCust.push(...r.customers);
+            if (r.missingCustomers) missingCust.push(...r.missingCustomers);
+          });
+          if (corrCust.length > 0) {
+            loadedMapped = corrCust;
+            loadedAll = [...corrCust, ...missingCust];
+          }
         }
       }
 
-      if (alertRes?.data?.success && Array.isArray(alertRes.data?.data)) {
-        const found = alertRes.data.data.find(a => String(a.id) === String(alertIdParam));
-        if (found) setSelectedAlert(found);
+      if (loadedMapped.length > 0) {
+        setAllCustomers(loadedAll);
+        setCustomers(loadedMapped);
       }
     } catch (err) {
       console.warn('Failed to load DB2 Live Operations data:', err.message);
     } finally {
       setLoading(false);
     }
-  }, [alertIdParam, customers.length]);
+  }, [alertIdParam]);
 
   useEffect(() => {
     fetchLiveOps();
@@ -93,6 +114,69 @@ export default function LiveOperationsPage() {
     setSelectedAlert(null);
     setSearchParams({});
   };
+
+  // Spiderfy duplicate customer coordinates so all 108 pins remain visible & clickable
+  const spiderfiedCustomers = useMemo(() => {
+    const coordGroups = {};
+    customers.forEach(c => {
+      const lat = parseFloat(c.lat);
+      const lng = parseFloat(c.lng);
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      if (!coordGroups[key]) coordGroups[key] = [];
+      coordGroups[key].push(c);
+    });
+
+    return customers.map(c => {
+      const lat = parseFloat(c.lat);
+      const lng = parseFloat(c.lng);
+      const key = `${lat.toFixed(5)},${lng.toFixed(5)}`;
+      const group = coordGroups[key];
+
+      if (group && group.length > 1) {
+        const idx = group.indexOf(c);
+        const total = group.length;
+        const angle = (idx / total) * 2 * Math.PI;
+        const dLat = 0.00010 * Math.cos(angle);
+        const dLng = (0.00010 * Math.sin(angle)) / Math.cos(lat * Math.PI / 180);
+        return {
+          ...c,
+          spiderfyLat: lat + dLat,
+          spiderfyLng: lng + dLng,
+        };
+      }
+      return {
+        ...c,
+        spiderfyLat: lat,
+        spiderfyLng: lng,
+      };
+    });
+  }, [customers]);
+
+  const filterMatchesArea = (c, filter) => {
+    if (!filter || filter === 'All' || filter === 'All Routes' || filter === 'All 5 Areas') return true;
+    const rName = (c.route_name || c.assigned_route_id || c.area || '').toLowerCase().trim();
+    const fLower = filter.toLowerCase().trim();
+    return rName === fLower || rName.includes(fLower.split(' ')[0]);
+  };
+
+  const filteredMappedPins = useMemo(() => {
+    if (selectedAreaFilter === 'All') return spiderfiedCustomers;
+    return spiderfiedCustomers.filter(c => filterMatchesArea(c, selectedAreaFilter));
+  }, [spiderfiedCustomers, selectedAreaFilter]);
+
+  const unmappedCustomers = useMemo(() => {
+    return allCustomers.filter(c => {
+      if (!c.lat || !c.lng) return true;
+      const lat = parseFloat(c.lat);
+      const lng = parseFloat(c.lng);
+      return isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0;
+    });
+  }, [allCustomers]);
+
+  const filteredUnmappedCustomers = useMemo(() => {
+    if (selectedAreaFilter === 'All') return unmappedCustomers;
+    return unmappedCustomers.filter(c => filterMatchesArea(c, selectedAreaFilter));
+  }, [unmappedCustomers, selectedAreaFilter]);
 
   // Generate road-following corridor polylines for all 5 areas
   const activeCustomerRoutes = useMemo(() => {
@@ -111,6 +195,20 @@ export default function LiveOperationsPage() {
     }
     return buildActiveCustomerRoutes(allCustomers, HEAD_OFFICE);
   }, [routeCorridors, allCustomers]);
+
+  const routesToRender = useMemo(() => {
+    if (selectedAreaFilter === 'All') return activeCustomerRoutes;
+    return activeCustomerRoutes.filter(r => r.name.toLowerCase().trim() === selectedAreaFilter.toLowerCase().trim());
+  }, [activeCustomerRoutes, selectedAreaFilter]);
+
+  const offsetCustomerRoutes = useMemo(() => {
+    if (!routesToRender || routesToRender.length === 0) return [];
+    return computeRouteLaneOffsets(routesToRender, liveZoom, {
+      laneSpacingPx: 5.5,
+      matchDistanceMeters: 15,
+      stepMeters: 25,
+    });
+  }, [routesToRender, liveZoom]);
 
   // Dynamic map bounds or center on alert
   const mapCenter = useMemo(() => {
@@ -210,10 +308,72 @@ export default function LiveOperationsPage() {
         <AnalyticsCard
           icon={<MdNotifications />}
           label="Delivery Stops"
-          value={customers.length}
-          sub="Mapped Customer Pins"
+          value={filteredMappedPins.length}
+          sub={`${filteredUnmappedCustomers.length} unmapped`}
           color="var(--info)"
         />
+      </div>
+
+      {/* Area Filter Controls */}
+      <div className="card" style={{ marginBottom: 16, padding: '10px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+            <span style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
+              <MdFilterList /> Area Filter:
+            </span>
+            <button
+              className={`btn btn-xs ${selectedAreaFilter === 'All' ? 'btn-primary' : 'btn-outline'}`}
+              onClick={() => setSelectedAreaFilter('All')}
+            >
+              All 5 Areas ({customers.length})
+            </button>
+            {Object.values(AREA_PALETTE).map(area => {
+              const custCount = customers.filter(c =>
+                (c.route_name || c.assigned_route_id || c.area || '').toLowerCase().includes(area.name.toLowerCase().split(' ')[0])
+              ).length;
+              const isActive = selectedAreaFilter === area.name;
+              return (
+                <button
+                  key={area.id}
+                  className={`btn btn-xs ${isActive ? 'btn-primary' : 'btn-outline'}`}
+                  style={isActive
+                    ? { background: area.color, borderColor: area.color, color: '#fff', fontWeight: 700 }
+                    : { borderColor: area.color, color: area.color }
+                  }
+                  onClick={() => setSelectedAreaFilter(area.name)}
+                >
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: isActive ? '#fff' : area.color, marginRight: 5 }} />
+                  {area.name} ({custCount})
+                </button>
+              );
+            })}
+          </div>
+
+          {unmappedCustomers.length > 0 && (
+            <button
+              className="btn btn-warning btn-xs"
+              onClick={() => setShowUnmappedDrawer(!showUnmappedDrawer)}
+              style={{ display: 'flex', alignItems: 'center', gap: 6 }}
+            >
+              <MdWarning /> Location unavailable ({filteredUnmappedCustomers.length})
+            </button>
+          )}
+        </div>
+
+        {showUnmappedDrawer && (
+          <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border)', background: 'rgba(245,158,11,0.05)', padding: 12, borderRadius: 8 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700, fontSize: 13, color: '#d97706', marginBottom: 8 }}>
+              <MdWarning /> Customers without GPS Coordinates ("Location unavailable"):
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+              {filteredUnmappedCustomers.map(c => (
+                <div key={c.id} style={{ background: '#fff', border: '1px solid #fde68a', borderRadius: 6, padding: '4px 10px', fontSize: 12 }}>
+                  <strong>{c.name}</strong> ({c.customer_code || 'No Code'}) — <span style={{ color: 'var(--text-muted)' }}>{c.address || 'No Address'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Map + DP List */}
@@ -233,14 +393,16 @@ export default function LiveOperationsPage() {
         >
           {({ showCustomers, showPartners, showRoutes }) => (
             <>
+              <MapZoomListener onZoom={setLiveZoom} />
               {/* Head Office */}
               <HeadOfficeMarker office={HEAD_OFFICE} />
 
-              {/* Road-following corridor polylines for all 5 areas */}
-              {showRoutes && activeCustomerRoutes.map(route => (
+              {/* Road-following corridor polylines for all 5 areas rendered in parallel lanes */}
+              {showRoutes && offsetCustomerRoutes.map(route => (
                 <RoutePolyline
                   key={route.id}
-                  coordinates={route.roadCoordinates || route.polyline}
+                  coordinates={route.lanePolyline || route.roadCoordinates || route.polyline}
+                  originalCoordinates={route.originalPolyline || route.roadCoordinates || route.polyline}
                   color={route.color}
                   routeName={`${route.name} (${route.customerCount || 0} Customers)`}
                   isRouteCorridor={route.isRouteCorridor}
@@ -262,9 +424,9 @@ export default function LiveOperationsPage() {
                 />
               )}
 
-              {/* Customers (Dynamic from CRM DB with route pin colors) */}
-              {showCustomers && customers.map(cust => (
-                <CustomerMarker key={cust.id} customer={cust} />
+              {/* Customers (Filtered mapped customer pins in area colors) */}
+              {showCustomers && filteredMappedPins.map(cust => (
+                <CustomerMarker key={cust.id} customer={cust} selectedRouteFilter={selectedAreaFilter} />
               ))}
 
               {/* Delivery Partners (Actual GPS coordinates with area color tint and initials) */}

@@ -3,10 +3,11 @@ import { Polyline, Popup, Tooltip } from 'react-leaflet';
 
 export default function RoutePolyline({
   coordinates,
+  originalCoordinates = null,
   color = '#3b82f6',
-  weight = 4,
+  weight = 4.5,
   dashArray = null,
-  opacity = 0.9,
+  opacity = 0.95,
   routeName,
   completed = false,
   isRouteCorridor = false,
@@ -16,11 +17,24 @@ export default function RoutePolyline({
 }) {
   if (!coordinates || coordinates.length < 2) return null;
 
+  // Visual corridor buffer uses un-offset centerline
+  const corridorCoords = (originalCoordinates && originalCoordinates.length >= 2)
+    ? originalCoordinates
+    : coordinates;
+
   const roadPathOptions = {
     color: completed ? '#10b981' : color,
     weight,
     opacity,
     dashArray,
+    lineCap: 'round',
+    lineJoin: 'round',
+  };
+
+  const whiteCasingOptions = {
+    color: '#ffffff',
+    weight: weight + 3, // ~7.5px crisp white casing
+    opacity: 0.95,
     lineCap: 'round',
     lineJoin: 'round',
   };
@@ -35,12 +49,15 @@ export default function RoutePolyline({
 
   return (
     <>
-      {/* Visual Corridor Buffer (Rendered for Route-Corridor Geofenced routes) */}
+      {/* Visual Corridor Buffer (Rendered against original un-offset centerline) */}
       {isRouteCorridor && (
-        <Polyline positions={coordinates} pathOptions={corridorPathOptions} />
+        <Polyline positions={corridorCoords} pathOptions={corridorPathOptions} />
       )}
 
-      {/* Actual Road-Following Polyline */}
+      {/* Thin White Outline (Casing) under lane line for visual separation */}
+      <Polyline positions={coordinates} pathOptions={whiteCasingOptions} />
+
+      {/* Actual Colored Road Lane Polyline */}
       <Polyline positions={coordinates} pathOptions={roadPathOptions}>
         {routeName && (
           <Tooltip sticky>

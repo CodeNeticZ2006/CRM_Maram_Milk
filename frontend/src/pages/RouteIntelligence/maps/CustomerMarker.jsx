@@ -25,27 +25,32 @@ export const getCustomerIcon = (routeName = '', customColor = null) => {
 
 export const customerIcon = getCustomerIcon();
 
-export default function CustomerMarker({ customer, selectedRouteFilter }) {
+export default function CustomerMarker({ customer, selectedRouteFilter, position }) {
   if (!customer) return null;
 
-  // Source of Truth: Customer database coordinates
-  const lat = parseFloat(customer.lat);
-  const lng = parseFloat(customer.lng);
-  if (isNaN(lat) || isNaN(lng) || lat === 0 || lng === 0) return null;
+  // Source of Truth: Customer coordinates (with optional spiderfy offset for duplicates)
+  const baseLat = parseFloat(customer.lat);
+  const baseLng = parseFloat(customer.lng);
+  if (isNaN(baseLat) || isNaN(baseLng) || baseLat === 0 || baseLng === 0) return null;
 
-  const routeName = customer.route_name || customer.assigned_route_id || customer.route || customer.area || 'Unassigned';
+  const lat = position ? position[0] : (customer.spiderfyLat || baseLat);
+  const lng = position ? position[1] : (customer.spiderfyLng || baseLng);
+
+  const routeName = customer.route_name || customer.area || customer.assigned_route_id || customer.route || 'Unassigned';
   const code = customer.customer_code || customer.customerId || customer.code || '';
   const address = customer.address || 'Address unavailable';
   const territory = customer.territory || customer.zone || 'Central Chennai';
-  const pinColor = customer.color || getAreaColor(routeName);
+  const pinColor = customer.areaColor || customer.color || getAreaColor(routeName, '#2563eb');
 
   // Determine if customer is outside the currently selected route/territory filter
   const isOutside = Boolean(
     selectedRouteFilter &&
     selectedRouteFilter !== 'All' &&
     selectedRouteFilter !== 'All Routes' &&
+    selectedRouteFilter !== 'All 5 Areas' &&
     selectedRouteFilter !== 'All two routes' &&
-    routeName.toLowerCase().trim() !== selectedRouteFilter.toLowerCase().trim()
+    routeName.toLowerCase().trim() !== selectedRouteFilter.toLowerCase().trim() &&
+    !routeName.toLowerCase().includes(selectedRouteFilter.toLowerCase().split(' ')[0])
   );
 
   return (

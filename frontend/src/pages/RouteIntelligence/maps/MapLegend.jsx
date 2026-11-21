@@ -34,13 +34,14 @@ export default function MapLegend({ items }) {
             <div key={idx} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: 'var(--text-secondary, #475569)' }}>
               <span
                 style={{
-                  width: 12,
-                  height: 12,
-                  borderRadius: item.shape === 'circle' ? '50%' : 3,
+                  width: 14,
+                  height: item.shape === 'circle' ? 14 : 6,
+                  borderRadius: item.shape === 'circle' ? '50%' : 2,
                   background: item.color,
                   display: 'inline-block',
                   flexShrink: 0,
-                  boxShadow: '0 1px 3px rgba(0,0,0,0.2)'
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
+                  border: item.shape === 'circle' ? '1.5px solid #fff' : '1px solid #fff',
                 }}
               />
               <span style={{ fontWeight: 500 }}>{item.label}</span>
