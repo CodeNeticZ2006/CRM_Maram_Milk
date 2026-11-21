@@ -626,13 +626,28 @@
   position: absolute;
   inset: -6px;
   border-radius: 50%;
-  border: 2px solid #10b981;
+  border: 2.5px solid #10b981;
   animation: map-ping 1.6s cubic-bezier(0, 0, 0.2, 1) infinite;
   pointer-events: none;
 }
 
-.marker-pulse-ring.blue {
-  border-color: #3b82f6;
+.marker-pulse-ring.blue    { border-color: #3b82f6; }
+.marker-pulse-ring.green   { border-color: #10b981; }
+.marker-pulse-ring.warning { border-color: #f59e0b; }
+.marker-pulse-ring.red     { border-color: #ef4444; }
+
+.marker-dp-initials {
+  transform: rotate(45deg);
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  text-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  letter-spacing: -0.5px;
 }
 
 @keyframes map-ping {

@@ -1,13 +1,14 @@
 const { readFromApp, readFromCRM, writeToCRM } = require('../config/database');
 const {
-  ROUTE_NUNGAMBAKKAM_ID,
-  ROUTE_TRIPLICANE_ID,
-  ROUTE_COLORS,
-  getRouteCorridors,
-  processGpsPing,
   dpGpsStore,
   deviationSessionsStore,
+  alertsStore,
+  getRouteCorridors,
+  processGpsPing,
+  getAlerts,
+  reviewAlert,
 } = require('../services/routeCorridor.service');
+const { AREA_CONFIG, resolveArea } = require('../config/areaConfig');
 
 // Chennai reference coordinates for DB2 routes/zones
 const ZONE_COORDINATES = {
@@ -65,11 +66,9 @@ const ROUTE_BOUNDARIES = {
 
 function getRouteBoundaryPolygon(name, index) {
   if (!name) return null;
-  const lower = name.toLowerCase().trim();
-
-  // For Nungambakkam 1 and Triplicane 1, replace polygon-based route monitoring
-  // with route-corridor based geofencing. Do not create large closed polygons around them.
-  if (lower.includes('nungambakkam') || lower.includes('triplicane')) {
+  // All 5 canonical areas use road-following corridor geofencing
+  const area = resolveArea(name);
+  if (area) {
     return null;
   }
 
@@ -150,36 +149,33 @@ const getLiveOperations = async (req, res, next) => {
       };
     });
 
-    // Ensure dedicated Delivery Partners for Nungambakkam 1 and Triplicane 1 are present
-    // with actual GPS tracking state. Do not generate mock GPS coordinates.
-    const nungState = dpGpsStore['dp-nung-1'];
-    const tripState = dpGpsStore['dp-trip-1'];
-
-    // Check if DP already exists in deliveryPartners list, else add them
-    const existingNungIdx = deliveryPartners.findIndex(d => (d.route && d.route.includes('Nungambakkam')) || d.id === 'dp-nung-1' || d.dpCode === 'DP008');
-    const existingTripIdx = deliveryPartners.findIndex(d => (d.route && d.route.includes('Triplicane')) || d.id === 'dp-trip-1' || d.dpCode === 'DP012');
-
+    // Format dedicated Delivery Partners for all 5 Area Corridors
     const formatCorridorPartner = (state, defaultDeliveries, defaultTotal) => {
       let displayStatus = state.status;
       let lastUpdateText = 'GPS unavailable';
 
       if (state.lastGps && state.lastGps.timestamp) {
         const ageMs = Date.now() - new Date(state.lastGps.timestamp).getTime();
-        if (ageMs > 15 * 60 * 1000) {
-          displayStatus = 'Location stale';
-          lastUpdateText = `${Math.round(ageMs / 60000)}m ago (stale)`;
+        if (ageMs > 10 * 60 * 1000) {
+          displayStatus = 'signal lost';
+          lastUpdateText = `${Math.round(ageMs / 60000)}m ago (signal lost)`;
         } else {
           lastUpdateText = new Date(state.lastGps.timestamp).toLocaleTimeString();
         }
       }
 
+      const initials = state.name ? state.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : (state.dpCode || 'DP');
+
       return {
         id: state.id,
         dpCode: state.dpCode,
         name: state.name,
+        initials,
         route: state.assignedRouteName,
-        zone: 'Zone A',
+        areaColor: state.assignedAreaColor,
+        zone: 'Central Chennai',
         status: displayStatus,
+        currentState: state.currentState || 'ON_ROUTE',
         lat: state.lastGps ? state.lastGps.lat : null,
         lng: state.lastGps ? state.lastGps.lng : null,
         speed: state.lastGps ? state.lastGps.speed : 0,
@@ -194,20 +190,30 @@ const getLiveOperations = async (req, res, next) => {
       };
     };
 
-    const nungPartnerObj = formatCorridorPartner(nungState, 19, 25);
-    const tripPartnerObj = formatCorridorPartner(tripState, 15, 20);
-
-    if (existingNungIdx >= 0) {
-      deliveryPartners[existingNungIdx] = { ...deliveryPartners[existingNungIdx], ...nungPartnerObj };
-    } else {
-      deliveryPartners.push(nungPartnerObj);
-    }
-
-    if (existingTripIdx >= 0) {
-      deliveryPartners[existingTripIdx] = { ...deliveryPartners[existingTripIdx], ...tripPartnerObj };
-    } else {
-      deliveryPartners.push(tripPartnerObj);
-    }
+    // Upsert the 5 area partners into deliveryPartners list
+    Object.keys(AREA_CONFIG).forEach((areaId, idx) => {
+      const area = AREA_CONFIG[areaId];
+      const dpState = dpGpsStore[area.assignedDpId] || {
+        id: area.assignedDpId,
+        name: area.assignedDpName,
+        dpCode: area.assignedDpCode,
+        assignedRouteId: area.id,
+        assignedRouteName: area.name,
+        assignedAreaColor: area.color,
+        status: 'GPS unavailable',
+      };
+      const partnerObj = formatCorridorPartner(dpState, 15 + idx * 2, 20 + idx * 2);
+      const existingIdx = deliveryPartners.findIndex(d =>
+        (d.route && d.route.toLowerCase().includes(area.name.toLowerCase().split(' ')[0])) ||
+        d.id === area.assignedDpId ||
+        d.dpCode === area.assignedDpCode
+      );
+      if (existingIdx >= 0) {
+        deliveryPartners[existingIdx] = { ...deliveryPartners[existingIdx], ...partnerObj };
+      } else {
+        deliveryPartners.push(partnerObj);
+      }
+    });
 
     // Fetch real CRM customer count per route
     let crmCountMap = {};
@@ -278,7 +284,8 @@ const getLiveOperations = async (req, res, next) => {
           totalRoutes: routes.length,
           deviations: deviationsCount,
           stopped: stoppedCount,
-          alerts: stoppedCount + deviationsCount,
+          alerts: alertsStore.filter(a => a.status === 'TO_BE_REVIEWED').length,
+          unreviewedAlertsCount: alertsStore.filter(a => a.status === 'TO_BE_REVIEWED').length,
         },
         liveEvents,
       },
@@ -329,47 +336,40 @@ const getRouteCompliance = async (req, res, next) => {
       };
     });
 
-    // Ensure Vijay Sethu (Nungambakkam 1) and Saravanan (Triplicane 1) are present with their corridor compliance
-    const vGps = dpGpsStore['dp-nungambakkam-1'] || dpGpsStore['dp-001'];
-    const sGps = dpGpsStore['dp-triplicane-1'] || dpGpsStore['dp-002'];
+    // Ensure all 5 Area Corridor Delivery Partners are present with live timers and status
+    Object.keys(AREA_CONFIG).forEach(areaId => {
+      const area = AREA_CONFIG[areaId];
+      const dpState = dpGpsStore[area.assignedDpId] || {};
+      const activeSess = deviationSessionsStore.find(s => s.dpId === area.assignedDpId && s.status === 'OPEN');
+      const latestSess = activeSess || deviationSessionsStore.find(s => s.dpId === area.assignedDpId);
 
-    const vijayComp = {
-      id: 'comp-dp-nungambakkam1',
-      dp: 'Vijay Sethu',
-      assignedRoute: 'Nungambakkam 1',
-      enteredRoute: 'Nungambakkam 1',
-      entryTime: '05:45 AM',
-      exitTime: '—',
-      drivingTime: '45 min',
-      stoppedTime: '3 min',
-      distanceKm: '8.2 km',
-      status: vGps?.corridorStatus === 'RED' ? 'deviated' : vGps?.corridorStatus === 'YELLOW' ? 'warning' : 'compliant',
-      notes: `Route corridor geofenced (±120m buffer) - ${vGps?.corridorStatus || 'GREEN'}`,
-      source: 'CorridorEngine',
-    };
+      const drivingMin = latestSess ? Math.max(1, Math.round(latestSess.drivingSeconds / 60)) : 25;
+      const stoppedMin = latestSess ? Math.round(latestSess.stoppedSeconds / 60) : 3;
+      const status = dpState.status === 'RED' ? 'deviated' : dpState.status === 'YELLOW' ? 'warning' : 'compliant';
 
-    const saravananComp = {
-      id: 'comp-dp-triplicane1',
-      dp: 'Saravanan',
-      assignedRoute: 'Triplicane 1',
-      enteredRoute: 'Triplicane 1',
-      entryTime: '05:50 AM',
-      exitTime: '—',
-      drivingTime: '38 min',
-      stoppedTime: '4 min',
-      distanceKm: '7.1 km',
-      status: sGps?.corridorStatus === 'RED' ? 'deviated' : sGps?.corridorStatus === 'YELLOW' ? 'warning' : 'compliant',
-      notes: `Route corridor geofenced (±120m buffer) - ${sGps?.corridorStatus || 'GREEN'}`,
-      source: 'CorridorEngine',
-    };
+      const compItem = {
+        id: `comp-${area.assignedDpId}`,
+        dp: area.assignedDpName,
+        assignedRoute: area.name,
+        enteredRoute: status === 'deviated' ? 'Off-Route' : area.name,
+        entryTime: '05:45 AM',
+        exitTime: '—',
+        drivingTime: `${drivingMin} min`,
+        stoppedTime: `${stoppedMin} min`,
+        distanceKm: `${(6.0 + Object.keys(AREA_CONFIG).indexOf(areaId) * 0.8).toFixed(1)} km`,
+        status,
+        areaColor: area.color,
+        notes: `Route corridor (±120m) — ${dpState.status || 'GREEN'}${dpState.currentState ? ` [${dpState.currentState}]` : ''}`,
+        source: 'CorridorEngine',
+      };
 
-    const existingVIdx = complianceRows.findIndex(c => c.dp?.toLowerCase().includes('vijay'));
-    if (existingVIdx >= 0) complianceRows[existingVIdx] = vijayComp;
-    else complianceRows.unshift(vijayComp);
-
-    const existingSIdx = complianceRows.findIndex(c => c.dp?.toLowerCase().includes('saravanan'));
-    if (existingSIdx >= 0) complianceRows[existingSIdx] = saravananComp;
-    else complianceRows.unshift(saravananComp);
+      const existingIdx = complianceRows.findIndex(c =>
+        c.dp?.toLowerCase().includes(area.assignedDpName.toLowerCase().split(' ')[0]) ||
+        c.id === `comp-${area.assignedDpId}`
+      );
+      if (existingIdx >= 0) complianceRows[existingIdx] = compItem;
+      else complianceRows.unshift(compItem);
+    });
 
     res.json({
       success: true,
@@ -483,25 +483,18 @@ const getTerritoryMonitoring = async (req, res, next) => {
         let roadPolyline = null;
         let corridorToleranceMeters = null;
 
-        const lowerName = (r.name || '').toLowerCase();
-        if (lowerName.includes('nungambakkam')) {
-          color = '#2563eb'; // Blue per Requirement 3
+        const areaMatch = resolveArea(r.id) || resolveArea(r.name);
+        if (areaMatch) {
+          color = areaMatch.color;
           isRouteCorridor = true;
           corridorToleranceMeters = settingsStore.complianceRules?.corridorToleranceMeters || 120;
-          const corr = corridorData.routes.find(c => c.name.includes('Nungambakkam'));
+          const corr = corridorData.routes.find(c => c.id === areaMatch.id || c.name === areaMatch.name);
           roadPolyline = corr ? corr.polyline : [];
-        } else if (lowerName.includes('triplicane')) {
-          color = '#10b981'; // Green per Requirement 3
-          isRouteCorridor = true;
-          corridorToleranceMeters = settingsStore.complianceRules?.corridorToleranceMeters || 120;
-          const corr = corridorData.routes.find(c => c.name.includes('Triplicane'));
-          roadPolyline = corr ? corr.polyline : [];
-        } else if (lowerName.includes('royapettah')) {
-          color = '#3b82f6';
-        } else if (lowerName.includes('mandaveli')) {
-          color = '#a855f7';
-        } else if (lowerName.includes('teynampet')) {
-          color = '#10b981';
+        } else {
+          const lowerName = (r.name || '').toLowerCase();
+          if (lowerName.includes('royapettah')) color = '#dc2626';
+          else if (lowerName.includes('mandaveli')) color = '#7c3aed';
+          else if (lowerName.includes('teynampet')) color = '#d97706';
         }
 
         return {
@@ -719,6 +712,35 @@ const getDeviationSessionsHandler = async (req, res, next) => {
   } catch (err) { next(err); }
 };
 
+// ── GET /api/route-intelligence/alerts ───────────────────────────────────────
+const getRouteAlertsHandler = async (req, res, next) => {
+  try {
+    const { status, areaId, dpId } = req.query;
+    const alerts = await getAlerts({ status, areaId, dpId });
+    res.json({
+      success: true,
+      data: alerts,
+      count: alerts.length,
+      unreviewedCount: alerts.filter(a => a.status === 'TO_BE_REVIEWED').length,
+    });
+  } catch (err) { next(err); }
+};
+
+// ── PATCH /api/route-intelligence/alerts/:id/review ─────────────────────────
+const reviewRouteAlertHandler = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status, note } = req.body;
+    const reviewedBy = req.admin?.name || req.admin?.email || 'Super Admin';
+    const updated = await reviewAlert(id, { status, note, reviewedBy });
+    res.json({
+      success: true,
+      message: `Alert ${id} updated to ${status}.`,
+      data: updated,
+    });
+  } catch (err) { next(err); }
+};
+
 module.exports = {
   getLiveOperations,
   getRouteCompliance,
@@ -731,4 +753,6 @@ module.exports = {
   getRouteCorridorsHandler,
   postGpsPing,
   getDeviationSessionsHandler,
+  getRouteAlertsHandler,
+  reviewRouteAlertHandler,
 };

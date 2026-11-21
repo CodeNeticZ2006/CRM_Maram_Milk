@@ -1,28 +1,52 @@
 import { motion } from 'framer-motion';
-import { MdCheckCircle, MdFilterList, MdDownload, MdSearch, MdRefresh } from 'react-icons/md';
+import {
+  MdCheckCircle, MdFilterList, MdDownload, MdSearch, MdRefresh,
+  MdWarningAmber, MdLocationOn, MdCheck, MdClose, MdVisibility
+} from 'react-icons/md';
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { SectionHeader, StatusBadge } from '../components/index.jsx';
 import api from '../../../services/api';
 import { MOCK_COMPLIANCE_ROWS } from '../utils/mockData.js';
+import { getAreaColor } from '../utils/areaPalette.js';
 import '../components/RouteIntelligence.css';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 const STATUS_FILTER_OPTIONS = ['All', 'compliant', 'warning', 'deviated', 'review'];
 
 export default function RouteCompliancePage() {
+  const navigate = useNavigate();
+
   const [search, setSearch]       = useState('');
   const [statusFilter, setFilter] = useState('All');
   const [rows, setRows]           = useState(MOCK_COMPLIANCE_ROWS);
+  const [alerts, setAlerts]       = useState([]);
   const [loading, setLoading]     = useState(true);
   const [isDb2Loaded, setIsDb2Loaded] = useState(false);
+
+  // Review modal state
+  const [reviewModal, setReviewModal] = useState({
+    open: false,
+    alert: null,
+    action: 'REVIEWED',
+    note: '',
+    submitting: false,
+  });
 
   const fetchCompliance = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await api.get('/route-intelligence/compliance');
-      if (res.data?.success && res.data?.data && res.data.data.length > 0) {
-        setRows(res.data.data);
+      const [compRes, alertRes] = await Promise.all([
+        api.get('/route-intelligence/compliance').catch(() => null),
+        api.get('/route-intelligence/alerts').catch(() => null),
+      ]);
+
+      if (compRes?.data?.success && compRes?.data?.data && compRes.data.data.length > 0) {
+        setRows(compRes.data.data);
         setIsDb2Loaded(true);
+      }
+      if (alertRes?.data?.success && Array.isArray(alertRes.data?.data)) {
+        setAlerts(alertRes.data.data);
       }
     } catch (err) {
       console.warn('Failed to load DB2 Compliance data:', err.message);
@@ -35,6 +59,24 @@ export default function RouteCompliancePage() {
     fetchCompliance();
   }, [fetchCompliance]);
 
+  const handleReviewSubmit = async () => {
+    if (!reviewModal.alert) return;
+    setReviewModal(prev => ({ ...prev, submitting: true }));
+    try {
+      const res = await api.patch(`/route-intelligence/alerts/${reviewModal.alert.id}/review`, {
+        status: reviewModal.action,
+        note: reviewModal.note,
+      });
+      if (res?.data?.success) {
+        setAlerts(prev => prev.map(a => a.id === reviewModal.alert.id ? { ...a, status: reviewModal.action, reviewNote: reviewModal.note } : a));
+        setReviewModal({ open: false, alert: null, action: 'REVIEWED', note: '', submitting: false });
+      }
+    } catch (err) {
+      alert(`Failed to submit review: ${err.message}`);
+      setReviewModal(prev => ({ ...prev, submitting: false }));
+    }
+  };
+
   const filtered = rows.filter(row => {
     const matchSearch = (row?.dp || '').toLowerCase().includes((search || '').toLowerCase()) ||
                         (row?.assignedRoute || '').toLowerCase().includes((search || '').toLowerCase());
@@ -42,6 +84,7 @@ export default function RouteCompliancePage() {
     return matchSearch && matchStatus;
   });
 
+  const inReviewAlerts = alerts.filter(a => a.status === 'TO_BE_REVIEWED');
   const totalCompliant = rows.filter(r => r.status === 'compliant').length;
   const totalDeviated  = rows.filter(r => r.status === 'deviated').length;
   const totalWarning   = rows.filter(r => r.status === 'warning').length;
@@ -52,7 +95,7 @@ export default function RouteCompliancePage() {
         title="Route Compliance"
         subtitle={
           <span>
-            Monitor whether delivery partners are following their assigned routes
+            Monitor whether delivery partners stay on their assigned area route corridors
             {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
           </span>
         }
@@ -67,10 +110,10 @@ export default function RouteCompliancePage() {
       {/* Summary KPIs */}
       <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
         {[
-          { label: 'Total Partners (DB2)', value: rows.length,       color: 'var(--primary)' },
-          { label: 'Compliant',             value: totalCompliant,    color: 'var(--success)' },
-          { label: 'Warnings',              value: totalWarning,      color: 'var(--warning)' },
-          { label: 'Deviated',              value: totalDeviated,     color: 'var(--danger)'  },
+          { label: 'Total Partners (DB2)', value: rows.length,            color: 'var(--primary)' },
+          { label: 'Compliant',             value: totalCompliant,         color: 'var(--success)' },
+          { label: 'Off-Route Alerts',      value: inReviewAlerts.length,  color: 'var(--danger)'  },
+          { label: 'Warnings',              value: totalWarning,           color: 'var(--warning)' },
         ].map(s => (
           <div key={s.label} className="stat-card" style={{ '--card-accent': s.color }}>
             <div className="stat-value" style={{ color: s.color }}>{s.value}</div>
@@ -78,6 +121,171 @@ export default function RouteCompliancePage() {
           </div>
         ))}
       </div>
+
+      {/* ── SUPERADMIN OFF-ROUTE ALERTS (IN REVIEW LIST) ───────────────────── */}
+      <div className="card" style={{ marginBottom: 24, border: inReviewAlerts.length > 0 ? '1.5px solid #fecaca' : '1px solid var(--border)' }}>
+        <div className="card-header" style={{ paddingBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 20 }}>🚨</span>
+            <div>
+              <span className="card-title" style={{ color: inReviewAlerts.length > 0 ? '#991b1b' : 'inherit' }}>
+                Off-Route Deviation Alerts — In Review
+              </span>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                Deviations exceeding permitted area corridor tolerance or stop/driving thresholds
+              </div>
+            </div>
+          </div>
+          <span className={`badge ${inReviewAlerts.length > 0 ? 'badge-danger' : 'badge-success'}`}>
+            {inReviewAlerts.length} To Be Reviewed
+          </span>
+        </div>
+
+        <div className="ri-compliance-wrap">
+          <table className="table">
+            <thead>
+              <tr>
+                <th>Delivery Partner</th>
+                <th>Assigned Area</th>
+                <th>Deviation Type</th>
+                <th>Driving Off-Route</th>
+                <th>Stopped Off-Route</th>
+                <th>Max Offset</th>
+                <th>Started At (IST)</th>
+                <th>Status</th>
+                <th>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inReviewAlerts.map(alert => {
+                const areaColor = getAreaColor(alert.areaName || alert.areaId);
+                const istTime = alert.startedAt ? new Date(alert.startedAt).toLocaleString('en-IN', { timeZone: 'Asia/Kolkata', dateStyle: 'short', timeStyle: 'short' }) : '—';
+                const drivingMin = alert.drivingSeconds ? `${Math.round(alert.drivingSeconds / 60)} min (${alert.drivingSeconds}s)` : '0 min';
+                const stoppedMin = alert.stoppedSeconds ? `${Math.round(alert.stoppedSeconds / 60)} min (${alert.stoppedSeconds}s)` : '0 min';
+
+                return (
+                  <tr key={alert.id} style={{ background: '#fff9f9' }}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 28, height: 28, borderRadius: '50%', background: areaColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                          {alert.dpName ? alert.dpName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'DP'}
+                        </div>
+                        <div>
+                          <span style={{ fontWeight: 600 }}>{alert.dpName}</span>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>ID: {alert.dpId}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      <span style={{ fontWeight: 600, color: areaColor }}>
+                        {alert.areaName}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`badge ${alert.type === 'OFF_ROUTE_DRIVING' ? 'badge-warning' : 'badge-danger'}`}>
+                        {alert.type === 'OFF_ROUTE_DRIVING' ? 'Driving Off-Route' : 'Stopped Off-Route'}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 13, fontWeight: alert.drivingSeconds > 0 ? 600 : 400 }}>{drivingMin}</td>
+                    <td style={{ fontSize: 13, fontWeight: alert.stoppedSeconds > 0 ? 600 : 400 }}>{stoppedMin}</td>
+                    <td style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{alert.maxDistance}m</td>
+                    <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{istTime}</td>
+                    <td>
+                      <span className="badge badge-danger">TO BE REVIEWED</span>
+                    </td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                        <button
+                          className="btn btn-primary btn-xs"
+                          style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                          onClick={() => {
+                            const lat = alert.location?.lat || 13.0604;
+                            const lng = alert.location?.lng || 80.2496;
+                            navigate(`/route-intelligence/live?alertId=${alert.id}&lat=${lat}&lng=${lng}&dpId=${alert.dpId}`);
+                          }}
+                        >
+                          <MdLocationOn /> View on Map
+                        </button>
+                        <button
+                          className="btn btn-success btn-xs"
+                          style={{ display: 'flex', alignItems: 'center', gap: 4 }}
+                          onClick={() => setReviewModal({ open: true, alert, action: 'REVIEWED', note: '', submitting: false })}
+                        >
+                          <MdCheck /> Review
+                        </button>
+                        <button
+                          className="btn btn-outline btn-xs"
+                          style={{ display: 'flex', alignItems: 'center', gap: 4, borderColor: 'var(--border)' }}
+                          onClick={() => setReviewModal({ open: true, alert, action: 'DISMISSED', note: '', submitting: false })}
+                        >
+                          <MdClose /> Dismiss
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+              {inReviewAlerts.length === 0 && (
+                <tr>
+                  <td colSpan={9} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: '24px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                      <MdCheckCircle style={{ color: 'var(--success)', fontSize: 18 }} />
+                      <span>All DPs on route. No off-route deviations pending review.</span>
+                    </div>
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Review Action Modal */}
+      {reviewModal.open && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.5)', zIndex: 9999, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <div className="card" style={{ width: 440, padding: 24, boxShadow: '0 20px 40px rgba(0,0,0,0.2)' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
+              <div style={{ fontWeight: 700, fontSize: 16 }}>
+                {reviewModal.action === 'REVIEWED' ? 'Mark Alert as Reviewed' : 'Dismiss Alert'}
+              </div>
+              <button className="btn btn-ghost btn-xs" onClick={() => setReviewModal({ open: false, alert: null, action: 'REVIEWED', note: '', submitting: false })}>
+                <MdClose />
+              </button>
+            </div>
+            <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginBottom: 12 }}>
+              Delivery Partner: <strong>{reviewModal.alert?.dpName}</strong> ({reviewModal.alert?.areaName})<br />
+              Deviation: <strong>{reviewModal.alert?.maxDistance}m</strong> off-route • {reviewModal.alert?.type}
+            </div>
+            <div className="form-group" style={{ marginBottom: 16 }}>
+              <label className="form-label">SuperAdmin Review Note:</label>
+              <textarea
+                className="form-input"
+                rows={3}
+                placeholder={reviewModal.action === 'REVIEWED' ? 'e.g., Road work diversion verified with DP; approved.' : 'e.g., Temporary detour due to roadblock.'}
+                value={reviewModal.note}
+                onChange={e => setReviewModal(prev => ({ ...prev, note: e.target.value }))}
+                style={{ width: '100%', resize: 'vertical' }}
+              />
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+              <button
+                className="btn btn-secondary btn-sm"
+                onClick={() => setReviewModal({ open: false, alert: null, action: 'REVIEWED', note: '', submitting: false })}
+                disabled={reviewModal.submitting}
+              >
+                Cancel
+              </button>
+              <button
+                className={`btn btn-sm ${reviewModal.action === 'REVIEWED' ? 'btn-success' : 'btn-danger'}`}
+                onClick={handleReviewSubmit}
+                disabled={reviewModal.submitting}
+              >
+                {reviewModal.submitting ? 'Submitting...' : `Confirm ${reviewModal.action}`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Filters */}
       <div className="card" style={{ marginBottom: 20 }}>
@@ -132,47 +340,49 @@ export default function RouteCompliancePage() {
               </tr>
             </thead>
             <tbody>
-              {filtered.map(row => (
-                <tr key={row.id}>
-                  <td>
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <div style={{ width: 30, height: 30, borderRadius: '50%', background: 'linear-gradient(135deg,var(--primary),var(--info))', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
-                        {row.dp.split(' ').map(w=>w[0]).join('').slice(0,2)}
+              {filtered.map(row => {
+                const areaColor = row.areaColor || getAreaColor(row.assignedRoute);
+                return (
+                  <tr key={row.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{ width: 30, height: 30, borderRadius: '50%', background: areaColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                          {row.dp.split(' ').map(w=>w[0]).join('').slice(0,2)}
+                        </div>
+                        <span style={{ fontWeight: 600 }}>{row.dp}</span>
                       </div>
-                      <span style={{ fontWeight: 600 }}>{row.dp}</span>
-                    </div>
-                  </td>
-                  <td style={{ fontSize: 13 }}>{row.assignedRoute}</td>
-                  <td>
-                    <span style={{
-                      fontSize: 13,
-                      color: row.enteredRoute !== row.assignedRoute ? 'var(--danger)' : 'var(--success)',
-                      fontWeight: row.enteredRoute !== row.assignedRoute ? 700 : 400,
-                    }}>
-                      {row.enteredRoute}
-                    </span>
-                  </td>
-                  <td style={{ fontSize: 13 }}>{row.entryTime}</td>
-                  <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{row.exitTime}</td>
-                  <td style={{ fontSize: 13 }}>{row.drivingTime}</td>
-                  <td style={{ fontSize: 13 }}>{row.stoppedTime}</td>
-                  <td style={{ fontSize: 13, fontWeight: 600 }}>{row.distanceKm}</td>
-                  <td><StatusBadge status={row.status} /></td>
-                  <td>
-                    <div style={{ display: 'flex', gap: 6 }}>
-                      <button className="btn btn-ghost btn-sm" id={`ri-view-${row.id}`} style={{ fontSize: 12 }}>View</button>
-                      {row.status === 'deviated' && (
-                        <button className="btn btn-danger btn-sm" id={`ri-flag-${row.id}`} style={{ fontSize: 12 }}>Flag</button>
-                      )}
-                      {row.status === 'review' && (
-                        <button className="btn btn-success btn-sm" id={`ri-approve-${row.id}`} style={{ fontSize: 12 }}>
-                          <MdCheckCircle style={{ fontSize: 13 }} /> Approve
+                    </td>
+                    <td style={{ fontSize: 13, fontWeight: 600, color: areaColor }}>{row.assignedRoute}</td>
+                    <td>
+                      <span style={{
+                        fontSize: 13,
+                        color: row.enteredRoute !== row.assignedRoute ? 'var(--danger)' : 'var(--success)',
+                        fontWeight: row.enteredRoute !== row.assignedRoute ? 700 : 400,
+                      }}>
+                        {row.enteredRoute}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 13 }}>{row.entryTime}</td>
+                    <td style={{ fontSize: 13, color: 'var(--text-muted)' }}>{row.exitTime}</td>
+                    <td style={{ fontSize: 13 }}>{row.drivingTime}</td>
+                    <td style={{ fontSize: 13 }}>{row.stoppedTime}</td>
+                    <td style={{ fontSize: 13, fontWeight: 600 }}>{row.distanceKm}</td>
+                    <td><StatusBadge status={row.status} /></td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          className="btn btn-ghost btn-sm"
+                          id={`ri-view-${row.id}`}
+                          style={{ fontSize: 12 }}
+                          onClick={() => navigate('/route-intelligence/live')}
+                        >
+                          View
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
               {filtered.length === 0 && (
                 <tr>
                   <td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-muted)', padding: 40 }}>

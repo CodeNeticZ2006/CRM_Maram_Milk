@@ -12,6 +12,7 @@ import {
   LeafletMapContainer, RoutePolygon, RoutePolyline, DeliveryPartnerMarker, CustomerMarker,
   HeadOfficeMarker, HEAD_OFFICE, MOCK_GIS_PARTNERS
 } from '../maps/index.js';
+import { AREA_PALETTE, getAreaColor, getAreaByRouteName } from '../utils/areaPalette.js';
 import '../components/RouteIntelligence.css';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
@@ -104,6 +105,15 @@ export default function TerritoryMonitoringPage() {
       const res = await api.get('/route-intelligence/route-corridors');
       if (res.data?.success && res.data?.data?.routes) {
         setRouteCorridors(res.data.data.routes);
+        // Consolidate customers from corridors
+        const allCorridorCust = [];
+        res.data.data.routes.forEach(r => {
+          if (r.customers) allCorridorCust.push(...r.customers);
+          if (r.missingCustomers) allCorridorCust.push(...r.missingCustomers);
+        });
+        if (allCorridorCust.length > 0) {
+          setCustomers(prev => (prev && prev.length >= allCorridorCust.length) ? prev : allCorridorCust);
+        }
       }
     } catch (err) {
       console.warn('Failed to load route corridors from API:', err.message);
@@ -198,14 +208,21 @@ export default function TerritoryMonitoringPage() {
     return list.filter(dp => (dp.route || '').toLowerCase().trim() === selectedRouteFilter.toLowerCase().trim());
   }, [deliveryPartners, selectedRouteFilter]);
 
-  // Map Legend items identifying both route corridors and DP statuses
-  const mapLegendItems = [
-    { label: 'Nungambakkam 1 (Blue Corridor ±120m)', color: '#2563eb' },
-    { label: 'Triplicane 1 (Green Corridor ±120m)', color: '#10b981' },
-    { label: 'Vijay Sethu (DP - Nungambakkam 1)', color: '#2563eb', shape: 'circle' },
-    { label: 'Saravanan (DP - Triplicane 1)', color: '#10b981', shape: 'circle' },
-    { label: 'Customer Stops', color: '#f59e0b' },
-  ];
+  // Map Legend items for all 5 Area corridors + DPs + Customer Pins
+  const mapLegendItems = useMemo(() => {
+    const items = Object.values(AREA_PALETTE).map(area => {
+      const count = mappedCustomers.filter(c =>
+        (c.route_name || c.assigned_route_id || '').toLowerCase().includes(area.name.toLowerCase().split(' ')[0])
+      ).length;
+      return {
+        label: `${area.name} (±120m • ${count} stops)`,
+        color: area.color,
+      };
+    });
+    items.push({ label: 'Delivery Partner (Area Tint + Initials)', color: '#2563eb', shape: 'circle' });
+    items.push({ label: 'Customer Delivery Stops', color: '#f59e0b' });
+    return items;
+  }, [mappedCustomers]);
 
   // Routes filtered to ONLY routes with customers
   const activeRoutesList = useMemo(() => {
@@ -318,30 +335,36 @@ export default function TerritoryMonitoringPage() {
       {/* Route Filter Controls & Location Unavailable Bar */}
       <div className="card" style={{ marginBottom: 16, padding: '12px 16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
             <span style={{ fontWeight: 700, fontSize: 13, display: 'flex', alignItems: 'center', gap: 6, color: 'var(--text-secondary)' }}>
-              <MdFilterList /> Route Filter:
+              <MdFilterList /> Area Filter:
             </span>
             <button
               className={`btn btn-xs ${selectedRouteFilter === 'All' ? 'btn-primary' : 'btn-outline'}`}
               onClick={() => setSelectedRouteFilter('All')}
             >
-              All two routes ({mappedCustomers.length})
+              All 5 Areas ({mappedCustomers.length})
             </button>
-            <button
-              className={`btn btn-xs ${selectedRouteFilter === 'Nungambakkam 1' ? 'btn-primary' : 'btn-outline'}`}
-              style={selectedRouteFilter === 'Nungambakkam 1' ? { background: '#2563eb', borderColor: '#2563eb', color: '#fff' } : { borderColor: '#2563eb', color: '#2563eb' }}
-              onClick={() => setSelectedRouteFilter('Nungambakkam 1')}
-            >
-              Nungambakkam 1 ({mappedCustomers.filter(c => (c.route_name || '').toLowerCase().includes('nungambakkam')).length || 25})
-            </button>
-            <button
-              className={`btn btn-xs ${selectedRouteFilter === 'Triplicane 1' ? 'btn-primary' : 'btn-outline'}`}
-              style={selectedRouteFilter === 'Triplicane 1' ? { background: '#10b981', borderColor: '#10b981', color: '#fff' } : { borderColor: '#10b981', color: '#10b981' }}
-              onClick={() => setSelectedRouteFilter('Triplicane 1')}
-            >
-              Triplicane 1 ({mappedCustomers.filter(c => (c.route_name || '').toLowerCase().includes('triplicane')).length || 20})
-            </button>
+            {Object.values(AREA_PALETTE).map(area => {
+              const custCount = mappedCustomers.filter(c =>
+                (c.route_name || c.assigned_route_id || '').toLowerCase().includes(area.name.toLowerCase().split(' ')[0])
+              ).length;
+              const isActive = selectedRouteFilter === area.name;
+              return (
+                <button
+                  key={area.id}
+                  className={`btn btn-xs ${isActive ? 'btn-primary' : 'btn-outline'}`}
+                  style={isActive
+                    ? { background: area.color, borderColor: area.color, color: '#fff', fontWeight: 700 }
+                    : { borderColor: area.color, color: area.color }
+                  }
+                  onClick={() => setSelectedRouteFilter(area.name)}
+                >
+                  <span style={{ display: 'inline-block', width: 8, height: 8, borderRadius: '50%', background: isActive ? '#fff' : area.color, marginRight: 5 }} />
+                  {area.name} ({custCount})
+                </button>
+              );
+            })}
           </div>
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>

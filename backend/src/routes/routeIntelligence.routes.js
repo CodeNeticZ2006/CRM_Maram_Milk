@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middleware/auth');
+const { authenticate, requireSuperAdmin } = require('../middleware/auth');
 const {
   getLiveOperations,
   getRouteCompliance,
@@ -13,6 +13,8 @@ const {
   getRouteCorridorsHandler,
   postGpsPing,
   getDeviationSessionsHandler,
+  getRouteAlertsHandler,
+  reviewRouteAlertHandler,
 } = require('../controllers/routeIntelligence.controller');
 
 router.use(authenticate);
@@ -28,5 +30,9 @@ router.put('/settings',          updateSettings);
 router.get('/route-corridors',   getRouteCorridorsHandler);
 router.post('/gps-ping',         postGpsPing);
 router.get('/deviation-sessions', getDeviationSessionsHandler);
+
+// Superadmin Alert Review Endpoints
+router.get('/alerts',            requireSuperAdmin, getRouteAlertsHandler);
+router.patch('/alerts/:id/review', requireSuperAdmin, reviewRouteAlertHandler);
 
 module.exports = router;

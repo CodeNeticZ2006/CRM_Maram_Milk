@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useSearchParams, useNavigate } from 'react-router-dom';
 import {
   MdDirectionsBike, MdRoute, MdWarningAmber, MdNotifications,
-  MdRefresh, MdFilterList,
+  MdRefresh, MdFilterList, MdClose,
 } from 'react-icons/md';
 import { SectionHeader, AnalyticsCard, EventSeverityIcon } from '../components/index.jsx';
 import api from '../../../services/api';
@@ -12,29 +13,39 @@ import {
   LeafletMapContainer, HeadOfficeMarker, CustomerMarker,
   DeliveryPartnerMarker, RoutePolyline, HEAD_OFFICE
 } from '../maps/index.js';
+import { AREA_PALETTE } from '../utils/areaPalette.js';
 import '../components/RouteIntelligence.css';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
 export default function LiveOperationsPage() {
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigate = useNavigate();
+
   const [loading, setLoading] = useState(true);
   const [deliveryPartners, setPartners] = useState(MOCK_DELIVERY_PARTNERS);
   const [routes, setRoutes] = useState([]);
-  const [stats, setStats] = useState({ activePartners: 0, totalRoutes: 0, deviations: 0, stopped: 0, alerts: 0 });
+  const [stats, setStats] = useState({ activePartners: 0, totalRoutes: 0, deviations: 0, stopped: 0, alerts: 0, unreviewedAlertsCount: 0 });
   const [liveEvents, setEvents] = useState(MOCK_LIVE_EVENTS);
   const [isDb2Loaded, setIsDb2Loaded] = useState(false);
 
   const [allCustomers, setAllCustomers] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [routeCorridors, setRouteCorridors] = useState([]);
+  const [selectedAlert, setSelectedAlert] = useState(null);
+
+  const alertIdParam = searchParams.get('alertId');
+  const latParam = parseFloat(searchParams.get('lat'));
+  const lngParam = parseFloat(searchParams.get('lng'));
 
   const fetchLiveOps = useCallback(async () => {
     setLoading(true);
     try {
-      const [opsRes, custRes, corrRes] = await Promise.all([
+      const [opsRes, custRes, corrRes, alertRes] = await Promise.all([
         api.get('/route-intelligence/live-operations').catch(() => null),
         api.get('/customers', { params: { limit: 500 } }).catch(() => null),
         api.get('/route-intelligence/route-corridors').catch(() => null),
+        alertIdParam ? api.get('/route-intelligence/alerts').catch(() => null) : null,
       ]);
 
       if (opsRes?.data?.success && opsRes?.data?.data) {
@@ -53,19 +64,37 @@ export default function LiveOperationsPage() {
 
       if (corrRes?.data?.success && corrRes.data?.data?.routes) {
         setRouteCorridors(corrRes.data.data.routes);
+        // Consolidate customers if needed
+        const corrCust = [];
+        corrRes.data.data.routes.forEach(r => {
+          if (r.customers) corrCust.push(...r.customers);
+        });
+        if (corrCust.length > 0 && customers.length === 0) {
+          setCustomers(corrCust);
+        }
+      }
+
+      if (alertRes?.data?.success && Array.isArray(alertRes.data?.data)) {
+        const found = alertRes.data.data.find(a => String(a.id) === String(alertIdParam));
+        if (found) setSelectedAlert(found);
       }
     } catch (err) {
       console.warn('Failed to load DB2 Live Operations data:', err.message);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [alertIdParam, customers.length]);
 
   useEffect(() => {
     fetchLiveOps();
   }, [fetchLiveOps]);
 
-  // Generate road-following corridor polylines for Nungambakkam 1 & Triplicane 1
+  const clearAlertView = () => {
+    setSelectedAlert(null);
+    setSearchParams({});
+  };
+
+  // Generate road-following corridor polylines for all 5 areas
   const activeCustomerRoutes = useMemo(() => {
     if (routeCorridors && routeCorridors.length > 0) {
       return routeCorridors.map(rc => ({
@@ -75,17 +104,27 @@ export default function LiveOperationsPage() {
         isRouteCorridor: true,
         corridorToleranceMeters: rc.corridorToleranceMeters || 120,
         customerCount: rc.customerCount,
-        polyline: rc.roadCoordinates,
-        roadCoordinates: rc.roadCoordinates,
+        polyline: rc.polyline || rc.roadCoordinates,
+        roadCoordinates: rc.polyline || rc.roadCoordinates,
         assignedDp: rc.assignedDp,
       }));
     }
     return buildActiveCustomerRoutes(allCustomers, HEAD_OFFICE);
   }, [routeCorridors, allCustomers]);
 
+  // Dynamic map bounds or center on alert
+  const mapCenter = useMemo(() => {
+    if (selectedAlert?.location?.lat && selectedAlert?.location?.lng) {
+      return [selectedAlert.location.lat, selectedAlert.location.lng];
+    }
+    if (!isNaN(latParam) && !isNaN(lngParam)) {
+      return [latParam, lngParam];
+    }
+    return [HEAD_OFFICE.lat, HEAD_OFFICE.lng];
+  }, [selectedAlert, latParam, lngParam]);
 
-  // Calculate dynamic map bounds focused on actual customer coordinates
   const mapBounds = useMemo(() => {
+    if (selectedAlert || (!isNaN(latParam) && !isNaN(lngParam))) return null;
     if (customers.length === 0) return null;
     const lats = customers.map(c => parseFloat(c.lat));
     const lngs = customers.map(c => parseFloat(c.lng));
@@ -99,12 +138,12 @@ export default function LiveOperationsPage() {
       [minLat - marginLat, minLng - marginLng],
       [maxLat + marginLat, maxLng + marginLng],
     ];
-  }, [customers]);
+  }, [customers, selectedAlert, latParam, lngParam]);
 
-  const activePartners = stats.activePartners || deliveryPartners.filter(d => d.status === 'active').length;
-  const deviations     = stats.deviations || deliveryPartners.filter(d => d.status === 'deviated').length;
-  const stopped        = stats.stopped || deliveryPartners.filter(d => d.status === 'stopped').length;
-  const totalRoutes    = activeCustomerRoutes.length || 3;
+  const activePartners = stats.activePartners || deliveryPartners.filter(d => d.status === 'active' || d.status === 'GREEN').length;
+  const deviations     = stats.deviations || deliveryPartners.filter(d => d.status === 'deviated' || d.status === 'RED').length;
+  const stopped        = stats.stopped || deliveryPartners.filter(d => d.status === 'stopped' || d.status === 'YELLOW').length;
+  const pendingAlerts  = stats.unreviewedAlertsCount || stats.alerts || 0;
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
@@ -112,7 +151,7 @@ export default function LiveOperationsPage() {
         title="Live Operations"
         subtitle={
           <span>
-            Real-time delivery partner tracking and route status ({activeCustomerRoutes.length} Active Customer Routes)
+            Real-time delivery partner tracking across 5 Area Corridors ({activeCustomerRoutes.length} Active Corridors)
             {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
           </span>
         }
@@ -120,58 +159,75 @@ export default function LiveOperationsPage() {
         <button className="btn btn-secondary btn-sm" id="ri-live-refresh-btn" onClick={fetchLiveOps} disabled={loading}>
           <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
         </button>
-        <button className="btn btn-primary btn-sm" id="ri-live-filter-btn">
-          <MdFilterList /> Filter
+        <button className="btn btn-primary btn-sm" onClick={() => navigate('/route-intelligence/compliance')}>
+          <MdWarningAmber /> View Compliance ({pendingAlerts} Alerts)
         </button>
       </SectionHeader>
 
+      {/* Alert Focus Banner */}
+      {selectedAlert && (
+        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            <span style={{ fontSize: 24 }}>🚨</span>
+            <div>
+              <div style={{ fontWeight: 700, color: '#991b1b', fontSize: 14 }}>
+                Inspecting Off-Route Deviation: {selectedAlert.dpName} ({selectedAlert.areaName})
+              </div>
+              <div style={{ fontSize: 12, color: '#7f1d1d', marginTop: 2 }}>
+                Status: <strong>{selectedAlert.status}</strong> • Type: {selectedAlert.type === 'OFF_ROUTE_DRIVING' ? 'Driving Off-Route' : 'Stopped Off-Route'} • Offset: <strong>{selectedAlert.maxDistance}m</strong> • Driving: {selectedAlert.drivingSeconds}s • Stopped: {selectedAlert.stoppedSeconds}s
+              </div>
+            </div>
+          </div>
+          <button className="btn btn-xs btn-outline" onClick={clearAlertView} style={{ borderColor: '#ef4444', color: '#b91c1c' }}>
+            <MdClose /> Clear Deviation View
+          </button>
+        </div>
+      )}
+
       {/* KPI Cards */}
-      <div className="ri-stat-grid-4">
+      <div className="ri-stat-grid-4" style={{ marginBottom: 20 }}>
         <AnalyticsCard
           icon={<MdDirectionsBike />}
-          label="Active Delivery Partners"
+          label="Active Partners"
           value={activePartners}
-          sub="Currently on route (DB2)"
-          trend="+2 vs yesterday"
-          color="var(--primary)"
-        />
-        <AnalyticsCard
-          icon={<MdRoute />}
-          label="Routes with Customers"
-          value={activeCustomerRoutes.length}
-          sub="Royapettah, Mandaveli 2, Teynampet"
+          sub={`${deliveryPartners.length} registered DPs`}
           color="var(--success)"
         />
         <AnalyticsCard
+          icon={<MdRoute />}
+          label="Area Corridors"
+          value={activeCustomerRoutes.length || 5}
+          sub="5 Unique-Colored Area Lines"
+          color="var(--primary)"
+        />
+        <AnalyticsCard
           icon={<MdWarningAmber />}
-          label="Route Deviations"
-          value={deviations}
-          sub="Flagged for review"
-          trend={deviations > 0 ? `+${deviations} alerts` : undefined}
+          label="Off-Route Alerts"
+          value={pendingAlerts}
+          sub="Pending Superadmin Review"
           color="var(--danger)"
         />
         <AnalyticsCard
           icon={<MdNotifications />}
-          label="Current Alerts"
-          value={stopped + deviations}
-          sub="Deviations + stops"
-          color="var(--warning)"
+          label="Delivery Stops"
+          value={customers.length}
+          sub="Mapped Customer Pins"
+          color="var(--info)"
         />
       </div>
 
       {/* Map + DP List */}
       <div className="ri-two-col">
         <LeafletMapContainer
-          height={445}
-          center={[HEAD_OFFICE.lat, HEAD_OFFICE.lng]}
-          zoom={12}
+          height={480}
+          center={mapCenter}
+          zoom={selectedAlert ? 15 : 12}
           bounds={mapBounds}
           legendItems={[
-            { label: 'Nungambakkam 1 (Blue Corridor ±120m)', color: '#2563eb' },
-            { label: 'Triplicane 1 (Green Corridor ±120m)', color: '#10b981' },
-            { label: 'DP: GREEN (Within corridor)', color: '#10b981', shape: 'circle' },
-            { label: 'DP: YELLOW (Temp outside)', color: '#f59e0b', shape: 'circle' },
-            { label: 'DP: RED (Persistent deviation)', color: '#ef4444', shape: 'circle' },
+            ...Object.values(AREA_PALETTE).map(a => ({ label: `${a.name} (${a.code})`, color: a.color })),
+            { label: 'DP: GREEN (Inside Corridor)', color: '#10b981', shape: 'circle' },
+            { label: 'DP: YELLOW (Grace Period)', color: '#f59e0b', shape: 'circle' },
+            { label: 'DP: RED (Deviated / Review)', color: '#ef4444', shape: 'circle' },
             { label: 'Customer Stops', color: '#f59e0b' },
           ]}
         >
@@ -180,7 +236,7 @@ export default function LiveOperationsPage() {
               {/* Head Office */}
               <HeadOfficeMarker office={HEAD_OFFICE} />
 
-              {/* Road-following corridor polylines for Nungambakkam 1 and Triplicane 1 */}
+              {/* Road-following corridor polylines for all 5 areas */}
               {showRoutes && activeCustomerRoutes.map(route => (
                 <RoutePolyline
                   key={route.id}
@@ -194,12 +250,24 @@ export default function LiveOperationsPage() {
                 />
               ))}
 
+              {/* Deviation Trail in Red when inspecting an alert */}
+              {selectedAlert && selectedAlert.trail && selectedAlert.trail.length >= 2 && (
+                <RoutePolyline
+                  key="deviation-trail-red"
+                  coordinates={selectedAlert.trail.map(t => [t.lat, t.lng])}
+                  color="#ef4444"
+                  routeName={`Deviation Trail: ${selectedAlert.dpName} (${selectedAlert.maxDistance}m off-route)`}
+                  strokeWeight={4}
+                  dashArray="6, 6"
+                />
+              )}
+
               {/* Customers (Dynamic from CRM DB with route pin colors) */}
               {showCustomers && customers.map(cust => (
                 <CustomerMarker key={cust.id} customer={cust} />
               ))}
 
-              {/* Delivery Partners (Actual GPS coordinates with corridor status) */}
+              {/* Delivery Partners (Actual GPS coordinates with area color tint and initials) */}
               {showPartners && deliveryPartners.map(partner => (
                 <DeliveryPartnerMarker key={partner.id} partner={partner} />
               ))}
@@ -209,15 +277,16 @@ export default function LiveOperationsPage() {
 
         <div className="card" style={{ padding: '20px 0' }}>
           <div style={{ padding: '0 20px 12px', borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <span className="card-title">Active Partners ({deliveryPartners.length})</span>
+            <span className="card-title">Assigned Area DPs ({deliveryPartners.length})</span>
             <span className="badge badge-success">{activePartners} online</span>
           </div>
-          <div className="ri-dp-list" style={{ padding: '12px 16px', maxHeight: 380, overflowY: 'auto' }}>
+          <div className="ri-dp-list" style={{ padding: '12px 16px', maxHeight: 410, overflowY: 'auto' }}>
             {deliveryPartners.map(dp => {
-              const initials = dp.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase();
+              const initials = dp.initials || (dp.name ? dp.name.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() : (dp.dpCode || 'DP'));
               const cStatus = (dp.corridorStatus || dp.status || '').toUpperCase();
               const isGpsUnavailable = dp.gpsStatus === 'unavailable' || dp.status === 'GPS unavailable' || !dp.lat || !dp.lng;
-              
+              const areaColor = dp.areaColor || 'var(--primary)';
+
               let statusColor = 'var(--success)';
               if (isGpsUnavailable) {
                 statusColor = 'var(--text-muted)';
@@ -228,24 +297,33 @@ export default function LiveOperationsPage() {
               }
 
               return (
-                <div key={dp.id} className="ri-dp-item">
-                  <div className="ri-dp-avatar" style={{ background: `linear-gradient(135deg, ${statusColor}, var(--info))` }}>
+                <div
+                  key={dp.id}
+                  className="ri-dp-item"
+                  style={{ cursor: 'pointer' }}
+                  onClick={() => {
+                    if (dp.lat && dp.lng) {
+                      setSearchParams({ dpId: dp.id, lat: dp.lat, lng: dp.lng });
+                    }
+                  }}
+                >
+                  <div className="ri-dp-avatar" style={{ background: areaColor }}>
                     {initials}
                   </div>
                   <div className="ri-dp-info">
                     <div className="ri-dp-name">
                       {dp.name} <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({dp.dpCode || 'DP'})</span>
                     </div>
-                    <div className="ri-dp-route" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                      <span>{dp.route}</span>
-                      {dp.corridorStatus && (
+                    <div className="ri-dp-route" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      <span style={{ fontWeight: 600, color: areaColor }}>{dp.route}</span>
+                      {dp.status && (
                         <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: cStatus === 'GREEN' ? '#dcfce7' : cStatus === 'YELLOW' ? '#fef3c7' : '#fee2e2', color: cStatus === 'GREEN' ? '#166534' : cStatus === 'YELLOW' ? '#92400e' : '#991b1b' }}>
-                          Corridor: {dp.corridorStatus}
+                          {dp.status}
                         </span>
                       )}
-                      {isGpsUnavailable && (
-                        <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: '#f1f5f9', color: '#64748b' }}>
-                          GPS unavailable
+                      {dp.currentState && (
+                        <span style={{ fontSize: 9.5, color: 'var(--text-muted)' }}>
+                          [{dp.currentState}]
                         </span>
                       )}
                     </div>
@@ -259,31 +337,6 @@ export default function LiveOperationsPage() {
                 </div>
               );
             })}
-          </div>
-        </div>
-      </div>
-
-
-      {/* Recent Activity */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Recent Activity</span>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>Live from DB2 records</span>
-        </div>
-        <div className="card-body">
-          <div className="ri-activity-list">
-            {liveEvents.map(ev => (
-              <div key={ev.id} className="ri-activity-item">
-                <div className="ri-activity-icon-wrap">
-                  <EventSeverityIcon severity={ev.severity} />
-                </div>
-                <div className="ri-activity-text">
-                  <div className="ri-activity-dp">{ev.dp} &mdash; <span style={{ fontWeight: 400, color: 'var(--text-muted)' }}>{ev.route}</span></div>
-                  <div className="ri-activity-event">{ev.event}</div>
-                </div>
-                <div className="ri-activity-time">{ev.time}</div>
-              </div>
-            ))}
           </div>
         </div>
       </div>
