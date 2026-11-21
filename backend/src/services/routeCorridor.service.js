@@ -12,6 +12,7 @@ const {
   resolveArea,
   DEFAULT_CORRIDOR_CONFIG,
 } = require('../config/areaConfig');
+const { getSettings, isPingWithinTrackingWindow } = require('./routeSettings.service');
 
 // In-memory cache for road-following polylines so subsequent requests are <1ms
 const routeGeometryCache = {};
@@ -344,7 +345,8 @@ async function getRoutePolyline(routeId, routeName) {
 /**
  * Returns complete corridor details for all 5 areas
  */
-async function getRouteCorridors(configuredToleranceMeters = DEFAULT_CORRIDOR_CONFIG.corridorToleranceMeters) {
+async function getRouteCorridors(configuredToleranceMeters = null) {
+  const activeTolerance = configuredToleranceMeters || getSettings().corridorToleranceMeters || DEFAULT_CORRIDOR_CONFIG.corridorToleranceMeters;
   const areaIds = Object.keys(AREA_CONFIG);
   const routeCorridors = [];
 
@@ -358,7 +360,7 @@ async function getRouteCorridors(configuredToleranceMeters = DEFAULT_CORRIDOR_CO
       name: area.name,
       code: area.code,
       color: area.color, // Colorblind-friendly palette
-      corridorToleranceMeters: configuredToleranceMeters,
+      corridorToleranceMeters: activeTolerance,
       polyline,
       hasCorridor: polyline && polyline.length >= 2,
       customers: valid,
@@ -390,14 +392,16 @@ async function getRouteCorridors(configuredToleranceMeters = DEFAULT_CORRIDOR_CO
  * - Triggers ONE alert per deviation session when grace period exceeded or thresholds reached.
  */
 async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timestamp = null }, config = {}) {
-  const tolerance = config.corridorToleranceMeters || DEFAULT_CORRIDOR_CONFIG.corridorToleranceMeters;
-  const gracePeriod = config.gracePeriodSeconds || DEFAULT_CORRIDOR_CONFIG.gracePeriodSeconds;
-  const stopSpeedThresh = config.stopSpeedThresholdKmh || DEFAULT_CORRIDOR_CONFIG.stopSpeedThresholdKmh;
-  const stopDistThresh = config.stopDistanceChangeMeters || DEFAULT_CORRIDOR_CONFIG.stopDistanceChangeMeters;
-  const drivingAlertThresh = config.drivingAlertThresholdSeconds || DEFAULT_CORRIDOR_CONFIG.drivingAlertThresholdSeconds;
-  const stoppedAlertThresh = config.stoppedAlertThresholdSeconds || DEFAULT_CORRIDOR_CONFIG.stoppedAlertThresholdSeconds;
-  const maxAccuracy = config.maxGpsAccuracyMeters || DEFAULT_CORRIDOR_CONFIG.maxGpsAccuracyMeters;
-  const staleMinutes = config.staleThresholdMinutes || DEFAULT_CORRIDOR_CONFIG.staleThresholdMinutes;
+  const activeSettings = getSettings();
+  const tolerance = config.corridorToleranceMeters || activeSettings.corridorToleranceMeters || DEFAULT_CORRIDOR_CONFIG.corridorToleranceMeters;
+  const gracePeriod = config.corridorGracePeriodSeconds || config.gracePeriodSeconds || activeSettings.corridorGracePeriodSeconds || DEFAULT_CORRIDOR_CONFIG.gracePeriodSeconds;
+  const stopSpeedThresh = config.stopSpeedThresholdKmh || activeSettings.stopSpeedThresholdKmh || DEFAULT_CORRIDOR_CONFIG.stopSpeedThresholdKmh;
+  const stopDistThresh = config.stopDistanceChangeMeters || activeSettings.stopDistanceChangeMeters || DEFAULT_CORRIDOR_CONFIG.stopDistanceChangeMeters;
+  const drivingAlertThresh = config.drivingAlertThresholdSeconds || activeSettings.drivingAlertThresholdSeconds || DEFAULT_CORRIDOR_CONFIG.drivingAlertThresholdSeconds;
+  const stoppedAlertThresh = config.stoppedAlertThresholdSeconds || activeSettings.stoppedAlertThresholdSeconds || DEFAULT_CORRIDOR_CONFIG.stoppedAlertThresholdSeconds;
+  const maxAccuracy = config.maxGpsAccuracyMeters || activeSettings.maxGpsAccuracyMeters || DEFAULT_CORRIDOR_CONFIG.maxGpsAccuracyMeters;
+  const staleMinutes = config.signalLostThresholdMinutes || config.staleThresholdMinutes || activeSettings.signalLostThresholdMinutes || DEFAULT_CORRIDOR_CONFIG.staleThresholdMinutes;
+  const hysteresis = config.hysteresisCount || activeSettings.hysteresisCount || DEFAULT_CORRIDOR_CONFIG.hysteresisCount || 2;
 
   // 1. Identify DP
   let dp = dpGpsStore[dpId];
@@ -474,7 +478,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
     }
   }
 
-  // Edge Case: Check for GPS signal loss (> 10 minutes)
+  // Edge Case: Check for GPS signal loss (> staleMinutes)
   let isSignalLost = false;
   let dtSeconds = 30; // default interval
 
@@ -482,9 +486,14 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
     const timeDiffMs = pingTime.getTime() - new Date(dp.lastGps.timestamp).getTime();
     dtSeconds = Math.max(1, Math.round(timeDiffMs / 1000));
     if (timeDiffMs > staleMinutes * 60 * 1000) {
-      isSignalLost = true;
-      dp.status = 'signal lost';
-      // Signal lost: do NOT count this gap as stopped time
+      const isWithinWindow = isPingWithinTrackingWindow(pingTime, getSettings().trackingWindow);
+      if (!isWithinWindow) {
+        dp.status = 'Outside Window';
+      } else {
+        isSignalLost = true;
+        dp.status = 'signal lost';
+      }
+      // Signal lost / gap: do NOT count this gap as stopped time
       dtSeconds = 0;
     }
   }
@@ -500,6 +509,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
       success: true,
       status: 'GREEN',
       message: 'Area has fewer than 2 mapped stops; corridor disabled.',
+      nextIntervalSeconds: getSettings().gpsUpdateInterval || 30,
       dp,
     };
   }
@@ -533,7 +543,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
     dp.candidatePingsCount = 1;
   }
 
-  if (dp.candidatePingsCount >= 2 || !dp.currentState) {
+  if (dp.candidatePingsCount >= hysteresis || !dp.currentState) {
     dp.currentState = dp.candidateState;
   }
 
@@ -579,6 +589,8 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
       currentState: 'ON_ROUTE',
       distanceMeters: Math.round(effectiveDistance),
       dp,
+      stoppedSeconds: 0,
+      nextIntervalSeconds: getSettings().gpsUpdateInterval || 30,
       activeSession: null,
     };
   }
@@ -711,6 +723,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
     distanceMeters: Math.round(effectiveDistance),
     drivingSeconds: activeSession.drivingSeconds,
     stoppedSeconds: activeSession.stoppedSeconds,
+    nextIntervalSeconds: getSettings().gpsUpdateInterval || 30,
     dp,
     activeSession,
     alertTriggered: Boolean(triggeredAlert),

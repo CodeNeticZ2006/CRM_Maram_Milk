@@ -30,6 +30,8 @@ coverage/
 *.tsbuildinfo
 
 # ── Temporary Utility, Diagnostic & Scratch Scripts ───────────────
+backend/data/routeSettings.json
+backend/data/*.tmp
 backend/test_*.js
 backend/check_*.js
 backend/inspect_*.js

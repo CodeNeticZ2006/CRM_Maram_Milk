@@ -61,7 +61,6 @@ const ROUTE_PERMISSION_MAP = {
 
   // Route Intelligence — always visible to SuperAdmin
   '/route-intelligence/live':        'ROUTE_INTELLIGENCE',
-  '/route-intelligence/territories':  'ROUTE_INTELLIGENCE',
   '/route-intelligence/geofencing':   'ROUTE_INTELLIGENCE',
   '/route-intelligence/compliance':   'ROUTE_INTELLIGENCE',
   '/route-intelligence/replay':       'ROUTE_INTELLIGENCE',
@@ -161,7 +160,6 @@ const NAV_SECTIONS = [
     groupIcon: <MdMap />,
     items: [
       { to: '/route-intelligence/live',        icon: <MdSatellite />,  label: 'Live Operations'    },
-      { to: '/route-intelligence/territories',  icon: <MdMap />,        label: 'Territory Monitoring'},
       { to: '/route-intelligence/geofencing',   icon: <MdHexagon />,    label: 'Geofencing'          },
       { to: '/route-intelligence/compliance',   icon: <MdRule />,       label: 'Route Compliance'    },
       { to: '/route-intelligence/replay',       icon: <MdHistory />,    label: 'Route Replay'        },

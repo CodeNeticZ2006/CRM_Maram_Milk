@@ -10,6 +10,7 @@ const {
   getRouteAnalytics,
   getSettings,
   updateSettings,
+  resetSettingsEndpoint,
   getRouteCorridorsHandler,
   postGpsPing,
   getDeviationSessionsHandler,
@@ -27,6 +28,7 @@ router.get('/replay',            getRouteReplay);
 router.get('/analytics',         getRouteAnalytics);
 router.get('/settings',          getSettings);
 router.put('/settings',          updateSettings);
+router.post('/settings/reset',    resetSettingsEndpoint);
 router.get('/route-corridors',   getRouteCorridorsHandler);
 router.post('/gps-ping',         postGpsPing);
 router.get('/deviation-sessions', getDeviationSessionsHandler);

@@ -11,6 +11,13 @@ const {
   reviewAlert,
 } = require('../services/routeCorridor.service');
 const { AREA_CONFIG, resolveArea } = require('../config/areaConfig');
+const {
+  getSettings: getPersistedSettings,
+  updateSettings: updatePersistedSettings,
+  resetSettings: resetPersistedSettings,
+  isPingWithinTrackingWindow,
+  validateSettings,
+} = require('../services/routeSettings.service');
 
 // Chennai reference coordinates for DB2 routes/zones
 const ZONE_COORDINATES = {
@@ -211,7 +218,10 @@ const getLiveOperations = async (req, res, next) => {
       const completedDeliv = log ? (log.actualDelivered1L || 0) + (log.actualDeliveredHalfL || 0) || Math.min(10, totalDeliv) : Math.min(idx * 2 + 5, totalDeliv);
 
       const coords = ZONE_COORDINATES[assignedRouteObj?.name] || ZONE_COORDINATES['Default'];
-      const status = !dp.isActive ? 'stopped' : log?.flagIssue ? 'deviated' : 'active';
+      const activeSettings = getPersistedSettings();
+      const isWithinWindow = isPingWithinTrackingWindow(new Date(), activeSettings.trackingWindow);
+      const baseStatus = !dp.isActive ? 'stopped' : log?.flagIssue ? 'deviated' : 'active';
+      const status = !isWithinWindow ? 'Outside Window' : baseStatus;
       const speed = status === 'active' ? 25 + (idx * 3) % 20 : 0;
 
       return {
@@ -224,7 +234,7 @@ const getLiveOperations = async (req, res, next) => {
         lat: coords.lat + (idx % 3 === 0 ? 0.005 : -0.004),
         lng: coords.lng + (idx % 2 === 0 ? 0.006 : -0.005),
         speed,
-        lastUpdate: 'Just now',
+        lastUpdate: !isWithinWindow ? 'Shift Ended' : 'Just now',
         deliveries: completedDeliv,
         total: totalDeliv,
         mobile: dp.mobileNumber,
@@ -238,9 +248,16 @@ const getLiveOperations = async (req, res, next) => {
       let displayStatus = state.status;
       let lastUpdateText = 'GPS unavailable';
 
-      if (state.lastGps && state.lastGps.timestamp) {
+      const activeSettings = getPersistedSettings();
+      const isWithinWindow = isPingWithinTrackingWindow(new Date(), activeSettings.trackingWindow);
+
+      if (!isWithinWindow) {
+        displayStatus = 'Outside Window';
+        lastUpdateText = 'Outside Delivery Window';
+      } else if (state.lastGps && state.lastGps.timestamp) {
         const ageMs = Date.now() - new Date(state.lastGps.timestamp).getTime();
-        if (ageMs > 10 * 60 * 1000) {
+        const staleLimitMs = (activeSettings.signalLostThresholdMinutes || 10) * 60 * 1000;
+        if (ageMs > staleLimitMs) {
           displayStatus = 'signal lost';
           lastUpdateText = `${Math.round(ageMs / 60000)}m ago (signal lost)`;
         } else {
@@ -368,6 +385,7 @@ const getLiveOperations = async (req, res, next) => {
       data: {
         deliveryPartners,
         routes,
+        gpsUpdateInterval: activeSettings.gpsUpdateInterval || 30,
         stats: {
           activePartners: activePartnersCount,
           totalPartners: deliveryPartners.length,
@@ -379,6 +397,7 @@ const getLiveOperations = async (req, res, next) => {
           deliveryStops: canonicalCustomers.mapped.length,
           unmappedStops: canonicalCustomers.unmapped.length,
           totalStops: canonicalCustomers.all.length,
+          gpsUpdateInterval: activeSettings.gpsUpdateInterval || 30,
         },
         customers: canonicalCustomers.mapped,
         unmappedCustomers: canonicalCustomers.unmapped,
@@ -561,7 +580,7 @@ const getTerritoryMonitoring = async (req, res, next) => {
 
     const colorPalette = ['#3b82f6', '#10b981', '#ef4444', '#8b5cf6', '#f59e0b', '#06b6d4', '#ec4899', '#14b8a6', '#f97316', '#84cc16', '#a855f7', '#0284c7', '#65a30d', '#d97706'];
 
-    const corridorData = await getRouteCorridors(settingsStore.complianceRules?.corridorToleranceMeters || 120);
+    const corridorData = await getRouteCorridors(getPersistedSettings().corridorToleranceMeters || 120);
 
     const baseRouteList = routeRows.length > 0 ? routeRows : [
       { id: '1b4a924f-1a3c-4658-9e23-a2a060917ac2', name: 'Nungambakkam 1', zone: 'Zone A', assignedDpId: 'dp-nung-1', customerCount: 25, litres: 38 },
@@ -589,7 +608,7 @@ const getTerritoryMonitoring = async (req, res, next) => {
         if (areaMatch) {
           color = areaMatch.color;
           isRouteCorridor = true;
-          corridorToleranceMeters = settingsStore.complianceRules?.corridorToleranceMeters || 120;
+          corridorToleranceMeters = getPersistedSettings().corridorToleranceMeters || 120;
           const corr = corridorData.routes.find(c => c.id === areaMatch.id || c.name === areaMatch.name);
           roadPolyline = corr ? corr.polyline : [];
         } else {
@@ -751,48 +770,53 @@ const getRouteAnalytics = async (req, res, next) => {
 };
 
 // ── GET & PUT /api/route-intelligence/settings ──────────────────────────────
-let settingsStore = {
-  gpsUpdateInterval: 30,
-  geofenceRadius: 500,
-  drivingSpeedThreshold: 60,
-  stopDetectionThreshold: 5,
-  complianceRules: {
-    allowDeviationMeters: 120,
-    corridorToleranceMeters: 120,
-    corridorGracePeriodSeconds: 180,
-    corridorGpsAccuracyBuffer: 15,
-    maxStopMinutes: 8,
-    alertOnSpeedExceed: true,
-    requireGeofenceEntry: true,
-  },
-};
-
 const getSettings = async (req, res, next) => {
   try {
-    res.json({ success: true, data: settingsStore });
+    res.json({ success: true, data: getPersistedSettings() });
   } catch (err) { next(err); }
 };
 
 const updateSettings = async (req, res, next) => {
   try {
-    const { complianceRules, corridorToleranceMeters, ...otherProps } = req.body;
-    settingsStore = {
-      ...settingsStore,
-      ...otherProps,
-      complianceRules: {
-        ...settingsStore.complianceRules,
-        ...(complianceRules || {}),
-        ...(corridorToleranceMeters ? { corridorToleranceMeters: Number(corridorToleranceMeters), allowDeviationMeters: Number(corridorToleranceMeters) } : {}),
-      },
-    };
-    res.json({ success: true, message: 'Route Intelligence settings saved to backend DB.', data: settingsStore });
+    if (req.body?.reset) {
+      const reset = resetPersistedSettings(req.user?.name || req.body?.updatedBy || 'SuperAdmin');
+      return res.json({ success: true, message: 'Settings reset to factory defaults.', data: reset });
+    }
+    const validation = validateSettings(req.body);
+    if (!validation.isValid) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid settings values provided',
+        errors: validation.errors,
+      });
+    }
+    const user = req.user?.name || req.body?.updatedBy || 'SuperAdmin';
+    const updated = updatePersistedSettings(req.body, user);
+    res.json({ success: true, message: 'Route Intelligence settings saved to backend DB.', data: updated });
+  } catch (err) {
+    if (err.name === 'ValidationError' || err.status === 400) {
+      return res.status(400).json({
+        success: false,
+        message: err.message,
+        errors: err.errors || [err.message],
+      });
+    }
+    next(err);
+  }
+};
+
+const resetSettingsEndpoint = async (req, res, next) => {
+  try {
+    const user = req.user?.name || req.body?.updatedBy || 'SuperAdmin';
+    const reset = resetPersistedSettings(user);
+    res.json({ success: true, message: 'Settings reset to factory defaults.', data: reset });
   } catch (err) { next(err); }
 };
 
 // ── GET /api/route-intelligence/route-corridors ──────────────────────────────
 const getRouteCorridorsHandler = async (req, res, next) => {
   try {
-    const tolerance = settingsStore.complianceRules?.corridorToleranceMeters || 120;
+    const tolerance = getPersistedSettings().corridorToleranceMeters || 120;
     const data = await getRouteCorridors(tolerance);
     res.json({ success: true, data });
   } catch (err) { next(err); }
@@ -806,11 +830,32 @@ const postGpsPing = async (req, res, next) => {
       return res.status(400).json({ success: false, message: 'dpId is required.' });
     }
 
+    const activeSettings = getPersistedSettings();
+
+    // Check delivery tracking window (Condition 4)
+    if (activeSettings.trackingWindow?.enabled) {
+      const isWithinWindow = isPingWithinTrackingWindow(timestamp, activeSettings.trackingWindow);
+      if (!isWithinWindow) {
+        return res.json({
+          success: true,
+          status: 'OUTSIDE_TRACKING_WINDOW',
+          ignored: true,
+          isWithinCorridor: true,
+          nextIntervalSeconds: activeSettings.gpsUpdateInterval || 30,
+          message: `Ping ignored: timestamp is outside configured delivery tracking window (${activeSettings.trackingWindow.startTime} - ${activeSettings.trackingWindow.endTime} IST)`,
+          dpId,
+        });
+      }
+    }
+
     const result = await processGpsPing(
       { dpId, lat, lng, speed, accuracy, timestamp },
-      settingsStore.complianceRules
+      activeSettings.complianceRules
     );
-    res.json(result);
+    res.json({
+      ...result,
+      nextIntervalSeconds: activeSettings.gpsUpdateInterval || 30,
+    });
   } catch (err) { next(err); }
 };
 
@@ -859,6 +904,7 @@ module.exports = {
   getRouteAnalytics,
   getSettings,
   updateSettings,
+  resetSettingsEndpoint,
   getRouteCorridorsHandler,
   postGpsPing,
   getDeviationSessionsHandler,

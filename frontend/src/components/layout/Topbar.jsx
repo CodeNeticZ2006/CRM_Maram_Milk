@@ -53,7 +53,7 @@ const PAGE_TITLES = {
   '/reports/general':                 'General Reports',
   // Route Intelligence
   '/route-intelligence/live':        'Live Operations',
-  '/route-intelligence/territories':  'Territory Monitoring',
+  '/route-intelligence/territories':  'Live Operations',
   '/route-intelligence/geofencing':   'Geofencing',
   '/route-intelligence/compliance':   'Route Compliance',
   '/route-intelligence/replay':       'Route Replay',

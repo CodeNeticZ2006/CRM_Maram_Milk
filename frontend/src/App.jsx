@@ -1,5 +1,5 @@
 import React, { Component, Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 
 // Layout
@@ -47,12 +47,21 @@ const SettingsPage     = lazy(() => import('./pages/Settings/SettingsPage'));
 
 // Route Intelligence Module
 const LiveOperationsPage            = lazy(() => import('./pages/RouteIntelligence/pages/LiveOperationsPage'));
-const TerritoryMonitoringPage       = lazy(() => import('./pages/RouteIntelligence/pages/TerritoryMonitoringPage'));
 const GeofencingPage                = lazy(() => import('./pages/RouteIntelligence/pages/GeofencingPage'));
 const RouteCompliancePage           = lazy(() => import('./pages/RouteIntelligence/pages/RouteCompliancePage'));
 const RouteReplayPage               = lazy(() => import('./pages/RouteIntelligence/pages/RouteReplayPage'));
 const RIAnalyticsPage               = lazy(() => import('./pages/RouteIntelligence/pages/AnalyticsPage'));
 const RouteIntelligenceSettingsPage = lazy(() => import('./pages/RouteIntelligence/pages/RouteIntelligenceSettingsPage'));
+
+// Redirect helper for merged Territory Monitoring
+function TerritoryRedirect() {
+  const location = useLocation();
+  const searchParams = new URLSearchParams(location.search);
+  if (!searchParams.has('tab')) {
+    searchParams.set('tab', 'areas');
+  }
+  return <Navigate to={`/route-intelligence/live?${searchParams.toString()}`} replace />;
+}
 
 // Page loader fallback
 function PageLoader() {
@@ -249,9 +258,7 @@ export default function App() {
             <Route path="/route-intelligence/live" element={
               <Suspense fallback={<PageLoader />}><LiveOperationsPage /></Suspense>
             } />
-            <Route path="/route-intelligence/territories" element={
-              <Suspense fallback={<PageLoader />}><TerritoryMonitoringPage /></Suspense>
-            } />
+            <Route path="/route-intelligence/territories" element={<TerritoryRedirect />} />
             <Route path="/route-intelligence/geofencing" element={
               <Suspense fallback={<PageLoader />}><GeofencingPage /></Suspense>
             } />
