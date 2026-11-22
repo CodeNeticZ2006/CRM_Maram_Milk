@@ -4,8 +4,8 @@ import {
   MdWarningAmber, MdLocationOn, MdCheck, MdClose, MdVisibility
 } from 'react-icons/md';
 import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { SectionHeader, StatusBadge } from '../components/index.jsx';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { SectionHeader, StatusBadge, AlertDetailDrawer } from '../components/index.jsx';
 import api from '../../../services/api';
 import { MOCK_COMPLIANCE_ROWS } from '../utils/mockData.js';
 import { getAreaColor } from '../utils/areaPalette.js';
@@ -16,13 +16,18 @@ const STATUS_FILTER_OPTIONS = ['All', 'compliant', 'warning', 'deviated', 'revie
 
 export default function RouteCompliancePage() {
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const alertIdParam = searchParams.get('alertId');
 
-  const [search, setSearch]       = useState('');
-  const [statusFilter, setFilter] = useState('All');
-  const [rows, setRows]           = useState(MOCK_COMPLIANCE_ROWS);
-  const [alerts, setAlerts]       = useState([]);
-  const [loading, setLoading]     = useState(true);
-  const [isDb2Loaded, setIsDb2Loaded] = useState(false);
+  const [search, setSearch]             = useState('');
+  const [statusFilter, setFilter]       = useState('All');
+  const [rows, setRows]                 = useState(MOCK_COMPLIANCE_ROWS);
+  const [alerts, setAlerts]             = useState([]);
+  const [demoAlerts, setDemoAlerts]     = useState([]);
+  const [corridors, setCorridors]       = useState([]);
+  const [loading, setLoading]           = useState(true);
+  const [isDb2Loaded, setIsDb2Loaded]   = useState(false);
+  const [selectedAlert, setSelectedAlert] = useState(null);
 
   // Review modal state
   const [reviewModal, setReviewModal] = useState({
@@ -36,9 +41,11 @@ export default function RouteCompliancePage() {
   const fetchCompliance = useCallback(async () => {
     setLoading(true);
     try {
-      const [compRes, alertRes] = await Promise.all([
+      const [compRes, alertRes, demoAlertRes, corridorsRes] = await Promise.all([
         api.get('/route-intelligence/compliance').catch(() => null),
         api.get('/route-intelligence/alerts').catch(() => null),
+        api.get('/route-intelligence/demo/alerts').catch(() => null),
+        api.get('/route-intelligence/route-corridors').catch(() => null),
       ]);
 
       if (compRes?.data?.success && compRes?.data?.data && compRes.data.data.length > 0) {
@@ -47,6 +54,12 @@ export default function RouteCompliancePage() {
       }
       if (alertRes?.data?.success && Array.isArray(alertRes.data?.data)) {
         setAlerts(alertRes.data.data);
+      }
+      if (demoAlertRes?.data?.success && Array.isArray(demoAlertRes.data?.data)) {
+        setDemoAlerts(demoAlertRes.data.data);
+      }
+      if (corridorsRes?.data?.success && Array.isArray(corridorsRes.data?.data?.routes)) {
+        setCorridors(corridorsRes.data.data.routes);
       }
     } catch (err) {
       console.warn('Failed to load DB2 Compliance data:', err.message);
@@ -59,16 +72,60 @@ export default function RouteCompliancePage() {
     fetchCompliance();
   }, [fetchCompliance]);
 
+  // Deep link sync: if ?alertId=... exists, select that alert
+  useEffect(() => {
+    if (alertIdParam) {
+      const allKnownAlerts = [...alerts, ...demoAlerts];
+      const match = allKnownAlerts.find(a => String(a.id) === String(alertIdParam));
+      if (match) {
+        setSelectedAlert(match);
+      }
+    }
+  }, [alertIdParam, alerts, demoAlerts]);
+
+  const handleOpenAlertDrawer = (alertItem) => {
+    setSelectedAlert(alertItem);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.set('alertId', alertItem.id);
+    setSearchParams(nextParams);
+  };
+
+  const handleCloseAlertDrawer = () => {
+    setSelectedAlert(null);
+    const nextParams = new URLSearchParams(searchParams);
+    nextParams.delete('alertId');
+    setSearchParams(nextParams);
+  };
+
+  const handleAlertUpdated = (updatedAlert) => {
+    if (updatedAlert.source === 'simulator') {
+      setDemoAlerts(prev => prev.map(a => a.id === updatedAlert.id ? updatedAlert : a));
+    } else {
+      setAlerts(prev => prev.map(a => a.id === updatedAlert.id ? updatedAlert : a));
+    }
+    setSelectedAlert(updatedAlert);
+  };
+
   const handleReviewSubmit = async () => {
     if (!reviewModal.alert) return;
     setReviewModal(prev => ({ ...prev, submitting: true }));
     try {
-      const res = await api.patch(`/route-intelligence/alerts/${reviewModal.alert.id}/review`, {
+      const isSim = reviewModal.alert.source === 'simulator';
+      const endpoint = isSim
+        ? `/route-intelligence/demo/alerts/${reviewModal.alert.id}/review`
+        : `/route-intelligence/alerts/${reviewModal.alert.id}/review`;
+
+      const res = await api.patch(endpoint, {
         status: reviewModal.action,
         note: reviewModal.note,
       });
       if (res?.data?.success) {
-        setAlerts(prev => prev.map(a => a.id === reviewModal.alert.id ? { ...a, status: reviewModal.action, reviewNote: reviewModal.note } : a));
+        const updated = res.data.data?.alert || {
+          ...reviewModal.alert,
+          status: reviewModal.action,
+          reviewNote: reviewModal.note,
+        };
+        handleAlertUpdated(updated);
         setReviewModal({ open: false, alert: null, action: 'REVIEWED', note: '', submitting: false });
       }
     } catch (err) {
@@ -85,9 +142,15 @@ export default function RouteCompliancePage() {
   });
 
   const inReviewAlerts = alerts.filter(a => a.status === 'TO_BE_REVIEWED');
+  const inReviewDemoAlerts = demoAlerts.filter(a => a.status === 'TO_BE_REVIEWED');
   const totalCompliant = rows.filter(r => r.status === 'compliant').length;
   const totalDeviated  = rows.filter(r => r.status === 'deviated').length;
   const totalWarning   = rows.filter(r => r.status === 'warning').length;
+
+  // Selected corridor polyline for drawer
+  const selectedCorridorPolyline = selectedAlert
+    ? corridors.find(c => c.name === selectedAlert.areaName || c.id === selectedAlert.areaId)?.polyline || []
+    : [];
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
@@ -122,7 +185,122 @@ export default function RouteCompliancePage() {
         ))}
       </div>
 
-      {/* ── SUPERADMIN OFF-ROUTE ALERTS (IN REVIEW LIST) ───────────────────── */}
+      {/* ── SIMULATED OFF-ROUTE ALERTS (DEMO MODE SECTION) ────────────────── */}
+      {demoAlerts.length > 0 && (
+        <div
+          className="card"
+          style={{
+            marginBottom: 24,
+            border: '1.5px solid #f59e0b',
+            background: '#fffdf5',
+          }}
+        >
+          <div className="card-header" style={{ paddingBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span style={{ fontSize: 20 }}>🚨</span>
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <span className="card-title" style={{ color: '#b45309' }}>
+                    Simulated Off-Route Alerts (Demo Mode)
+                  </span>
+                  <span
+                    className="badge"
+                    style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: 10.5, fontWeight: 800 }}
+                  >
+                    SIMULATED
+                  </span>
+                </div>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                  In-memory simulation alerts. Zero real database writes. Click any row to inspect replay.
+                </div>
+              </div>
+            </div>
+            <span className={`badge ${inReviewDemoAlerts.length > 0 ? 'badge-danger' : 'badge-success'}`}>
+              {inReviewDemoAlerts.length} To Be Reviewed
+            </span>
+          </div>
+
+          <div className="ri-compliance-wrap">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Simulated DP</th>
+                  <th>Assigned Area</th>
+                  <th>Deviation Type</th>
+                  <th>Driving Off-Route</th>
+                  <th>Stopped Off-Route</th>
+                  <th>Max Offset</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {demoAlerts.map(alert => {
+                  const areaColor = getAreaColor(alert.areaName || alert.areaId);
+                  const drivingMin = alert.drivingSeconds ? `${Math.round(alert.drivingSeconds / 60)} min (${alert.drivingSeconds}s)` : '0 min';
+                  const stoppedMin = alert.stoppedSeconds ? `${Math.round(alert.stoppedSeconds / 60)} min (${alert.stoppedSeconds}s)` : '0 min';
+
+                  return (
+                    <tr
+                      key={alert.id}
+                      style={{ cursor: 'pointer', background: alert.status === 'TO_BE_REVIEWED' ? '#fff9f0' : '#ffffff' }}
+                      onClick={() => handleOpenAlertDrawer(alert)}
+                    >
+                      <td>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <div style={{ width: 28, height: 28, borderRadius: '50%', background: areaColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
+                            {alert.dpName ? alert.dpName.split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase() : 'SIM'}
+                          </div>
+                          <div>
+                            <span style={{ fontWeight: 600 }}>{alert.dpName}</span>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>ID: {alert.dpId}</div>
+                          </div>
+                        </div>
+                      </td>
+                      <td>
+                        <span style={{ fontWeight: 600, color: areaColor }}>{alert.areaName}</span>
+                      </td>
+                      <td>
+                        <span className={`badge ${alert.type === 'OFF_ROUTE_DRIVING' ? 'badge-warning' : 'badge-danger'}`}>
+                          {alert.type === 'OFF_ROUTE_DRIVING' ? 'Driving Off-Route' : 'Stopped Off-Route'}
+                        </span>
+                      </td>
+                      <td style={{ fontSize: 13, fontWeight: alert.drivingSeconds > 0 ? 600 : 400 }}>{drivingMin}</td>
+                      <td style={{ fontSize: 13, fontWeight: alert.stoppedSeconds > 0 ? 600 : 400 }}>{stoppedMin}</td>
+                      <td style={{ fontSize: 13, fontWeight: 700, color: '#dc2626' }}>{alert.maxDistance}m</td>
+                      <td>
+                        <span className={`badge ${alert.status === 'TO_BE_REVIEWED' ? 'badge-danger' : alert.status === 'REVIEWED' ? 'badge-success' : 'badge-secondary'}`}>
+                          {alert.status}
+                        </span>
+                      </td>
+                      <td onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="btn btn-primary btn-xs"
+                            onClick={() => handleOpenAlertDrawer(alert)}
+                          >
+                            Inspect & Replay
+                          </button>
+                          {alert.status === 'TO_BE_REVIEWED' && (
+                            <button
+                              className="btn btn-success btn-xs"
+                              onClick={() => setReviewModal({ open: true, alert, action: 'REVIEWED', note: '', submitting: false })}
+                            >
+                              <MdCheck /> Review
+                            </button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* ── SUPERADMIN REAL OFF-ROUTE ALERTS (IN REVIEW LIST) ───────────────── */}
       <div className="card" style={{ marginBottom: 24, border: inReviewAlerts.length > 0 ? '1.5px solid #fecaca' : '1px solid var(--border)' }}>
         <div className="card-header" style={{ paddingBottom: 12, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -164,7 +342,11 @@ export default function RouteCompliancePage() {
                 const stoppedMin = alert.stoppedSeconds ? `${Math.round(alert.stoppedSeconds / 60)} min (${alert.stoppedSeconds}s)` : '0 min';
 
                 return (
-                  <tr key={alert.id} style={{ background: '#fff9f9' }}>
+                  <tr
+                    key={alert.id}
+                    style={{ background: '#fff9f9', cursor: 'pointer' }}
+                    onClick={() => handleOpenAlertDrawer(alert)}
+                  >
                     <td>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                         <div style={{ width: 28, height: 28, borderRadius: '50%', background: areaColor, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#fff', fontSize: 11, fontWeight: 700, flexShrink: 0 }}>
@@ -193,18 +375,14 @@ export default function RouteCompliancePage() {
                     <td>
                       <span className="badge badge-danger">TO BE REVIEWED</span>
                     </td>
-                    <td>
+                    <td onClick={e => e.stopPropagation()}>
                       <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                         <button
                           className="btn btn-primary btn-xs"
                           style={{ display: 'flex', alignItems: 'center', gap: 4 }}
-                          onClick={() => {
-                            const lat = alert.location?.lat || 13.0604;
-                            const lng = alert.location?.lng || 80.2496;
-                            navigate(`/route-intelligence/live?alertId=${alert.id}&lat=${lat}&lng=${lng}&dpId=${alert.dpId}`);
-                          }}
+                          onClick={() => handleOpenAlertDrawer(alert)}
                         >
-                          <MdLocationOn /> View on Map
+                          <MdLocationOn /> View & Replay
                         </button>
                         <button
                           className="btn btn-success btn-xs"
@@ -285,6 +463,16 @@ export default function RouteCompliancePage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Alert Detail Drawer */}
+      {selectedAlert && (
+        <AlertDetailDrawer
+          alert={selectedAlert}
+          onClose={handleCloseAlertDrawer}
+          onAlertUpdated={handleAlertUpdated}
+          corridorPolyline={selectedCorridorPolyline}
+        />
       )}
 
       {/* Filters */}

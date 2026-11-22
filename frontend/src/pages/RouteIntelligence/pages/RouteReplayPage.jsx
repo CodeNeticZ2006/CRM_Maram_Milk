@@ -1,37 +1,33 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect, useCallback } from 'react';
 import {
-  MdPlayArrow, MdPause, MdReplay, MdSkipNext, MdSkipPrevious,
   MdPerson, MdCalendarToday, MdRoute, MdRefresh
 } from 'react-icons/md';
-import { SectionHeader, RouteReplayCard } from '../components/index.jsx';
+import { SectionHeader, RoutePlayer, RouteReplayCard } from '../components/index.jsx';
 import api from '../../../services/api';
 import { MOCK_DELIVERY_PARTNERS, MOCK_REPLAY_EVENTS } from '../utils/mockData.js';
-import {
-  LeafletMapContainer, RoutePolyline, CustomerMarker,
-  DeliveryPartnerMarker, HeadOfficeMarker, HEAD_OFFICE,
-  MOCK_REPLAY_GIS_DATA
-} from '../maps/index.js';
+import { getAreaColor } from '../utils/areaPalette.js';
 import '../components/RouteIntelligence.css';
 
 const fadeUp = { hidden: { opacity: 0, y: 16 }, show: { opacity: 1, y: 0 } };
 
 export default function RouteReplayPage() {
-  const [isPlaying, setIsPlaying]     = useState(false);
-  const [speed, setSpeed]             = useState('1x');
   const [dpList, setDpList]           = useState(MOCK_DELIVERY_PARTNERS);
   const [selectedDP, setSelectedDP]   = useState(MOCK_DELIVERY_PARTNERS[0].id);
+  const [selectedDate, setSelectedDate] = useState('2026-11-23');
   const [loading, setLoading]         = useState(true);
   const [isDb2Loaded, setIsDb2Loaded] = useState(false);
+  const [replayStream, setReplayStream] = useState(null);
+  const [corridorPolyline, setCorridorPolyline] = useState([]);
 
-  const [crmCustomers, setCrmCustomers] = useState([]);
-
+  // Fetch DPs and corridor polyline
   const fetchReplayData = useCallback(async () => {
     setLoading(true);
     try {
-      const [res, custRes] = await Promise.all([
+      const [res, corridorsRes, demoRes] = await Promise.all([
         api.get('/route-intelligence/replay').catch(() => null),
-        api.get('/customers', { params: { limit: 500 } }).catch(() => null),
+        api.get('/route-intelligence/route-corridors').catch(() => null),
+        api.get('/route-intelligence/demo/replay-stream', { params: { dpId: selectedDP } }).catch(() => null),
       ]);
 
       if (res?.data?.success && res?.data?.data?.deliveryPartners?.length > 0) {
@@ -43,8 +39,22 @@ export default function RouteReplayPage() {
         setIsDb2Loaded(true);
       }
 
-      if (custRes?.data?.success && Array.isArray(custRes.data?.data)) {
-        setCrmCustomers(custRes.data.data.filter(c => c.lat && c.lng && !isNaN(parseFloat(c.lat)) && !isNaN(parseFloat(c.lng))));
+      // Check if demo replay stream has telemetry for this DP
+      if (demoRes?.data?.success && demoRes.data?.data) {
+        setReplayStream(demoRes.data.data);
+      } else {
+        setReplayStream(null);
+      }
+
+      // Set corridor polyline if available
+      if (corridorsRes?.data?.success && Array.isArray(corridorsRes.data?.data?.routes)) {
+        const currentDp = dpList.find(d => d.id === selectedDP);
+        const matchRoute = corridorsRes.data.data.routes.find(
+          r => r.id === currentDp?.route || r.name === currentDp?.route || r.id === currentDp?.zone || r.name === currentDp?.zone
+        );
+        if (matchRoute && matchRoute.polyline) {
+          setCorridorPolyline(matchRoute.polyline);
+        }
       }
     } catch (err) {
       console.warn('Failed to fetch DB2 replay list:', err.message);
@@ -58,6 +68,9 @@ export default function RouteReplayPage() {
   }, [fetchReplayData]);
 
   const dp = dpList.find(d => d.id === selectedDP) || dpList[0];
+  const areaColor = getAreaColor(dp?.route || dp?.zone || 'Nungambakkam 1');
+  const pings = replayStream?.pings || [];
+  const isSimulated = Boolean(replayStream?.pings?.length > 0 && replayStream?.dpId?.startsWith('SIM'));
 
   return (
     <motion.div variants={fadeUp} initial="hidden" animate="show" transition={{ duration: 0.25 }}>
@@ -67,6 +80,7 @@ export default function RouteReplayPage() {
           <span>
             Replay historical delivery routes with a step-by-step event timeline
             {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
+            {isSimulated && <span className="badge" style={{ marginLeft: 8, fontSize: 11, background: '#fef3c7', color: '#b45309' }}>SIMULATION TELEMETRY</span>}
           </span>
         }
       >
@@ -93,15 +107,25 @@ export default function RouteReplayPage() {
                 ))}
               </select>
             </div>
+
             {/* Date */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <MdCalendarToday style={{ color: 'var(--text-muted)', fontSize: 16 }} />
-              <input type="date" className="ri-speed-select" defaultValue="2026-08-07" id="ri-replay-date" />
+              <input
+                type="date"
+                className="ri-speed-select"
+                value={selectedDate}
+                onChange={e => setSelectedDate(e.target.value)}
+                id="ri-replay-date"
+              />
             </div>
+
             {/* Route */}
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 160 }}>
               <MdRoute style={{ color: 'var(--text-muted)', fontSize: 18 }} />
-              <span style={{ fontSize: 13, color: 'var(--text-secondary)', fontWeight: 600 }}>{dp?.route || dp?.zone || 'Zone A'}</span>
+              <span style={{ fontSize: 13, color: areaColor, fontWeight: 700 }}>
+                {dp?.route || dp?.zone || 'Zone A'}
+              </span>
             </div>
           </div>
         </div>
@@ -109,140 +133,73 @@ export default function RouteReplayPage() {
 
       {/* Map + Timeline */}
       <div className="ri-replay-layout">
-        {/* Left: Map + Playback Controls */}
+        {/* Left: RoutePlayer Component */}
         <div>
-          {/* Map */}
-          <div style={{ marginBottom: 16 }}>
-            <LeafletMapContainer
-              height={380}
-              center={MOCK_REPLAY_GIS_DATA.currentPos}
-              zoom={13}
-              legendItems={[
-                { label: 'Head Office',      color: '#8b5cf6' },
-                { label: 'Current Position', color: '#3b82f6', shape: 'circle' },
-                { label: 'Completed Segment',color: '#10b981' },
-                { label: 'Remaining Route',  color: '#94a3b8' },
-                { label: 'Delivered Stop',   color: '#10b981', shape: 'circle' },
-                { label: 'Pending Stop',     color: '#f59e0b', shape: 'circle' },
-              ]}
-            >
-              {({ showCustomers, showRoutes }) => (
-                <>
-                  <HeadOfficeMarker office={HEAD_OFFICE} />
-
-                  {/* Full planned route (dashed / remaining) */}
-                  {showRoutes && (
-                    <RoutePolyline
-                      coordinates={MOCK_REPLAY_GIS_DATA.fullPath}
-                      color="#94a3b8"
-                      weight={4}
-                      dashArray="6, 6"
-                      routeName={`${MOCK_REPLAY_GIS_DATA.route} (Planned)`}
-                    />
-                  )}
-
-                  {/* Completed route segment */}
-                  {showRoutes && (
-                    <RoutePolyline
-                      coordinates={MOCK_REPLAY_GIS_DATA.completedPath}
-                      color="#10b981"
-                      weight={5}
-                      completed={true}
-                      routeName={`${MOCK_REPLAY_GIS_DATA.route} (Completed)`}
-                    />
-                  )}
-
-                  {/* Real CRM Customer Stops */}
-                  {showCustomers && crmCustomers.map(cust => (
-                    <CustomerMarker key={cust.id} customer={cust} />
-                  ))}
-
-                  {/* Current Replay Marker */}
-                  <DeliveryPartnerMarker
-                    partner={{
-                      name: dp?.name || MOCK_REPLAY_GIS_DATA.dpName,
-                      type: 'Current Position',
-                      route: dp?.route || MOCK_REPLAY_GIS_DATA.route,
-                      status: 'active',
-                      lat: MOCK_REPLAY_GIS_DATA.currentPos[0],
-                      lng: MOCK_REPLAY_GIS_DATA.currentPos[1],
-                      speed: '36 km/h',
-                    }}
-                    isCurrentPos={true}
-                  />
-                </>
-              )}
-            </LeafletMapContainer>
-          </div>
-
-          {/* Playback Controls */}
-          <div className="card">
-            <div className="card-body">
-              <div className="ri-replay-controls">
-                <button className="ri-replay-btn" title="Restart" id="ri-replay-restart">
-                  <MdReplay />
-                </button>
-                <button className="ri-replay-btn" title="Previous Event" id="ri-replay-prev">
-                  <MdSkipPrevious />
-                </button>
-                <button
-                  className={`ri-replay-btn ${isPlaying ? 'active' : ''}`}
-                  onClick={() => setIsPlaying(p => !p)}
-                  title={isPlaying ? 'Pause' : 'Play'}
-                  id="ri-replay-play"
-                >
-                  {isPlaying ? <MdPause /> : <MdPlayArrow />}
-                </button>
-                <button className="ri-replay-btn" title="Next Event" id="ri-replay-next">
-                  <MdSkipNext />
-                </button>
-
-                {/* Timeline Scrubber */}
-                <div className="ri-timeline-bar">
-                  <div className="ri-timeline-track">
-                    <div className="ri-timeline-fill">
-                      <div className="ri-timeline-thumb" />
-                    </div>
-                  </div>
-                  <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>06:20 AM</span>
-                    <span style={{ fontSize: 11, color: 'var(--primary)', fontWeight: 600 }}>06:41 AM</span>
-                    <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>07:02 AM</span>
-                  </div>
-                </div>
-
-                {/* Speed Control */}
-                <select
-                  className="ri-speed-select"
-                  value={speed}
-                  onChange={e => setSpeed(e.target.value)}
-                  id="ri-replay-speed"
-                >
-                  {['0.5x','1x','2x','4x','8x'].map(s => <option key={s}>{s}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
+          <RoutePlayer
+            dp={{
+              id: dp?.id,
+              name: dp?.name,
+              route: dp?.route || dp?.zone,
+              areaColor,
+            }}
+            date={selectedDate}
+            corridorPolyline={corridorPolyline}
+            deviationTrail={replayStream?.deviationTrail || []}
+            pings={pings}
+            height={420}
+            isSimulated={isSimulated}
+            emptyMessage="No tracking data for this period"
+          />
         </div>
 
         {/* Right: Event Timeline */}
         <div className="card">
           <div className="card-header" style={{ paddingBottom: 12 }}>
             <span className="card-title">Event Timeline</span>
-            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>{MOCK_REPLAY_EVENTS.length} events</span>
+            <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+              {pings.length > 0 ? `${pings.length} telemetry points` : '0 events'}
+            </span>
           </div>
           <div className="card-body" style={{ padding: '8px 8px 16px' }}>
-            <div className="ri-replay-event-list">
-              {MOCK_REPLAY_EVENTS.map((ev, i) => (
-                <div key={i} style={{ position: 'relative' }}>
-                  {/* Connector line */}
-                  {i < MOCK_REPLAY_EVENTS.length - 1 && (
-                    <div style={{ position: 'absolute', left: 22, top: 38, width: 2, height: 12, background: 'var(--border)', zIndex: 0 }} />
-                  )}
-                  <RouteReplayCard event={ev} />
-                </div>
-              ))}
-            </div>
+            {pings.length > 0 ? (
+              <div className="ri-replay-event-list">
+                {pings.slice(-10).reverse().map((ping, i) => (
+                  <div key={i} style={{ position: 'relative' }}>
+                    <div className="ri-replay-event">
+                      <div
+                        style={{
+                          width: 28,
+                          height: 28,
+                          borderRadius: '50%',
+                          background: ping.status === 'RED' ? '#fee2e2' : '#dcfce7',
+                          color: ping.status === 'RED' ? '#dc2626' : '#16a34a',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontWeight: 700,
+                          fontSize: 11,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {ping.status === 'RED' ? '!' : '✓'}
+                      </div>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                          {ping.status === 'RED' ? `Deviation: ${ping.distanceMeters || 0}m off corridor` : 'On corridor'}
+                        </div>
+                        <div style={{ fontSize: 11.5, color: 'var(--text-muted)', marginTop: 2 }}>
+                          {ping.timestamp ? new Date(ping.timestamp).toLocaleTimeString('en-IN', { timeZone: 'Asia/Kolkata' }) : '—'} • {ping.speed || 0} km/h
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div style={{ textAlign: 'center', padding: '36px 12px', color: 'var(--text-muted)', fontSize: 13 }}>
+                No events logged for this delivery partner on {selectedDate}.
+              </div>
+            )}
           </div>
         </div>
       </div>

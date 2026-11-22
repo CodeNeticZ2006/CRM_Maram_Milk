@@ -174,20 +174,29 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
   const navigate = useNavigate();
   const [openGroups, setOpenGroups] = useState({ 'Route Intelligence': true, 'Reports': true });
   const [routeAlertCount, setRouteAlertCount] = useState(0);
+  const [demoAlertCount, setDemoAlertCount] = useState(0);
 
   useEffect(() => {
     let mounted = true;
     const fetchAlertCount = () => {
-      api.get('/route-intelligence/alerts', { params: { status: 'TO_BE_REVIEWED' } })
-        .then(res => {
-          if (mounted && res?.data?.success && Array.isArray(res.data?.data)) {
-            setRouteAlertCount(res.data.data.length);
-          }
-        })
-        .catch(() => {});
+      Promise.all([
+        api.get('/route-intelligence/alerts', { params: { status: 'TO_BE_REVIEWED' } }).catch(() => null),
+        api.get('/route-intelligence/demo/alerts').catch(() => null),
+      ]).then(([res, demoRes]) => {
+        if (!mounted) return;
+        if (res?.data?.success && Array.isArray(res.data?.data)) {
+          setRouteAlertCount(res.data.data.length);
+        }
+        if (demoRes?.data?.success && Array.isArray(demoRes.data?.data)) {
+          const simInReview = demoRes.data.data.filter(a => a.status === 'TO_BE_REVIEWED').length;
+          setDemoAlertCount(simInReview);
+        } else {
+          setDemoAlertCount(0);
+        }
+      });
     };
     fetchAlertCount();
-    const interval = setInterval(fetchAlertCount, 30000);
+    const interval = setInterval(fetchAlertCount, 10000);
     return () => {
       mounted = false;
       clearInterval(interval);
@@ -311,20 +320,26 @@ export default function Sidebar({ pendingCount, mobileOpen, onCloseMobile }) {
                           >
                             <span className="nav-icon">{item.icon}</span>
                             <span>{item.label}</span>
-                            {item.to === '/route-intelligence/compliance' && routeAlertCount > 0 && (
+                            {item.to === '/route-intelligence/compliance' && (routeAlertCount > 0 || demoAlertCount > 0) && (
                               <span
                                 className="nav-badge"
                                 style={{
-                                  background: '#ef4444',
+                                  background: demoAlertCount > 0 && routeAlertCount === 0 ? '#f59e0b' : '#ef4444',
                                   color: '#ffffff',
                                   fontSize: 10,
                                   fontWeight: 700,
                                   padding: '1px 6px',
                                   borderRadius: 10,
                                   marginLeft: 'auto',
+                                  display: 'inline-flex',
+                                  alignItems: 'center',
+                                  gap: 3,
                                 }}
                               >
-                                {routeAlertCount}
+                                {routeAlertCount + demoAlertCount}
+                                {demoAlertCount > 0 && routeAlertCount === 0 && (
+                                  <span style={{ fontSize: 8, opacity: 0.9 }}>SIM</span>
+                                )}
                               </span>
                             )}
                           </NavLink>

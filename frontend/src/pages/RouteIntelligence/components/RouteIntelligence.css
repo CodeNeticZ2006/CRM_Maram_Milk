@@ -635,6 +635,202 @@
 .marker-pulse-ring.green   { border-color: #10b981; }
 .marker-pulse-ring.warning { border-color: #f59e0b; }
 .marker-pulse-ring.red     { border-color: #ef4444; }
+.marker-pulse-ring.outside-window { border-color: #64748b; }
+
+/* Top-Down Bike Marker */
+.dp-bike-marker-container {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.35));
+}
+
+.dp-bike-svg {
+  transition: transform 0.25s ease-out;
+  z-index: 2;
+}
+
+.marker-dp-initials-badge {
+  position: absolute;
+  bottom: -6px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #0f172a;
+  color: #ffffff;
+  font-size: 9px;
+  font-weight: 800;
+  padding: 0 4px;
+  border-radius: 4px;
+  border: 1px solid #ffffff;
+  white-space: nowrap;
+  line-height: 12px;
+  z-index: 3;
+}
+
+.marker-sim-badge {
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  background: #f59e0b;
+  color: #000000;
+  font-size: 8px;
+  font-weight: 900;
+  padding: 0 3px;
+  border-radius: 3px;
+  border: 1px solid #ffffff;
+  white-space: nowrap;
+  line-height: 10px;
+  z-index: 4;
+}
+
+/* Demo Control Panel */
+.ri-demo-container {
+  background: var(--surface, #ffffff);
+  border: 1.5px solid #f59e0b;
+  border-radius: var(--radius-lg, 12px);
+  padding: 16px 20px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(245, 158, 11, 0.12);
+}
+
+.ri-demo-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: #fffbeb;
+  border: 1px solid #fde68a;
+  border-radius: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  color: #b45309;
+  margin-bottom: 14px;
+}
+
+.ri-demo-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.ri-speed-btn-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.ri-speed-btn {
+  padding: 4px 10px;
+  font-size: 11px;
+  font-weight: 700;
+  border-radius: 6px;
+  border: 1px solid var(--border, #e2e8f0);
+  background: var(--surface, #ffffff);
+  cursor: pointer;
+}
+.ri-speed-btn.active {
+  background: var(--primary, #2563eb);
+  color: #ffffff;
+  border-color: var(--primary, #2563eb);
+}
+
+.ri-demo-hud {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 10px;
+  background: rgba(15, 23, 42, 0.03);
+  padding: 12px;
+  border-radius: 8px;
+  margin-top: 14px;
+}
+
+.ri-hud-stat {
+  font-size: 11px;
+  color: var(--text-muted, #64748b);
+}
+.ri-hud-val {
+  font-size: 13.5px;
+  font-weight: 700;
+  color: var(--text-primary, #0f172a);
+}
+
+/* Alert Detail Drawer */
+.ri-drawer-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(2px);
+  z-index: 10000;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.ri-drawer-content {
+  width: 600px;
+  max-width: 100%;
+  height: 100vh;
+  background: var(--surface, #ffffff);
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.25);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: ri-drawer-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@media (max-width: 768px) {
+  .ri-drawer-content {
+    width: 100vw;
+  }
+}
+
+@keyframes ri-drawer-slide-in {
+  from { transform: translateX(100%); }
+  to { transform: translateX(0); }
+}
+
+.ri-drawer-header {
+  padding: 18px 24px;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ri-drawer-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border, #e2e8f0);
+  background: rgba(248, 250, 252, 0.8);
+}
+
+.ri-drawer-tab-btn {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-secondary, #475569);
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.ri-drawer-tab-btn.active {
+  color: var(--primary, #2563eb);
+  border-bottom-color: var(--primary, #2563eb);
+  background: var(--surface, #ffffff);
+}
+
+.ri-drawer-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px 24px;
+}
 
 .marker-dp-initials {
   transform: rotate(45deg);

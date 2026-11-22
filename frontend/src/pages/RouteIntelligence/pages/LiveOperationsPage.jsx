@@ -8,7 +8,8 @@ import {
   MdVisibility, MdVisibilityOff, MdSearch, MdFullscreen, MdFullscreenExit,
   MdLocationOn, MdCheckCircle, MdLocalShipping,
 } from 'react-icons/md';
-import { SectionHeader, AnalyticsCard } from '../components/index.jsx';
+import { SectionHeader, AnalyticsCard, DemoControlPanel } from '../components/index.jsx';
+import api from '../../../services/api';
 import {
   LeafletMapContainer, HeadOfficeMarker, CustomerMarker,
   DeliveryPartnerMarker, RoutePolyline, HEAD_OFFICE
@@ -67,9 +68,36 @@ export default function LiveOperationsPage() {
   const [showUnmappedDrawer, setShowUnmappedDrawer] = useState(false);
   const [highlightedArea, setHighlightedArea] = useState(null);
 
+  // Simulation / Demo Mode State
+  const [isDemoMode, setIsDemoMode] = useState(false);
+  const [demoStatus, setDemoStatus] = useState(null);
+  const [selectedSimDpId, setSelectedSimDpId] = useState('SIM-001');
+
   // Dynamic Map Navigation Center & Bounds
   const [customCenter, setCustomCenter] = useState(null);
   const [customBounds, setCustomBounds] = useState(null);
+
+  // Poll simulation status when Demo Mode is active
+  useEffect(() => {
+    if (!isDemoMode) return;
+    let active = true;
+    const fetchDemoStatus = async () => {
+      try {
+        const res = await api.get('/route-intelligence/demo/status');
+        if (active && res?.data?.success && res.data?.data) {
+          setDemoStatus(res.data.data);
+        }
+      } catch (err) {
+        console.warn('Demo status poll error:', err.message);
+      }
+    };
+    fetchDemoStatus();
+    const interval = setInterval(fetchDemoStatus, demoStatus?.isRunning ? 1200 : 3000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, [isDemoMode, demoStatus?.isRunning]);
 
   // Per-Area Visibility State (All 5 enabled by default)
   const [visibleAreas, setVisibleAreas] = useState(() => {
@@ -330,9 +358,18 @@ export default function LiveOperationsPage() {
           <span>
             Real-time delivery partner tracking and area corridor intelligence across 5 Chennai delivery zones
             {isDb2Loaded && <span className="badge badge-success" style={{ marginLeft: 10, fontSize: 11 }}>Connected to DB2</span>}
+            {isDemoMode && <span className="badge" style={{ marginLeft: 8, fontSize: 11, background: '#fef3c7', color: '#b45309' }}>DEMO SIMULATION ACTIVE</span>}
           </span>
         }
       >
+        <button
+          className={`btn btn-sm ${isDemoMode ? 'btn-warning' : 'btn-secondary'}`}
+          id="ri-toggle-demo-mode-btn"
+          onClick={() => setIsDemoMode(prev => !prev)}
+          style={{ display: 'flex', alignItems: 'center', gap: 6, fontWeight: 700 }}
+        >
+          <MdDirectionsBike /> {isDemoMode ? 'Exit Demo Mode' : 'Enter Demo Mode'}
+        </button>
         <button className="btn btn-secondary btn-sm" id="ri-live-refresh-btn" onClick={refresh} disabled={loading}>
           <MdRefresh className={loading ? 'spin' : ''} /> {loading ? 'Syncing...' : 'Refresh'}
         </button>
@@ -340,6 +377,16 @@ export default function LiveOperationsPage() {
           <MdWarningAmber /> View Compliance ({pendingAlertsCount} Alerts)
         </button>
       </SectionHeader>
+
+      {/* Demo Control Panel when Demo Mode is Active */}
+      {isDemoMode && (
+        <DemoControlPanel
+          status={demoStatus}
+          selectedDpId={selectedSimDpId}
+          onSelectDp={setSelectedSimDpId}
+          onStatusChange={setDemoStatus}
+        />
+      )}
 
       {/* Alert Focus Banner (Inspection Mode) */}
       {selectedAlert && (
@@ -517,6 +564,26 @@ export default function LiveOperationsPage() {
                 ))}
 
                 {/* Delivery Partners (Live GPS locations with area color tint and initials) */}
+                {showPartners && isDemoMode && demoStatus?.dps && demoStatus.dps.map(simDp => (
+                  <DeliveryPartnerMarker
+                    key={simDp.id}
+                    partner={{
+                      id: simDp.id,
+                      name: simDp.name,
+                      dpCode: simDp.dpCode,
+                      route: simDp.areaName,
+                      status: simDp.status,
+                      currentState: simDp.currentState,
+                      areaColor: simDp.areaColor,
+                      lat: simDp.lastGps?.lat,
+                      lng: simDp.lastGps?.lng,
+                      speed: simDp.lastGps?.speed,
+                      heading: simDp.lastGps?.heading,
+                      isSimulated: true,
+                      source: 'simulator',
+                    }}
+                  />
+                ))}
                 {showPartners && deliveryPartners.map(partner => (
                   <DeliveryPartnerMarker key={partner.id} partner={partner} />
                 ))}
@@ -565,6 +632,82 @@ export default function LiveOperationsPage() {
                 </div>
 
                 <div className="ri-dp-list">
+                  {/* When Demo Mode is ON, render simulated DPs first */}
+                  {isDemoMode && demoStatus?.dps && demoStatus.dps.length > 0 && (
+                    <div style={{ marginBottom: 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8, padding: '0 4px' }}>
+                        <span style={{ fontSize: 11, fontWeight: 800, color: '#b45309', letterSpacing: '0.4px', textTransform: 'uppercase' }}>
+                          Simulated Delivery Partners (Demo Mode)
+                        </span>
+                        <span className="badge" style={{ background: '#fef3c7', color: '#b45309', border: '1px solid #fde68a', fontSize: 10, fontWeight: 800 }}>
+                          SIMULATED
+                        </span>
+                      </div>
+                      {demoStatus.dps.map(simDp => {
+                        const areaColor = simDp.areaColor || getAreaColor(simDp.areaName);
+                        const cStatus = simDp.status || 'GREEN';
+                        let badgeBg = '#dcfce7';
+                        let badgeColor = '#166534';
+                        if (cStatus === 'RED') {
+                          badgeBg = '#fee2e2';
+                          badgeColor = '#991b1b';
+                        } else if (cStatus === 'YELLOW') {
+                          badgeBg = '#fef3c7';
+                          badgeColor = '#92400e';
+                        }
+                        return (
+                          <div
+                            key={simDp.id}
+                            className={`ri-dp-item ${selectedSimDpId === simDp.id ? 'selected' : ''}`}
+                            onClick={() => {
+                              setSelectedSimDpId(simDp.id);
+                              if (simDp.lastGps?.lat && simDp.lastGps?.lng) {
+                                setCustomBounds(null);
+                                setCustomCenter([simDp.lastGps.lat, simDp.lastGps.lng]);
+                                setLiveZoom(16);
+                              }
+                            }}
+                            style={{
+                              border: selectedSimDpId === simDp.id ? '1.5px solid #f59e0b' : '1px solid #fde68a',
+                              background: selectedSimDpId === simDp.id ? '#fffbeb' : '#fffdfa',
+                              marginBottom: 8,
+                            }}
+                          >
+                            <div className="ri-dp-avatar" style={{ background: areaColor }}>
+                              SIM
+                            </div>
+                            <div className="ri-dp-info">
+                              <div className="ri-dp-name">
+                                {simDp.name} <span style={{ fontSize: 10, color: '#b45309', fontWeight: 700 }}>(SIM)</span>
+                              </div>
+                              <div className="ri-dp-route" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ fontWeight: 600, color: areaColor }}>{simDp.areaName}</span>
+                                <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 6px', borderRadius: 4, background: badgeBg, color: badgeColor }}>
+                                  {simDp.currentState || simDp.status}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="ri-dp-speed">
+                              <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
+                                {simDp.lastGps?.speed > 0 ? `${simDp.lastGps.speed} kph` : 'Stopped'}
+                              </div>
+                              <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>
+                                {simDp.isWithinCorridor ? 'In corridor' : `${simDp.lastDistanceMeters}m off`}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Registered Real DPs Header if Demo Mode is ON */}
+                  {isDemoMode && (
+                    <div style={{ padding: '0 4px 6px', fontSize: 11, fontWeight: 700, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+                      Registered Delivery Partners (Real DB2) — GPS Unavailable
+                    </div>
+                  )}
+
                   {filteredDeliveryPartners.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '36px 12px', color: 'var(--text-muted)', fontSize: 13 }}>
                       No delivery partners found.

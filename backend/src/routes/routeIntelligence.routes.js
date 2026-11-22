@@ -37,4 +37,10 @@ router.get('/deviation-sessions', getDeviationSessionsHandler);
 router.get('/alerts',            requireSuperAdmin, getRouteAlertsHandler);
 router.patch('/alerts/:id/review', requireSuperAdmin, reviewRouteAlertHandler);
 
+// Superadmin Demonstration & Simulation Endpoints (guarded by kill switch)
+if (process.env.ROUTE_DEMO_ENABLED !== 'false') {
+  const demoRoutes = require('./routeIntelligenceDemo.routes');
+  router.use('/demo', requireSuperAdmin, demoRoutes);
+}
+
 module.exports = router;

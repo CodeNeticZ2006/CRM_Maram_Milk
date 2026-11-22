@@ -4,33 +4,58 @@ import L from 'leaflet';
 import MarkerPopup from './MarkerPopup.jsx';
 import { getAreaColor } from '../utils/areaPalette.js';
 
-export const createDpIcon = (status = 'active', areaColor = null, initials = null) => {
+export const createDpIcon = (status = 'active', areaColor = null, initials = null, heading = null, isSimulated = false) => {
   const normStatus = (status || '').toUpperCase();
-  let colorClass = 'green';
-  let pulseRingColor = 'green';
+  let ringColor = 'green';
 
   if (normStatus === 'RED' || status === 'deviated' || status === 'persistent_deviation' || status === 'breach') {
-    colorClass = 'red';
-    pulseRingColor = 'red';
+    ringColor = 'red';
   } else if (normStatus === 'YELLOW' || status === 'stopped' || status === 'warning' || status === 'temporary_deviation') {
-    colorClass = 'warning';
-    pulseRingColor = 'warning';
+    ringColor = 'warning';
+  } else if (normStatus === 'OUTSIDE WINDOW' || status === 'Outside Window' || status === 'Off Duty') {
+    ringColor = 'outside-window';
   } else {
-    colorClass = 'green';
-    pulseRingColor = 'green';
+    ringColor = 'green';
   }
 
-  const customBgStyle = areaColor ? `background-color: ${areaColor} !important; border-color: ${areaColor} !important;` : '';
-  const innerHtml = initials
-    ? `<span class="marker-dp-initials">${initials}</span>`
-    : `<span class="marker-icon-symbol"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="18.5" cy="17.5" r="3.5"/><circle cx="5.5" cy="17.5" r="3.5"/><circle cx="15" cy="5" r="1"/><path d="M12 17.5V14l-3-3 4-3 2 3h2"/></svg></span>`;
+  const safeColor = areaColor || '#2563eb';
+  const rotDeg = heading !== undefined && heading !== null && !isNaN(Number(heading)) ? Number(heading) : 0;
+  const simBadgeHtml = isSimulated ? `<span class="marker-sim-badge">SIM</span>` : '';
+  const initialsHtml = initials ? `<span class="marker-dp-initials-badge">${initials}</span>` : '';
+
+  // Top-down bike/scooter SVG (area color fill + heading rotation)
+  const bikeSvg = `
+    <svg width="26" height="26" viewBox="0 0 32 32" class="dp-bike-svg" style="transform: rotate(${rotDeg}deg);">
+      <!-- Front Wheel -->
+      <rect x="14" y="2" width="4" height="6" rx="2" fill="#0f172a"/>
+      <!-- Handlebars -->
+      <line x1="8" y1="8" x2="24" y2="8" stroke="#1e293b" stroke-width="2.5" stroke-linecap="round"/>
+      <!-- Mirrors -->
+      <circle cx="7" cy="7" r="1.5" fill="#64748b"/>
+      <circle cx="25" cy="7" r="1.5" fill="#64748b"/>
+      <!-- Scooter Main Chassis (Area Color Fill) -->
+      <path d="M12 9 C11 14 11 19 12 24 C13 25.5 19 25.5 20 24 C21 19 21 14 20 9 Z" fill="${safeColor}" stroke="#ffffff" stroke-width="1.2"/>
+      <!-- Rider Helmet -->
+      <circle cx="16" cy="15" r="3.2" fill="#0f172a"/>
+      <circle cx="16" cy="15" r="2.2" fill="#ffffff" fill-opacity="0.35"/>
+      <!-- Rear Wheel -->
+      <rect x="14" y="24" width="4" height="6" rx="2" fill="#0f172a"/>
+    </svg>
+  `;
 
   return L.divIcon({
-    className: `custom-leaflet-marker dp-marker-wrap ${status}`,
-    html: `<div class="marker-pin ${colorClass}" style="${customBgStyle}">${innerHtml}<span class="marker-pulse-ring ${pulseRingColor}"></span></div>`,
-    iconSize: [32, 32],
-    iconAnchor: [16, 32],
-    popupAnchor: [0, -32],
+    className: `custom-leaflet-marker dp-bike-marker-wrap ${status}`,
+    html: `
+      <div class="dp-bike-marker-container">
+        <span class="marker-pulse-ring ${ringColor}"></span>
+        ${bikeSvg}
+        ${initialsHtml}
+        ${simBadgeHtml}
+      </div>
+    `,
+    iconSize: [36, 36],
+    iconAnchor: [18, 18],
+    popupAnchor: [0, -18],
   });
 };
 
@@ -56,7 +81,9 @@ export default function DeliveryPartnerMarker({ partner, isCurrentPos = false, .
   const initials = partner.initials || (partner.name ? partner.name.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() : (partner.dpCode || 'DP'));
   const areaColor = partner.areaColor || partner.color || getAreaColor(partner.route);
 
-  const icon = isCurrentPos ? currentPosIcon : createDpIcon(status, areaColor, initials);
+  const heading = partner.heading ?? partner.bearing ?? partner.lastGps?.heading ?? partner.lastGps?.bearing ?? null;
+  const isSimulated = partner.source === 'simulator' || partner.isSimulated || false;
+  const icon = isCurrentPos ? currentPosIcon : createDpIcon(status, areaColor, initials, heading, isSimulated);
 
   const extraParts = [];
   if (partner.route) {

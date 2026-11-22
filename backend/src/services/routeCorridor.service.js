@@ -391,7 +391,13 @@ async function getRouteCorridors(configuredToleranceMeters = null) {
  * - 2-ping hysteresis prevents state bouncing on single noisy pings.
  * - Triggers ONE alert per deviation session when grace period exceeded or thresholds reached.
  */
-async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timestamp = null }, config = {}) {
+async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timestamp = null }, config = {}, options = {}) {
+  const isolatedStore = options.isolatedStore || config.isolatedStore || null;
+  const targetDpStore = isolatedStore?.dpGpsStore || dpGpsStore;
+  const targetAlertsStore = isolatedStore?.alertsStore || alertsStore;
+  const targetSessionsStore = isolatedStore?.deviationSessionsStore || deviationSessionsStore;
+  const skipDbWrite = Boolean(isolatedStore?.skipDbWrite);
+
   const activeSettings = getSettings();
   const tolerance = config.corridorToleranceMeters || activeSettings.corridorToleranceMeters || DEFAULT_CORRIDOR_CONFIG.corridorToleranceMeters;
   const gracePeriod = config.corridorGracePeriodSeconds || config.gracePeriodSeconds || activeSettings.corridorGracePeriodSeconds || DEFAULT_CORRIDOR_CONFIG.gracePeriodSeconds;
@@ -404,7 +410,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
   const hysteresis = config.hysteresisCount || activeSettings.hysteresisCount || DEFAULT_CORRIDOR_CONFIG.hysteresisCount || 2;
 
   // 1. Identify DP
-  let dp = dpGpsStore[dpId];
+  let dp = targetDpStore[dpId];
   if (!dp) {
     // If unknown dpId, attempt to locate or assign
     const firstArea = Object.values(AREA_CONFIG)[0];
@@ -425,7 +431,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
       lastDistanceMeters: null,
       activeSessionId: null,
     };
-    dpGpsStore[dpId] = dp;
+    targetDpStore[dpId] = dp;
   }
 
   // Edge Case: DP has no assigned area
@@ -572,7 +578,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
 
     // Resolve any open deviation session after 2 consecutive in-corridor pings
     if (dp.inCorridorConsecutivePings >= 2 && dp.activeSessionId) {
-      activeSession = deviationSessionsStore.find(s => s.id === dp.activeSessionId && s.status === 'OPEN');
+      activeSession = targetSessionsStore.find(s => s.id === dp.activeSessionId && s.status === 'OPEN');
       if (activeSession) {
         activeSession.status = 'RESOLVED';
         activeSession.endedAt = pingTime.toISOString();
@@ -613,7 +619,7 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
 
   // Retrieve or create Deviation Session
   if (dp.activeSessionId) {
-    activeSession = deviationSessionsStore.find(s => s.id === dp.activeSessionId && s.status === 'OPEN');
+    activeSession = targetSessionsStore.find(s => s.id === dp.activeSessionId && s.status === 'OPEN');
   }
 
   if (!activeSession) {
@@ -632,8 +638,9 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
       trail: [{ lat: numLat, lng: numLng, speed: currentSpeed, timestamp: pingTime.toISOString() }],
       status: 'OPEN',
       alertTriggered: false,
+      source: isolatedStore ? 'simulator' : 'live',
     };
-    deviationSessionsStore.unshift(activeSession);
+    targetSessionsStore.unshift(activeSession);
     dp.activeSessionId = activeSession.id;
   }
 
@@ -686,33 +693,36 @@ async function processGpsPing({ dpId, lat, lng, speed = 0, accuracy = 10, timest
       reviewedAt: null,
       reviewNote: null,
       createdAt: pingTime.toISOString(),
+      source: isolatedStore ? 'simulator' : 'live',
     };
 
-    alertsStore.unshift(triggeredAlert);
+    targetAlertsStore.unshift(triggeredAlert);
 
-    // Persist alert to DB1 table asynchronously
-    try {
-      writeToCRM(
-        `INSERT INTO route_deviation_alerts
-           (dp_id, dp_name, area_id, area_name, type, started_at, driving_seconds,
-            stopped_seconds, max_distance, location, trail, status)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-        [
-          triggeredAlert.dpId,
-          triggeredAlert.dpName,
-          triggeredAlert.areaId,
-          triggeredAlert.areaName,
-          triggeredAlert.type,
-          triggeredAlert.startedAt,
-          triggeredAlert.drivingSeconds,
-          triggeredAlert.stoppedSeconds,
-          triggeredAlert.maxDistance,
-          JSON.stringify(triggeredAlert.location),
-          JSON.stringify(triggeredAlert.trail),
-          triggeredAlert.status,
-        ]
-      ).catch(() => {});
-    } catch (e) {}
+    // Persist alert to DB1 table asynchronously (skipped for isolated simulator)
+    if (!skipDbWrite) {
+      try {
+        writeToCRM(
+          `INSERT INTO route_deviation_alerts
+             (dp_id, dp_name, area_id, area_name, type, started_at, driving_seconds,
+              stopped_seconds, max_distance, location, trail, status)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+          [
+            triggeredAlert.dpId,
+            triggeredAlert.dpName,
+            triggeredAlert.areaId,
+            triggeredAlert.areaName,
+            triggeredAlert.type,
+            triggeredAlert.startedAt,
+            triggeredAlert.drivingSeconds,
+            triggeredAlert.stoppedSeconds,
+            triggeredAlert.maxDistance,
+            JSON.stringify(triggeredAlert.location),
+            JSON.stringify(triggeredAlert.trail),
+            triggeredAlert.status,
+          ]
+        ).catch(() => {});
+      } catch (e) {}
+    }
   }
 
   return {
