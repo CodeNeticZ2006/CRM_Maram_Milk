@@ -320,28 +320,11 @@ export default function LiveOperationsPage() {
     return [HEAD_OFFICE.lat, HEAD_OFFICE.lng];
   }, [customCenter, selectedAlert, latParam, lngParam]);
 
-  // Map bounds calculation
+  // Map bounds calculation — only active when user explicitly selects an area filter / card
   const mapBounds = useMemo(() => {
     if (customBounds) return customBounds;
-    if (selectedAlert || customCenter || (!isNaN(latParam) && !isNaN(lngParam) && latParam > 0)) {
-      return null;
-    }
-    if (pinsToRender.length === 0) return null;
-
-    const lats = pinsToRender.map(c => parseFloat(c.lat));
-    const lngs = pinsToRender.map(c => parseFloat(c.lng));
-    const minLat = Math.min(...lats);
-    const maxLat = Math.max(...lats);
-    const minLng = Math.min(...lngs);
-    const maxLng = Math.max(...lngs);
-    const marginLat = (maxLat - minLat) * 0.1 || 0.01;
-    const marginLng = (maxLng - minLng) * 0.1 || 0.01;
-
-    return [
-      [minLat - marginLat, minLng - marginLng],
-      [maxLat + marginLat, maxLng + marginLng],
-    ];
-  }, [customBounds, pinsToRender, selectedAlert, customCenter, latParam, lngParam]);
+    return null;
+  }, [customBounds]);
 
   // Derived KPI card values
   const activePartnersCount = stats.activePartners || deliveryPartners.filter(d => d.status === 'active' || d.status === 'GREEN').length;
@@ -505,8 +488,15 @@ export default function LiveOperationsPage() {
           <LeafletMapContainer
             height={isMapExpanded ? 780 : 680}
             center={mapCenter}
-            zoom={selectedAlert ? 15 : liveZoom}
+            zoom={selectedAlert ? 15 : (customCenter ? 16 : 12)}
             bounds={mapBounds}
+            onResetView={() => {
+              setCustomCenter(null);
+              setCustomBounds(null);
+              setSelectedAreaFilter('All');
+              setHighlightedArea(null);
+              setLiveZoom(12);
+            }}
             isExpanded={isMapExpanded}
             onToggleExpand={() => setIsMapExpanded(prev => !prev)}
             isPanelOpen={isPanelOpen}

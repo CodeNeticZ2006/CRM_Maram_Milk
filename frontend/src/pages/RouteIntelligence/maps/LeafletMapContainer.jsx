@@ -29,6 +29,7 @@ export default function LeafletMapContainer({
   initialShowDeviations = true,
   // Callback when controls change
   onControlChange,
+  onResetView: externalResetView,
 }) {
   const [showCustomers, setShowCustomers] = useState(initialShowCustomers);
   const [showPartners, setShowPartners] = useState(initialShowPartners);
@@ -40,6 +41,9 @@ export default function LeafletMapContainer({
 
   const handleResetView = () => {
     setResetKey(prev => prev + 1);
+    if (typeof externalResetView === 'function') {
+      externalResetView();
+    }
   };
 
   // State object to pass to children function if function child is passed
